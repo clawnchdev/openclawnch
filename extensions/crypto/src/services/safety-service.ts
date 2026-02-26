@@ -1,0 +1,207 @@
+/**
+ * Safety Service — pre-flight checks before any on-chain write operation.
+ *
+ * Wired into defi-swap, clawnch-launch, and clawnch-fees before execution.
+ * Uses herd-intelligence for token audits and swap validation.
+ * Uses defi-balance logic for balance sufficiency checks.
+ */
+
+import { getWalletState, requirePublicClient } from './walletconnect-service.js';
+import { getPrice, getEthPrice } from './price-service.js';
+
+// ─── Types ───────────────────────────────────────────────────────────────
+
+export interface SafetyCheckResult {
+  safe: boolean;
+  warnings: string[];
+  blockers: string[];
+  details: Record<string, unknown>;
+}
+
+// ─── Balance Check ───────────────────────────────────────────────────────
+
+/**
+ * Check if the connected wallet has enough ETH for a given amount + gas.
+ */
+export async function checkBalance(opts: {
+  requiredEth?: number;
+  requiredTokenAddress?: string;
+  requiredTokenAmount?: string;
+}): Promise<SafetyCheckResult> {
+  const warnings: string[] = [];
+  const blockers: string[] = [];
+  const details: Record<string, unknown> = {};
+
+  const state = getWalletState();
+  if (!state.connected || !state.address) {
+    return { safe: false, warnings, blockers: ['No wallet connected'], details };
+  }
+
+  try {
+    const publicClient = requirePublicClient();
+    const { formatEther } = await import('viem');
+
+    const balance = await publicClient.getBalance({ address: state.address });
+    const ethBalance = parseFloat(formatEther(balance));
+    details.ethBalance = ethBalance;
+
+    const gasBuffer = 0.005; // ~0.005 ETH for gas on Base
+    const requiredEth = (opts.requiredEth ?? 0) + gasBuffer;
+
+    if (ethBalance < requiredEth) {
+      blockers.push(
+        `Insufficient ETH. Have ${ethBalance.toFixed(4)} ETH, need ~${requiredEth.toFixed(4)} ETH ` +
+        `(${opts.requiredEth?.toFixed(4) ?? '0'} + ${gasBuffer} gas buffer).`
+      );
+    } else if (ethBalance < requiredEth * 1.2) {
+      warnings.push(
+        `Low ETH balance (${ethBalance.toFixed(4)}). Transaction may succeed but leaves little for future gas.`
+      );
+    }
+
+    // TODO: ERC-20 balance check when requiredTokenAddress is provided
+  } catch (err) {
+    warnings.push(`Balance check failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  return { safe: blockers.length === 0, warnings, blockers, details };
+}
+
+// ─── Token Audit ─────────────────────────────────────────────────────────
+
+/**
+ * Audit a token for safety using herd-intelligence (if available).
+ * Non-blocking — returns warnings but doesn't block if the service is unavailable.
+ */
+export async function auditToken(tokenAddress: string): Promise<SafetyCheckResult> {
+  const warnings: string[] = [];
+  const blockers: string[] = [];
+  const details: Record<string, unknown> = {};
+
+  const accessToken = process.env.HERD_ACCESS_TOKEN;
+  if (!accessToken) {
+    warnings.push('Herd Intelligence not configured (no HERD_ACCESS_TOKEN). Token audit skipped.');
+    return { safe: true, warnings, blockers, details };
+  }
+
+  try {
+    const { HerdIntelligence } = await import('@clawnch/clawncher-sdk');
+    const herd = new HerdIntelligence({ accessToken });
+
+    const audit = await herd.auditTokenSafety(tokenAddress, { blockchain: 'base' });
+    details.audit = audit;
+
+    // Interpret audit results — structure depends on HerdIntelligence API response
+    const riskLevel = (audit as any)?.riskLevel ?? (audit as any)?.risk_level;
+    const reason = (audit as any)?.reason ?? (audit as any)?.summary ?? '';
+    const isHoneypot = (audit as any)?.isHoneypot ?? (audit as any)?.honeypot ?? false;
+
+    if (riskLevel === 'critical') {
+      blockers.push(
+        `CRITICAL RISK: Token ${tokenAddress} — ${reason || 'Do not interact.'}`
+      );
+    } else if (riskLevel === 'high') {
+      warnings.push(
+        `HIGH RISK: Token ${tokenAddress} — ${reason || 'Exercise extreme caution.'}`
+      );
+    } else if (riskLevel === 'medium') {
+      warnings.push(
+        `MEDIUM RISK: Token ${tokenAddress} — ${reason || 'Proceed with caution.'}`
+      );
+    }
+
+    if (isHoneypot) {
+      blockers.push(`HONEYPOT DETECTED: Token ${tokenAddress} cannot be sold after purchase.`);
+    }
+  } catch (err) {
+    warnings.push(`Token audit unavailable: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  return { safe: blockers.length === 0, warnings, blockers, details };
+}
+
+// ─── Swap Validation ─────────────────────────────────────────────────────
+
+/**
+ * Validate a swap before execution: balance + token audit + route check.
+ */
+export async function validateSwap(opts: {
+  tokenIn: string;
+  tokenOut: string;
+  amountEth: number;
+}): Promise<SafetyCheckResult> {
+  const allWarnings: string[] = [];
+  const allBlockers: string[] = [];
+  const allDetails: Record<string, unknown> = {};
+
+  // 1. Balance check
+  const isEthIn = opts.tokenIn.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'
+    || opts.tokenIn.toLowerCase() === '0x4200000000000000000000000000000000000006';
+
+  const balanceCheck = await checkBalance({
+    requiredEth: isEthIn ? opts.amountEth : undefined,
+    requiredTokenAddress: isEthIn ? undefined : opts.tokenIn,
+    requiredTokenAmount: isEthIn ? undefined : String(opts.amountEth),
+  });
+  allWarnings.push(...balanceCheck.warnings);
+  allBlockers.push(...balanceCheck.blockers);
+  allDetails.balance = balanceCheck.details;
+
+  // 2. Audit output token (skip well-known stables)
+  const SKIP_AUDIT = new Set([
+    '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+    '0x4200000000000000000000000000000000000006', // WETH
+    '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913', // USDC
+    '0xfde4c96c8593536e31f229ea8f37b2ada2699bb2', // USDT
+    '0x50c5725949a6f0c72e6c4a641f24049a917db0cb', // DAI
+  ]);
+
+  if (!SKIP_AUDIT.has(opts.tokenOut.toLowerCase())) {
+    const tokenAudit = await auditToken(opts.tokenOut);
+    allWarnings.push(...tokenAudit.warnings);
+    allBlockers.push(...tokenAudit.blockers);
+    allDetails.tokenAudit = tokenAudit.details;
+  }
+
+  // 3. Price context
+  try {
+    const [priceIn, priceOut] = await Promise.all([
+      getPrice(opts.tokenIn).catch(() => null),
+      getPrice(opts.tokenOut).catch(() => null),
+    ]);
+    allDetails.prices = {
+      tokenIn: priceIn ? { symbol: priceIn.symbol, priceUsd: priceIn.priceUsd } : null,
+      tokenOut: priceOut ? { symbol: priceOut.symbol, priceUsd: priceOut.priceUsd } : null,
+    };
+  } catch {
+    // Non-fatal
+  }
+
+  return {
+    safe: allBlockers.length === 0,
+    warnings: allWarnings,
+    blockers: allBlockers,
+    details: allDetails,
+  };
+}
+
+// ─── Launch Validation ───────────────────────────────────────────────────
+
+/**
+ * Pre-flight check for token launch: balance for gas + dev buy.
+ */
+export async function validateLaunch(opts: {
+  devBuyEth?: number;
+}): Promise<SafetyCheckResult> {
+  const requiredEth = (opts.devBuyEth ?? 0) + 0.01; // gas for deploy tx
+  return checkBalance({ requiredEth });
+}
+
+// ─── Claim Validation ────────────────────────────────────────────────────
+
+/**
+ * Pre-flight check for fee claims: just gas check.
+ */
+export async function validateClaim(): Promise<SafetyCheckResult> {
+  return checkBalance({ requiredEth: 0 }); // only gas buffer needed
+}

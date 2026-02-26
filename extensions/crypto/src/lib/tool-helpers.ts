@@ -39,31 +39,35 @@ export function optionalStringEnum<T extends readonly string[]>(
 /**
  * Wrap a value as a JSON tool result.
  * Matches OpenClaw's `jsonResult()` from src/agents/tools/common.ts
+ * Returns AgentToolResult shape: { content: [...], details: T }
  */
-export function jsonResult(data: unknown): { content: Array<{ type: 'text'; text: string }> } {
+export function jsonResult(data: unknown): { content: Array<{ type: 'text'; text: string }>; details: unknown } {
   return {
     content: [{
       type: 'text' as const,
       text: typeof data === 'string' ? data : JSON.stringify(data, bigintReplacer, 2),
     }],
+    details: data,
   };
 }
 
 /**
  * Wrap a plain text string as a tool result.
  */
-export function textResult(text: string): { content: Array<{ type: 'text'; text: string }> } {
+export function textResult(text: string): { content: Array<{ type: 'text'; text: string }>; details: unknown } {
   return {
     content: [{ type: 'text' as const, text }],
+    details: { text },
   };
 }
 
 /**
  * Create an error result.
  */
-export function errorResult(message: string): { content: Array<{ type: 'text'; text: string }>; isError: true } {
+export function errorResult(message: string): { content: Array<{ type: 'text'; text: string }>; details: unknown; isError: true } {
   return {
     content: [{ type: 'text' as const, text: `Error: ${message}` }],
+    details: { error: message },
     isError: true as const,
   };
 }

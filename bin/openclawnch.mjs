@@ -41,14 +41,20 @@ function ensureCryptoExtension() {
     }
   }
 
-  // Register our extension
+  // Register our extension via plugins.load.paths (how OpenClaw discovers plugins)
   const extensionPath = join(ROOT, 'extensions', 'crypto');
   if (!config.plugins) config.plugins = {};
-  if (!config.plugins['@clawnch/openclaw-crypto']) {
-    config.plugins['@clawnch/openclaw-crypto'] = {
-      enabled: true,
-      path: extensionPath,
-    };
+  if (!config.plugins.load) config.plugins.load = {};
+  if (!config.plugins.load.paths) config.plugins.load.paths = [];
+
+  if (!config.plugins.load.paths.includes(extensionPath)) {
+    config.plugins.load.paths.push(extensionPath);
+  }
+
+  // Enable the plugin entry
+  if (!config.plugins.entries) config.plugins.entries = {};
+  if (!config.plugins.entries['@clawnch/openclaw-crypto']) {
+    config.plugins.entries['@clawnch/openclaw-crypto'] = { enabled: true };
   }
 
   // Ensure crypto skills are discoverable
@@ -96,7 +102,7 @@ function resolveOpenClaw() {
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────
-function main() {
+async function main() {
   const args = process.argv.slice(2);
 
   // Handle openclawnch-specific commands
@@ -105,6 +111,13 @@ function main() {
     console.log(`OpenClawnch v${pkg.version}`);
     console.log('OpenClaw for crypto. Same assistant. Now it handles real money.');
     process.exit(0);
+  }
+
+  // Deploy command — provisions a personal DeFi agent on Fly.io + Telegram
+  if (args[0] === 'deploy') {
+    const { deployCli } = await import('../dist/deploy.js');
+    await deployCli(args.slice(1));
+    return;
   }
 
   // Ensure config is set up

@@ -1,9 +1,15 @@
 /**
- * DeFi Price Tool — token price lookup via DexScreener, CoinGecko, and on-chain
+ * DeFi Price Tool — token price lookup via multi-source PriceOracle.
+ *
+ * For well-known tokens: uses PriceOracle (DexScreener + CoinGecko +
+ * DeFiLlama + CoinMarketCap) with cross-validation and confidence scoring.
+ * For contract addresses / unknown tokens: falls back to DexScreener only.
  */
 
 import { Type } from '@sinclair/typebox';
 import { stringEnum, jsonResult, errorResult, readStringParam } from '../lib/tool-helpers.js';
+import { fetchDexScreener, resolveChain, getTrending as dexGetTrending } from '../services/dexscreener-service.js';
+import { getPriceOracle } from '../services/price-oracle.js';
 import type { TokenPrice } from '../lib/types.js';
 
 const ACTIONS = ['lookup', 'search', 'trending'] as const;
@@ -27,7 +33,8 @@ export function createDefiPriceTool() {
     ownerOnly: false,
     description:
       'Look up token prices, search for tokens, and see trending tokens. ' +
-      'Uses DexScreener (free, no key) with CoinGecko fallback. ' +
+      'Uses cross-validated multi-source oracle (DexScreener, CoinGecko, DeFiLlama, CoinMarketCap) ' +
+      'with confidence scoring and divergence detection. ' +
       'Supports any ERC-20 token on Base, Ethereum, Arbitrum, Optimism, Polygon.',
     parameters: DefiPriceSchema,
     execute: async (_toolCallId: string, args: unknown) => {
@@ -48,45 +55,66 @@ export function createDefiPriceTool() {
   };
 }
 
-// ─── DexScreener API ─────────────────────────────────────────────────────
-
-const DEXSCREENER_BASE = 'https://api.dexscreener.com';
-
-const CHAIN_MAP: Record<string, string> = {
-  base: 'base',
-  ethereum: 'ethereum',
-  eth: 'ethereum',
-  arbitrum: 'arbitrum',
-  arb: 'arbitrum',
-  optimism: 'optimism',
-  op: 'optimism',
-  polygon: 'polygon',
-  matic: 'polygon',
-};
-
-async function fetchDexScreener(path: string): Promise<any> {
-  const response = await fetch(`${DEXSCREENER_BASE}${path}`, {
-    headers: { Accept: 'application/json' },
-  });
-  if (!response.ok) {
-    throw new Error(`DexScreener API error: ${response.status} ${response.statusText}`);
-  }
-  return response.json();
-}
-
 async function handleLookup(params: Record<string, unknown>) {
   const token = readStringParam(params, 'token', { required: true })!;
   const chainInput = readStringParam(params, 'chain') || 'base';
-  const chain = CHAIN_MAP[chainInput.toLowerCase()] || chainInput;
+  const chain = resolveChain(chainInput);
 
+  // For contract addresses, use DexScreener directly (oracle doesn't support addresses well)
+  const isAddress = token.startsWith('0x') && token.length === 42;
+
+  if (!isAddress) {
+    // Try PriceOracle first for symbol lookups — cross-validated, multi-source
+    try {
+      const oracle = getPriceOracle();
+      const result = await oracle.getPrice(token, chain);
+
+      if (result.priceUsd > 0) {
+        // Also get DexScreener data for additional fields (liquidity, volume, pair info)
+        let dexData: any = null;
+        try {
+          const data = await fetchDexScreener(`/latest/dex/search?q=${encodeURIComponent(token)}`);
+          const pairs = data?.pairs ?? [];
+          dexData = pairs
+            .filter((p: any) => !chain || p.chainId === chain)
+            .sort((a: any, b: any) => (b.liquidity?.usd ?? 0) - (a.liquidity?.usd ?? 0))[0];
+        } catch {
+          // DexScreener data is supplementary, not required
+        }
+
+        return jsonResult({
+          found: true,
+          symbol: token.toUpperCase(),
+          name: dexData?.baseToken?.name ?? token,
+          address: dexData?.baseToken?.address,
+          priceUsd: result.priceUsd,
+          confidence: result.confidence,
+          sources: result.sources
+            .filter((s) => !s.error)
+            .map((s) => ({ name: s.name, price: s.priceUsd })),
+          divergencePercent: result.divergencePercent,
+          warning: result.warning,
+          change24h: dexData?.priceChange?.h24 ?? undefined,
+          volume24h: dexData?.volume?.h24 ?? undefined,
+          liquidity: dexData?.liquidity?.usd ?? undefined,
+          marketCap: dexData?.marketCap ?? dexData?.fdv ?? undefined,
+          pairAddress: dexData?.pairAddress,
+          dexId: dexData?.dexId,
+          url: dexData?.url,
+        });
+      }
+    } catch {
+      // Oracle failed entirely, fall through to DexScreener-only path
+    }
+  }
+
+  // Fallback: DexScreener-only lookup (for addresses or oracle failures)
   try {
     let data: any;
 
-    // If it looks like an address, search by address
-    if (token.startsWith('0x') && token.length === 42) {
+    if (isAddress) {
       data = await fetchDexScreener(`/tokens/v1/${chain}/${token}`);
     } else {
-      // Search by symbol/name
       data = await fetchDexScreener(`/latest/dex/search?q=${encodeURIComponent(token)}`);
     }
 
@@ -100,7 +128,6 @@ async function handleLookup(params: Record<string, unknown>) {
       });
     }
 
-    // Filter to requested chain and sort by liquidity
     const filtered = (Array.isArray(pairs) ? pairs : [pairs])
       .filter((p: any) => !chain || p.chainId === chain)
       .sort((a: any, b: any) => (b.liquidity?.usd ?? 0) - (a.liquidity?.usd ?? 0));
@@ -130,74 +157,14 @@ async function handleLookup(params: Record<string, unknown>) {
     return jsonResult({
       found: true,
       ...result,
+      confidence: 'single-source',
       pairAddress: top.pairAddress,
       dexId: top.dexId,
       url: top.url,
     });
   } catch (err) {
-    // Fallback to CoinGecko
-    try {
-      return await handleCoinGeckoLookup(token);
-    } catch {
-      return errorResult(`Price lookup failed: ${err instanceof Error ? err.message : String(err)}`);
-    }
+    return errorResult(`Price lookup failed: ${err instanceof Error ? err.message : String(err)}`);
   }
-}
-
-async function handleCoinGeckoLookup(token: string) {
-  const apiKey = process.env.COINGECKO_API_KEY;
-  const baseUrl = apiKey
-    ? 'https://pro-api.coingecko.com/api/v3'
-    : 'https://api.coingecko.com/api/v3';
-
-  const headers: Record<string, string> = { Accept: 'application/json' };
-  if (apiKey) headers['x-cg-pro-api-key'] = apiKey;
-
-  const response = await fetch(
-    `${baseUrl}/search?query=${encodeURIComponent(token)}`,
-    { headers },
-  );
-
-  if (!response.ok) {
-    throw new Error(`CoinGecko API error: ${response.status}`);
-  }
-
-  const data = await response.json() as any;
-  const coin = data.coins?.[0];
-  if (!coin) {
-    return jsonResult({ found: false, query: token, source: 'coingecko' });
-  }
-
-  // Get detailed price data
-  const priceResponse = await fetch(
-    `${baseUrl}/simple/price?ids=${coin.id}&vs_currencies=usd&include_24hr_change=true&include_24hr_vol=true&include_market_cap=true`,
-    { headers },
-  );
-
-  if (!priceResponse.ok) {
-    return jsonResult({
-      found: true,
-      symbol: coin.symbol,
-      name: coin.name,
-      source: 'coingecko',
-      note: 'Price data unavailable (rate limited)',
-    });
-  }
-
-  const priceData = await priceResponse.json() as any;
-  const prices = priceData[coin.id];
-
-  return jsonResult({
-    found: true,
-    symbol: coin.symbol?.toUpperCase(),
-    name: coin.name,
-    priceUsd: prices?.usd ?? 0,
-    change24h: prices?.usd_24h_change ?? 0,
-    volume24h: prices?.usd_24h_vol ?? 0,
-    marketCap: prices?.usd_market_cap ?? 0,
-    source: 'coingecko',
-    coingeckoId: coin.id,
-  });
 }
 
 async function handleSearch(params: Record<string, unknown>) {
@@ -240,7 +207,7 @@ async function handleSearch(params: Record<string, unknown>) {
 
 async function handleTrending(params: Record<string, unknown>) {
   const chainInput = readStringParam(params, 'chain') || 'base';
-  const chain = CHAIN_MAP[chainInput.toLowerCase()] || chainInput;
+  const chain = resolveChain(chainInput);
 
   try {
     // DexScreener doesn't have a direct trending endpoint, but we can

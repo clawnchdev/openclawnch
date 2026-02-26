@@ -13,6 +13,8 @@ import {
   requireWalletClient,
   requirePublicClient,
 } from '../services/walletconnect-service.js';
+import { validateSwap, type SafetyCheckResult } from '../services/safety-service.js';
+import { getPrice } from '../services/price-service.js';
 
 const ACTIONS = ['quote', 'execute'] as const;
 
@@ -89,7 +91,7 @@ async function handleQuote(params: Record<string, unknown>) {
   const slippage = readNumberParam(params, 'slippage') ?? 1.0;
 
   try {
-    const { parseEther, parseUnits, formatEther, formatUnits } = await import('viem');
+    const { parseEther, parseUnits, formatUnits } = await import('viem');
     const state = getWalletState();
 
     // Convert amount to wei (assume 18 decimals for ETH/WETH, try to detect for others)
@@ -99,28 +101,85 @@ async function handleQuote(params: Record<string, unknown>) {
       ? parseEther(amount)
       : parseUnits(amount, 18); // Default to 18 decimals
 
-    // Try Clawnch API swap quote (proxies 0x)
-    const apiUrl = process.env.CLAWNCHER_API_URL || 'https://clawn.ch';
-    const quoteParams = new URLSearchParams({
-      sellToken: tokenIn,
-      buyToken: tokenOut,
-      sellAmount: amountWei.toString(),
-      slippagePercentage: (slippage / 100).toString(),
-      takerAddress: state.address!,
+    // Query multiple DEX aggregators in parallel for best price
+    const { getDexAggregator } = await import('../services/dex-aggregator.js');
+    const aggregator = getDexAggregator({
+      slippageBps: Math.round(slippage * 100),
     });
 
-    const response = await fetch(`${apiUrl}/api/swap/quote?${quoteParams}`, {
-      headers: { Accept: 'application/json' },
-    });
+    let allQuotes: import('../services/dex-aggregator.js').SwapQuote[] = [];
+    let bestQuote: import('../services/dex-aggregator.js').SwapQuote | null = null;
 
-    if (!response.ok) {
-      const err = await response.text();
-      return errorResult(`Quote failed: ${err}`);
+    try {
+      allQuotes = await aggregator.getQuotes(tokenIn, tokenOut, amountWei.toString());
+      const valid = allQuotes.filter((q) => !q.error && q.buyAmount !== '0');
+      bestQuote = valid[0] ?? null;
+    } catch {
+      // All aggregators failed — fall back to Clawnch API (which proxies 0x)
     }
 
-    const quote = await response.json() as any;
+    // Fallback: Clawnch API swap quote if no aggregator returned a quote
+    if (!bestQuote) {
+      const apiUrl = process.env.CLAWNCHER_API_URL || 'https://clawn.ch';
+      const quoteParams = new URLSearchParams({
+        sellToken: tokenIn,
+        buyToken: tokenOut,
+        sellAmount: amountWei.toString(),
+        slippagePercentage: (slippage / 100).toString(),
+        takerAddress: state.address!,
+      });
+
+      const response = await fetch(`${apiUrl}/api/swap/quote?${quoteParams}`, {
+        headers: { Accept: 'application/json' },
+      });
+
+      if (!response.ok) {
+        const err = await response.text();
+        return errorResult(`Quote failed: ${err}`);
+      }
+
+      const clawnchQuote = await response.json() as any;
+      bestQuote = {
+        aggregator: 'Clawnch (0x)',
+        sellToken: tokenIn,
+        buyToken: tokenOut,
+        sellAmount: amountWei.toString(),
+        buyAmount: clawnchQuote.buyAmount ?? '0',
+        price: parseFloat(clawnchQuote.price ?? '0'),
+        gasEstimate: clawnchQuote.estimatedGas ?? '0',
+        gasPrice: clawnchQuote.gasPrice,
+        route: clawnchQuote.sources?.filter((s: any) => s.proportion !== '0')
+          .map((s: any) => s.name).join(' → ') ?? 'Clawnch',
+        data: clawnchQuote,
+      };
+    }
+
+    // Run safety check (non-blocking for quotes, just informational)
+    let safety: SafetyCheckResult | null = null;
+    try {
+      safety = await validateSwap({
+        tokenIn,
+        tokenOut,
+        amountEth: parseFloat(amount),
+      });
+    } catch {
+      // Safety check failure shouldn't block quotes
+    }
+
+    // Build comparison table from all aggregator quotes
+    const comparison = allQuotes
+      .filter((q) => !q.error)
+      .map((q) => ({
+        aggregator: q.aggregator,
+        buyAmount: formatUnits(BigInt(q.buyAmount || '0'), 18),
+        gasEstimate: q.gasEstimate,
+        gasCostUsd: q.gasCostUsd,
+        route: q.route,
+        isBest: q.aggregator === bestQuote!.aggregator,
+      }));
 
     return jsonResult({
+      bestAggregator: bestQuote.aggregator,
       tokenIn: {
         address: tokenIn,
         amount,
@@ -128,17 +187,25 @@ async function handleQuote(params: Record<string, unknown>) {
       },
       tokenOut: {
         address: tokenOut,
-        estimatedAmount: quote.buyAmount
-          ? formatUnits(BigInt(quote.buyAmount), 18)
+        estimatedAmount: bestQuote.buyAmount
+          ? formatUnits(BigInt(bestQuote.buyAmount), 18)
           : 'unknown',
       },
-      price: quote.price,
-      priceImpact: quote.estimatedPriceImpact,
-      gas: quote.estimatedGas,
-      gasPrice: quote.gasPrice,
+      price: bestQuote.price,
+      gas: bestQuote.gasEstimate,
+      gasPrice: bestQuote.gasPrice,
+      gasCostUsd: bestQuote.gasCostUsd,
+      route: bestQuote.route,
       slippage: `${slippage}%`,
-      sources: quote.sources?.filter((s: any) => s.proportion !== '0'),
-      note: 'Use action "execute" to proceed with this swap.',
+      comparison: comparison.length > 1 ? comparison : undefined,
+      safety: safety ? {
+        safe: safety.safe,
+        warnings: safety.warnings,
+        blockers: safety.blockers,
+      } : undefined,
+      note: safety?.blockers.length
+        ? 'SAFETY BLOCKERS FOUND — review before executing.'
+        : 'Use action "execute" to proceed with this swap.',
     });
   } catch (err) {
     return errorResult(`Quote failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -150,6 +217,32 @@ async function handleExecute(params: Record<string, unknown>) {
   const tokenOut = resolveToken(readStringParam(params, 'token_out', { required: true })!);
   const amount = readStringParam(params, 'amount', { required: true })!;
   const slippage = readNumberParam(params, 'slippage') ?? 1.0;
+
+  // Pre-flight safety checks (blocking for execute)
+  try {
+    const safety = await validateSwap({
+      tokenIn,
+      tokenOut,
+      amountEth: parseFloat(amount),
+    });
+
+    if (!safety.safe) {
+      return errorResult(
+        `Swap blocked by safety checks:\n` +
+        safety.blockers.map(b => `  ✗ ${b}`).join('\n') +
+        (safety.warnings.length
+          ? '\n\nWarnings:\n' + safety.warnings.map(w => `  ⚠ ${w}`).join('\n')
+          : '')
+      );
+    }
+
+    // Log warnings but proceed
+    if (safety.warnings.length > 0) {
+      // Warnings are included in the successful result below
+    }
+  } catch {
+    // Safety check infrastructure failure shouldn't block — proceed with caution
+  }
 
   try {
     const { ClawnchSwapper } = await import('@clawnch/clawncher-sdk');

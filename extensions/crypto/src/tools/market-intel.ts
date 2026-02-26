@@ -7,6 +7,13 @@
 
 import { Type } from '@sinclair/typebox';
 import { stringEnum, jsonResult, errorResult, readStringParam, readNumberParam } from '../lib/tool-helpers.js';
+import {
+  fetchDexScreener,
+  resolveChain,
+  searchToken,
+  getTrending as dexGetTrending,
+  getNewPairs as dexGetNewPairs,
+} from '../services/dexscreener-service.js';
 
 const ACTIONS = ['trending', 'new_pairs', 'whale_watch', 'analysis', 'leaderboard'] as const;
 
@@ -55,18 +62,6 @@ export function createMarketIntelTool() {
       }
     },
   };
-}
-
-// ─── DexScreener Helpers ─────────────────────────────────────────────────
-
-const DEXSCREENER_BASE = 'https://api.dexscreener.com';
-
-async function fetchDexScreener(path: string): Promise<any> {
-  const response = await fetch(`${DEXSCREENER_BASE}${path}`, {
-    headers: { Accept: 'application/json' },
-  });
-  if (!response.ok) throw new Error(`DexScreener ${response.status}`);
-  return response.json();
 }
 
 // ─── Action Handlers ─────────────────────────────────────────────────────

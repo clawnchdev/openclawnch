@@ -11,6 +11,7 @@
 
 import { Type } from '@sinclair/typebox';
 import { stringEnum, jsonResult, errorResult, readStringParam, readNumberParam } from '../lib/tool-helpers.js';
+import { getPrice } from '../services/price-service.js';
 
 const ACTIONS = [
   'create', 'list', 'cancel', 'cancel_tag', 'check',
@@ -58,7 +59,7 @@ const ManageOrdersSchema = Type.Object({
     description: 'Tag for grouping orders / bulk cancel',
   })),
   current_price: Type.Optional(Type.String({
-    description: 'Current price in ETH for "check" action',
+    description: 'Current price in ETH for "check" action (auto-fetched from DexScreener if omitted)',
   })),
   execution_result: Type.Optional(Type.String({
     description: 'Execution result string for "executed" action',
@@ -273,18 +274,62 @@ export function createManageOrdersTool() {
           }
 
           case 'check': {
-            const price = parseFloat(readStringParam(p, 'current_price', { required: true })!);
+            let price: number;
+            let priceSource: string;
+            const manualPrice = readStringParam(p, 'current_price');
+
+            if (manualPrice) {
+              price = parseFloat(manualPrice);
+              priceSource = 'manual';
+            } else {
+              // Auto-fetch price from DexScreener via the price service.
+              // Use the token from the first active order, or require a token param.
+              const activeOrders = orders.list().filter(
+                (o: any) => o.status === 'active' || o.status === 'pending',
+              );
+              const token = readStringParam(p, 'token') || activeOrders[0]?.token;
+
+              if (!token || token === '0x0000000000000000000000000000000000000000') {
+                return errorResult(
+                  'No price provided and no token to look up. ' +
+                  'Pass current_price or token parameter, or create an order with a real token address first.'
+                );
+              }
+
+              try {
+                const priceResult = await getPrice(token);
+                price = priceResult.priceEth;
+                priceSource = `auto:${priceResult.source}:${priceResult.symbol}`;
+
+                if (price === 0) {
+                  return errorResult(
+                    `Could not fetch price for token ${token}. Pass current_price manually.`
+                  );
+                }
+              } catch (err) {
+                return errorResult(
+                  `Price fetch failed: ${err instanceof Error ? err.message : String(err)}. ` +
+                  `Pass current_price manually.`
+                );
+              }
+            }
+
             const triggered = orders.checkTriggers(price);
             return jsonResult({
               currentPrice: price,
+              priceSource,
               triggered: triggered.map((o: any) => ({
                 id: o.id,
                 type: o.type,
                 token: o.token,
                 triggerPrice: o.condition.triggerPriceEth,
                 side: o.action.side,
+                note: 'Use defi_swap tool to execute this order, then call manage_orders with action "executed".',
               })),
               count: triggered.length,
+              hint: triggered.length > 0
+                ? 'Orders triggered! Execute them with defi_swap, then mark as executed.'
+                : 'No orders triggered at this price.',
             });
           }
 

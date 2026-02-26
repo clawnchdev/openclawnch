@@ -14,6 +14,7 @@ import {
   disconnectWallet,
   getWalletState,
   getWCSigner,
+  getTransactionHistory,
   addPolicy,
   removePolicy,
   clearPolicies,
@@ -195,6 +196,15 @@ async function handleStatus() {
     // Non-fatal
   }
 
+  // Include recent transaction history
+  const txHistory = getTransactionHistory();
+  const recentTxs = txHistory.slice(-5).reverse().map(tx => ({
+    status: tx.status,
+    summary: tx.summary,
+    hash: tx.hash,
+    policyLabel: tx.policyLabel,
+  }));
+
   return jsonResult({
     status: 'connected',
     address: state.address,
@@ -208,6 +218,8 @@ async function handleStatus() {
       maxPerHour: p.maxPerHour ?? 'unlimited',
       enabled: p.enabled !== false,
     })),
+    recentTransactions: recentTxs.length > 0 ? recentTxs : undefined,
+    transactionCount: txHistory.length || undefined,
   });
 }
 

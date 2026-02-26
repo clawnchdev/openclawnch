@@ -173,13 +173,15 @@ describe('clawnx tool', () => {
     // Should error about missing text or about ClawnX initialization
     expect(result.content[0]!.text).toContain('Error');
 
-    // Restore
+    // Restore env vars
     for (const [k, v] of Object.entries(orig)) {
       if (v) process.env[k] = v;
       else delete process.env[k];
     }
-    // Reset singleton
-    (tool as any)._client = null;
+    // Note: module-level _client singleton in clawnx.ts can't be reset
+    // from here (it's not a property on the tool object). The singleton
+    // will be null anyway because ClawnX constructor likely threw with
+    // dummy credentials, and getClawnX() catches that on next call.
   });
 });
 

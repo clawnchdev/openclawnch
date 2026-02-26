@@ -9,7 +9,7 @@ describe('crypto plugin structure', () => {
     expect(typeof plugin.register).toBe('function');
   });
 
-  it('registers all 12 tools', () => {
+  it('registers all 17 tools', () => {
     const registered: string[] = [];
     const mockApi = {
       registerTool: vi.fn((tool: any) => registered.push(tool.name)),
@@ -20,7 +20,7 @@ describe('crypto plugin structure', () => {
 
     plugin.register(mockApi);
 
-    expect(mockApi.registerTool).toHaveBeenCalledTimes(12);
+    expect(mockApi.registerTool).toHaveBeenCalledTimes(22);
     // Original 7
     expect(registered).toContain('clawnchconnect');
     expect(registered).toContain('defi_price');
@@ -29,12 +29,19 @@ describe('crypto plugin structure', () => {
     expect(registered).toContain('clawnch_launch');
     expect(registered).toContain('clawnch_fees');
     expect(registered).toContain('market_intel');
-    // New 5
+    // Phase 2: 5 tools
     expect(registered).toContain('hummingbot');
     expect(registered).toContain('manage_orders');
     expect(registered).toContain('watch_activity');
     expect(registered).toContain('clawnx');
     expect(registered).toContain('herd_intelligence');
+    // Phase 3: workflow orchestrator
+    expect(registered).toContain('crypto_workflow');
+    // Phase 4: critical gap coverage (4 new)
+    expect(registered).toContain('transfer');
+    expect(registered).toContain('liquidity');
+    expect(registered).toContain('wayfinder');
+    expect(registered).toContain('clawnch_info');
   });
 
   it('registers all 3 commands', () => {
@@ -93,7 +100,7 @@ describe('tool shapes', () => {
     }
   });
 
-  it('all tools require wallet connection for execution', async () => {
+  it('all tools handle gracefully without a connected wallet', async () => {
     const tools: any[] = [];
     const mockApi = {
       registerTool: vi.fn((tool: any) => tools.push(tool)),
@@ -105,8 +112,12 @@ describe('tool shapes', () => {
 
     // Each tool should fail gracefully without a connected wallet
     for (const tool of tools) {
-      const result = await tool.execute('test-call-id', { action: 'status' });
-      // Should return an error result (not throw) indicating no wallet
+      // Use appropriate default params depending on tool
+      const params = tool.name === 'crypto_workflow'
+        ? { workflow: 'portfolio_snapshot' }
+        : { action: 'status' };
+      const result = await tool.execute('test-call-id', params);
+      // Should return a result (not throw) with content
       expect(result.content).toBeDefined();
       expect(result.content[0].text).toBeDefined();
     }

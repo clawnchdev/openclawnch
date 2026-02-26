@@ -1,11 +1,32 @@
 {
   "name": "@clawnch/openclaw-crypto",
   "version": "0.1.0",
-  "description": "Crypto/DeFi extension for OpenClaw — ClawnchConnect wallet, DeFi tools, token launchpad, market intel",
+  "description": "Crypto/DeFi extension for OpenClaw — ClawnchConnect wallet, DeFi tools, token launchpad, market intel, cross-chain bridges",
   "type": "module",
-  "main": "index.ts",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./tools/*": {
+      "types": "./dist/src/tools/*.d.ts",
+      "import": "./dist/src/tools/*.js"
+    },
+    "./services/*": {
+      "types": "./dist/src/services/*.d.ts",
+      "import": "./dist/src/services/*.js"
+    }
+  },
+  "files": [
+    "dist",
+    "skills",
+    "package.json",
+    "README.md"
+  ],
   "openclaw": {
-    "extensions": ["./index.ts"],
+    "extensions": ["./dist/index.js"],
     "skills": ["./skills"],
     "install": {
       "npmSpec": "@clawnch/openclaw-crypto",
@@ -19,10 +40,21 @@
     "crypto",
     "defi",
     "walletconnect",
-    "clawnch"
+    "clawnch",
+    "bridge",
+    "uniswap",
+    "permit2",
+    "base",
+    "ai-agent"
   ],
   "author": "Clawnch",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/clawnch/openclawnch",
+    "directory": "extensions/crypto"
+  },
+  "homepage": "https://clawn.ch",
   "dependencies": {
     "@clawnch/sdk": "^2.2.1",
     "@clawnch/clawncher-sdk": "^0.3.3",

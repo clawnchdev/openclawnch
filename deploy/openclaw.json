@@ -1,0 +1,21 @@
+{
+  "agent": {
+    "model": "anthropic/claude-sonnet-4-20250514"
+  },
+  "channels": {
+    "telegram": {}
+  },
+  "gateway": {
+    "port": 18789
+  },
+  "plugins": {
+    "load": {
+      "paths": ["/usr/local/lib/node_modules/openclawnch/extensions/crypto"]
+    },
+    "entries": {
+      "@clawnch/openclaw-crypto": {
+        "enabled": true
+      }
+    }
+  }
+}

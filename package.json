@@ -1,5 +1,5 @@
 {
-  "name": "openclawnch",
+  "name": "@clawnch/openclawnch",
   "version": "0.1.0",
   "description": "OpenClaw for crypto. The biggest open-source AI assistant, now it handles real money.",
   "type": "module",
@@ -15,17 +15,23 @@
   "files": [
     "dist",
     "bin",
+    "deploy",
     "extensions",
     "SOUL.md"
   ],
   "scripts": {
     "build": "pnpm build:ext && pnpm build:wrapper",
-    "build:wrapper": "tsdown src/wrapper.ts --format esm --dts --out-dir dist",
+    "build:wrapper": "tsdown src/wrapper.ts src/deploy.ts --format esm --dts --out-dir dist",
     "build:ext": "tsdown extensions/crypto/index.ts extensions/crypto/src/**/*.ts --format esm --dts --out-dir extensions/crypto/dist",
     "dev": "tsx src/wrapper.ts",
-    "test": "vitest",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "OPENCLAWNCH_E2E=1 vitest run tests/e2e-scaffold.test.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit",
     "clean": "rm -rf dist extensions/crypto/dist",
-    "prepublishOnly": "pnpm build"
+    "prepublishOnly": "pnpm typecheck && pnpm test && pnpm build",
+    "prepack": "pnpm build"
   },
   "keywords": [
     "openclaw",
@@ -43,7 +49,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/clawnch/openclawnch"
+    "url": "https://github.com/clawnchbot/openclawnch"
   },
   "homepage": "https://clawn.ch",
   "engines": {

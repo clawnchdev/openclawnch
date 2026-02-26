@@ -12,6 +12,7 @@ import {
   requireWalletClient,
   requirePublicClient,
 } from '../services/walletconnect-service.js';
+import { validateClaim } from '../services/safety-service.js';
 
 const ACTIONS = ['check', 'claim', 'claim_all'] as const;
 
@@ -80,6 +81,18 @@ async function handleCheck(address: string) {
 
 async function handleClaim(params: Record<string, unknown>, address: string) {
   const token = readStringParam(params, 'token', { required: true })!;
+
+  // Pre-flight: check gas balance
+  try {
+    const safety = await validateClaim();
+    if (!safety.safe) {
+      return errorResult(
+        `Claim blocked:\n` + safety.blockers.map(b => `  ✗ ${b}`).join('\n')
+      );
+    }
+  } catch {
+    // Don't block on safety infra failure
+  }
 
   try {
     const { ClawncherClaimer } = await import('@clawnch/clawncher-sdk');

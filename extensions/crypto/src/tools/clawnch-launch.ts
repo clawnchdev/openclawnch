@@ -8,6 +8,7 @@
 import { Type } from '@sinclair/typebox';
 import { jsonResult, errorResult, readStringParam } from '../lib/tool-helpers.js';
 import { requireWalletClient, requirePublicClient, getWalletState } from '../services/walletconnect-service.js';
+import { validateLaunch } from '../services/safety-service.js';
 
 const ClawnchLaunchSchema = Type.Object({
   name: Type.String({
@@ -72,6 +73,21 @@ export function createClawnchLaunchTool() {
       // Validate
       if (symbol.length > 10) {
         return errorResult('Symbol must be 10 characters or less.');
+      }
+
+      // Pre-flight safety: check balance for gas + dev buy
+      try {
+        const safety = await validateLaunch({
+          devBuyEth: devBuyEth ? parseFloat(devBuyEth) : undefined,
+        });
+        if (!safety.safe) {
+          return errorResult(
+            `Launch blocked by safety checks:\n` +
+            safety.blockers.map(b => `  ✗ ${b}`).join('\n')
+          );
+        }
+      } catch {
+        // Safety infrastructure failure shouldn't block
       }
 
       try {
