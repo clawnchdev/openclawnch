@@ -1,0 +1,77 @@
+{
+  "name": "openclawnch",
+  "version": "0.1.0",
+  "description": "OpenClaw for crypto. The biggest open-source AI assistant, now it handles real money.",
+  "type": "module",
+  "bin": {
+    "openclawnch": "./bin/openclawnch.mjs"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/wrapper.d.ts",
+      "import": "./dist/wrapper.js"
+    }
+  },
+  "files": [
+    "dist",
+    "bin",
+    "extensions",
+    "SOUL.md"
+  ],
+  "scripts": {
+    "build": "pnpm build:ext && pnpm build:wrapper",
+    "build:wrapper": "tsdown src/wrapper.ts --format esm --dts --out-dir dist",
+    "build:ext": "tsdown extensions/crypto/index.ts extensions/crypto/src/**/*.ts --format esm --dts --out-dir extensions/crypto/dist",
+    "dev": "tsx src/wrapper.ts",
+    "test": "vitest",
+    "clean": "rm -rf dist extensions/crypto/dist",
+    "prepublishOnly": "pnpm build"
+  },
+  "keywords": [
+    "openclaw",
+    "openclawnch",
+    "crypto",
+    "defi",
+    "walletconnect",
+    "agent",
+    "ai",
+    "assistant",
+    "blockchain",
+    "base"
+  ],
+  "author": "Clawnch",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/clawnch/openclawnch"
+  },
+  "homepage": "https://clawn.ch",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "dependencies": {
+    "@clawnch/sdk": "^2.2.1",
+    "@clawnch/clawncher-sdk": "^0.3.3",
+    "@sinclair/typebox": "^0.34.0",
+    "viem": "^2.0.0"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.2.0",
+    "@walletconnect/sign-client": "^2.23.6"
+  },
+  "peerDependenciesMeta": {
+    "openclaw": {
+      "optional": false
+    },
+    "@walletconnect/sign-client": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsdown": "^0.9.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.0"
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "name": "@clawnch/openclaw-crypto",
+  "version": "0.1.0",
+  "description": "Crypto/DeFi extension for OpenClaw — ClawnchConnect wallet, DeFi tools, token launchpad, market intel",
+  "type": "module",
+  "main": "index.ts",
+  "openclaw": {
+    "extensions": ["./index.ts"],
+    "skills": ["./skills"],
+    "install": {
+      "npmSpec": "@clawnch/openclaw-crypto",
+      "localPath": "extensions/crypto",
+      "defaultChoice": "npm"
+    }
+  },
+  "keywords": [
+    "openclaw",
+    "openclaw-extension",
+    "crypto",
+    "defi",
+    "walletconnect",
+    "clawnch"
+  ],
+  "author": "Clawnch",
+  "license": "MIT",
+  "dependencies": {
+    "@clawnch/sdk": "^2.2.1",
+    "@clawnch/clawncher-sdk": "^0.3.3",
+    "@sinclair/typebox": "^0.34.0",
+    "viem": "^2.0.0"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.2.0",
+    "@walletconnect/sign-client": "^2.23.6"
+  },
+  "peerDependenciesMeta": {
+    "@walletconnect/sign-client": {
+      "optional": true
+    }
+  }
+}
