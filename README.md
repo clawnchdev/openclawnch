@@ -14,7 +14,7 @@ Two npm packages, one repo:
 | `@clawnch/openclaw-crypto` | Standalone extension — also works with vanilla OpenClaw via `openclaw extensions add` |
 
 The extension registers:
-- **7 agent tools** — wallet connect, prices, balances, swaps, token launches, fee claims, market intel
+- **12 agent tools** — wallet, prices, balances, swaps, launches, fees, market intel, hummingbot, orders, watcher, X/Twitter, herd intelligence
 - **3 slash commands** — `/wallet`, `/policy`, `/tx`
 - **4 skills** — ClawnchConnect, DeFi Trading, Clawnch Launchpad, Market Intel
 - **1 gateway hook** — auto-initializes WalletConnect at startup
@@ -50,6 +50,15 @@ openclaw extensions add @clawnch/openclaw-crypto
 | `CLAWNCHER_API_KEY` | For launches | API key for Clawnch deploy API. Get at [clawn.ch/agents](https://clawn.ch/agents) |
 | `CLAWNCHER_API_URL` | No | API base URL (default: https://clawn.ch) |
 | `CLAWNCHER_NETWORK` | No | `mainnet` or `sepolia` (default: mainnet) |
+| `HUMMINGBOT_API_URL` | For hummingbot | Hummingbot API URL (default: http://localhost:8000) |
+| `HUMMINGBOT_USERNAME` | For hummingbot | Hummingbot API username (default: admin) |
+| `HUMMINGBOT_PASSWORD` | For hummingbot | Hummingbot API password (default: admin) |
+| `X_API_KEY` | For clawnx | X/Twitter API key |
+| `X_API_SECRET` | For clawnx | X/Twitter API secret |
+| `X_ACCESS_TOKEN` | For clawnx | X/Twitter access token |
+| `X_ACCESS_TOKEN_SECRET` | For clawnx | X/Twitter access token secret |
+| `X_BEARER_TOKEN` | For clawnx | X/Twitter bearer token (optional) |
+| `HERD_ACCESS_TOKEN` | For herd | Herd Intelligence access token |
 
 ## Tools
 
@@ -91,6 +100,54 @@ Check and claim LP trading fees from Clawnch-launched tokens (80/20 split).
 ### `market_intel` — Market Intelligence
 Trending tokens, new pairs, whale activity, token analysis, and leaderboards.
 
+### `hummingbot` — Market Making Bot Control
+Control Hummingbot instances: place orders, manage executors, deploy bots with strategies, get market data, run backtests.
+- `status` — Health check
+- `portfolio` — Balances and positions
+- `order` / `cancel_order` / `active_orders` — Trading
+- `executor` / `stop_executor` / `executors` — Executor management
+- `market_data` / `candles` / `orderbook` — Market data
+- `bot_deploy` / `bot_status` / `bot_stop` — Bot orchestration
+- `templates` / `backtest` — Strategy templates and backtesting
+- `gateway_status` / `gateway_start` / `gateway_stop` — DEX gateway
+
+### `manage_orders` — Conditional Orders
+Create and manage conditional orders with risk management.
+- 7 order types: `limit_buy`, `limit_sell`, `stop_loss`, `take_profit`, `dca`, `trailing_stop`, `twap`
+- Order chaining (e.g., buy then auto-set stop-loss)
+- Risk management: position sizing, drawdown circuit breaker, rate limiting
+- Actions: `create`, `list`, `cancel`, `check`, `executed`, `failed`, `pause`, `resume`, `risk`, `cleanup`
+
+### `watch_activity` — On-Chain Monitoring
+Monitor on-chain activity on Base. Read-only, no wallet needed.
+- `token_activity` — Full activity report (swaps + transfers + stats)
+- `recent_swaps` — Recent swaps for a pool
+- `recent_transfers` — Token transfers
+- `deployments` — Recent Clawnch token deployments
+
+### `clawnx` — X/Twitter Integration
+45+ actions for X/Twitter: post, engage, manage followers, DMs, lists, streaming.
+- Content: `post_tweet`, `post_thread`, `post_with_media`, `search`
+- Engagement: `like`, `retweet`, `bookmark`, and more
+- Social: `follow`, `block`, `mute`, `get_user`
+- Timelines: `get_timeline`, `home_timeline`, `get_mentions`
+- DMs: `send_dm`, `list_dms`
+- Lists: `create_list`, `list_tweets`, `list_members`
+- Streaming: `stream_start`, `stream_rules_set`
+- Orchestration: `action_chain` (chain multiple actions with PREV_TWEET_ID substitution)
+
+### `herd_intelligence` — On-Chain Intelligence
+Investigate contracts, transactions, wallets. Audit tokens. Validate swaps and fee claims. All read-only.
+- `investigate` — Auto-detect and analyze address or tx hash
+- `audit_token` — Token safety audit (rug pull, honeypot detection)
+- `validate_swap` — Check swap route viability
+- `validate_claim` — Verify fee claim profitability
+- `profile_counterparty` — Assess wallet trustworthiness
+- `search_code` — Search contract source code
+- `track_token` — Trace token flow for a holder
+- `bookmark` — Manage investigation bookmarks
+- `simulate` — Build HAL simulation expressions
+
 ## Commands
 
 | Command | Description |
@@ -127,7 +184,7 @@ openclawnch/
 ├── extensions/crypto/
 │   ├── index.ts                 # Plugin registration
 │   ├── src/
-│   │   ├── tools/               # 7 agent tools
+│   │   ├── tools/               # 12 agent tools
 │   │   ├── commands/            # 3 slash commands
 │   │   ├── services/            # WalletConnect service
 │   │   └── lib/                 # Shared types & helpers
@@ -139,7 +196,8 @@ openclawnch/
 ## Dependencies
 
 - **[@clawnch/sdk](https://www.npmjs.com/package/@clawnch/sdk)** — WalletConnectSigner, spending policies, session persistence
-- **[@clawnch/clawncher-sdk](https://www.npmjs.com/package/@clawnch/clawncher-sdk)** — Token deployment, swaps, fee claims, price feeds
+- **[@clawnch/clawncher-sdk](https://www.npmjs.com/package/@clawnch/clawncher-sdk)** — Token deployment, swaps, fee claims, price feeds, orders, watcher, herd intelligence, hummingbot
+- **[@clawnch/clawnx](https://www.npmjs.com/package/@clawnch/clawnx)** — X/Twitter API client
 - **[viem](https://viem.sh)** — Ethereum client library
 - **[@sinclair/typebox](https://github.com/sinclairzx81/typebox)** — JSON schema for tool parameters (matches OpenClaw convention)
 

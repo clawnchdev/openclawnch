@@ -17,6 +17,11 @@ import { createDefiSwapTool } from './src/tools/defi-swap.js';
 import { createClawnchLaunchTool } from './src/tools/clawnch-launch.js';
 import { createClawnchFeesTool } from './src/tools/clawnch-fees.js';
 import { createMarketIntelTool } from './src/tools/market-intel.js';
+import { createHummingbotTool } from './src/tools/hummingbot.js';
+import { createManageOrdersTool } from './src/tools/manage-orders.js';
+import { createWatchActivityTool } from './src/tools/watch-activity.js';
+import { createClawnXTool } from './src/tools/clawnx.js';
+import { createHerdIntelligenceTool } from './src/tools/herd-intelligence.js';
 
 // Commands
 import { walletCommand } from './src/commands/wallet-command.js';
@@ -50,6 +55,11 @@ const plugin = {
     api.registerTool(createClawnchLaunchTool());
     api.registerTool(createClawnchFeesTool());
     api.registerTool(createMarketIntelTool());
+    api.registerTool(createHummingbotTool());
+    api.registerTool(createManageOrdersTool());
+    api.registerTool(createWatchActivityTool());
+    api.registerTool(createClawnXTool());
+    api.registerTool(createHerdIntelligenceTool());
 
     // ─── Register Chat Commands ────────────────────────────────────
     api.registerCommand(walletCommand);

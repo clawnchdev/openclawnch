@@ -9,7 +9,7 @@ describe('crypto plugin structure', () => {
     expect(typeof plugin.register).toBe('function');
   });
 
-  it('registers all 7 tools', () => {
+  it('registers all 12 tools', () => {
     const registered: string[] = [];
     const mockApi = {
       registerTool: vi.fn((tool: any) => registered.push(tool.name)),
@@ -20,7 +20,8 @@ describe('crypto plugin structure', () => {
 
     plugin.register(mockApi);
 
-    expect(mockApi.registerTool).toHaveBeenCalledTimes(7);
+    expect(mockApi.registerTool).toHaveBeenCalledTimes(12);
+    // Original 7
     expect(registered).toContain('clawnchconnect');
     expect(registered).toContain('defi_price');
     expect(registered).toContain('defi_balance');
@@ -28,6 +29,12 @@ describe('crypto plugin structure', () => {
     expect(registered).toContain('clawnch_launch');
     expect(registered).toContain('clawnch_fees');
     expect(registered).toContain('market_intel');
+    // New 5
+    expect(registered).toContain('hummingbot');
+    expect(registered).toContain('manage_orders');
+    expect(registered).toContain('watch_activity');
+    expect(registered).toContain('clawnx');
+    expect(registered).toContain('herd_intelligence');
   });
 
   it('registers all 3 commands', () => {
