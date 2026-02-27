@@ -645,7 +645,7 @@ export async function deploy(config: DeployConfig): Promise<void> {
   console.log('');
   console.log('  Next steps:');
   console.log(`    1. Open Telegram and message @${botInfo.username}`);
-  console.log('    2. Use /connect to pair your wallet (WalletConnect QR)');
+    console.log('    2. Use /connect to pair your wallet (deep link to your wallet app)');
   console.log('    3. Try: "What\'s trending on Base?" or "Show my portfolio"');
   console.log('');
   console.log('  Useful commands:');

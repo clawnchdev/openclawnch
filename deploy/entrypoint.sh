@@ -78,9 +78,22 @@ rm -rf /root/.openclaw/identity /root/.openclaw/devices
 ln -sf /workspace/.openclaw-state/identity /root/.openclaw/identity
 ln -sf /workspace/.openclaw-state/devices /root/.openclaw/devices
 
+# ── Persist sender approvals (pairing) across restarts ──────────────────
+# OpenClaw stores approved Telegram senders in /root/.openclaw/credentials/.
+# Without this symlink, every reboot wipes pairing and the user must re-pair.
+mkdir -p /workspace/.openclaw-state/credentials
+rm -rf /root/.openclaw/credentials
+ln -sf /workspace/.openclaw-state/credentials /root/.openclaw/credentials
+
+# ── Persist agent sessions across restarts ──────────────────────────────
+# Conversation history lives in sessions/. Symlink to volume for continuity.
+mkdir -p /workspace/.openclaw-state/sessions
+rm -rf /root/.openclaw/agents/main/sessions
+ln -sf /workspace/.openclaw-state/sessions /root/.openclaw/agents/main/sessions
+
 # ── Persist WalletConnect session ───────────────────────────────────────
-# The WC pairing is precious — losing it means the user has to re-scan
-# the QR code. Store on the persistent volume.
+# The WC pairing is precious — losing it means the user has to re-approve
+# in their wallet. Store on the persistent volume.
 mkdir -p /workspace/.openclaw-state/wc
 export WALLETCONNECT_SESSION="/workspace/.openclaw-state/wc/session.json"
 

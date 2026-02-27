@@ -192,6 +192,19 @@ describe('deploy artifacts', () => {
     expect(entrypoint).toContain('ln -sf');
   });
 
+  it('entrypoint.sh persists credentials (pairing approvals) on volume', () => {
+    const entrypoint = readFileSync(join(deployDir, 'entrypoint.sh'), 'utf8');
+    expect(entrypoint).toContain('/workspace/.openclaw-state/credentials');
+    // Must symlink to survive reboots
+    expect(entrypoint).toContain('ln -sf /workspace/.openclaw-state/credentials /root/.openclaw/credentials');
+  });
+
+  it('entrypoint.sh persists agent sessions on volume', () => {
+    const entrypoint = readFileSync(join(deployDir, 'entrypoint.sh'), 'utf8');
+    expect(entrypoint).toContain('/workspace/.openclaw-state/sessions');
+    expect(entrypoint).toContain('ln -sf /workspace/.openclaw-state/sessions /root/.openclaw/agents/main/sessions');
+  });
+
   it('entrypoint.sh never runs doctor (OOM risk, config rewriting)', () => {
     const entrypoint = readFileSync(join(deployDir, 'entrypoint.sh'), 'utf8');
     expect(entrypoint).not.toContain('openclaw doctor');

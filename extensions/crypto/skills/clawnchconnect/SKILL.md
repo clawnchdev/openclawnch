@@ -26,7 +26,7 @@ metadata: { "openclaw": { "emoji": "🦞", "requires": { "env": ["WALLETCONNECT_
 
 | Action | Description |
 |--------|-------------|
-| `connect` | Initialize WalletConnect pairing. Shows QR code for the user to scan with their mobile wallet (MetaMask, Rainbow, Coinbase Wallet, etc.) |
+| `connect` | Initialize WalletConnect pairing. Provides a deep link for the user to tap and open their mobile wallet (MetaMask, Rainbow, Coinbase Wallet, etc.) |
 | `status` | Check connection state, address, chain, ETH balance, and active spending policies |
 | `disconnect` | End the WalletConnect session |
 | `send_tx` | Submit a transaction. Auto-approved if within policy, otherwise goes to user's phone |

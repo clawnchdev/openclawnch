@@ -1,12 +1,15 @@
 /**
- * Teleost Bot Onboarding Flow — first-run tutorial state machine.
+ * OpenClawnch Onboarding Flow — first-run tutorial state machine.
  *
  * Detects new users and walks them through:
- * 1. Welcome + wallet connect (WalletConnect link)
- * 2. Show balance, explain capabilities
- * 3. Guided first read action ("What's trending?")
- * 4. Guided first write action ("Swap 0.001 ETH for USDC") + explain approval
- * 5. Command reference card
+ * 1. Welcome — professional greeting with capabilities overview
+ * 2. Persona selection — choose communication style (professional, degen, chill, etc.)
+ * 3. Capabilities selection — pick which features to enable, see requirements
+ * 4. Guided setup — walk through API key / config for selected capabilities
+ * 5. Wallet connect — pair a mobile wallet via deep link
+ * 6. First read action — try a read-only query
+ * 7. First write action — try a transaction (user approves on phone)
+ * 8. Complete — command reference card
  *
  * State persists on volume so interrupted tutorials resume.
  */
@@ -18,6 +21,9 @@ import { join } from 'node:path';
 
 export type OnboardingStep =
   | 'welcome'
+  | 'choose_persona'
+  | 'choose_capabilities'
+  | 'guided_setup'
   | 'connect_wallet'
   | 'wallet_connected'
   | 'first_read'
@@ -25,9 +31,39 @@ export type OnboardingStep =
   | 'complete'
   | 'skipped';
 
+/** Preset personas the user can choose from. */
+export type PersonaId = 'professional' | 'degen' | 'chill' | 'technical' | 'mentor' | 'custom';
+
+export interface PersonaOption {
+  id: PersonaId;
+  label: string;
+  description: string;
+  /** Short example of how the bot would talk in this persona. */
+  example: string;
+}
+
+/** Capability categories that map to groups of tools. */
+export interface CapabilityCategory {
+  id: string;
+  name: string;
+  description: string;
+  tools: string[];
+  /** Env vars or config needed. Empty = works out of the box. */
+  requirements: { name: string; description: string; howToGet: string }[];
+}
+
 export interface OnboardingState {
   userId: string;
   step: OnboardingStep;
+  /** Selected persona ID, or 'custom' with customPersona text. */
+  persona?: PersonaId;
+  customPersona?: string;
+  /** Selected capability category IDs. */
+  selectedCapabilities?: string[];
+  /** Tracks which capability setups have been completed. */
+  completedSetups?: string[];
+  /** Index into selectedCapabilities for guided_setup step. */
+  setupIndex?: number;
   walletConnected: boolean;
   walletAddress?: string;
   firstReadDone: boolean;
@@ -41,13 +77,135 @@ export interface OnboardingMessage {
   text: string;
   /** Telegram parse mode */
   parseMode?: 'HTML' | 'Markdown';
-  /** If true, include WalletConnect link */
-  showQr?: boolean;
+  /** If true, include WalletConnect deep link */
+  showConnectLink?: boolean;
   /** Suggested next action for the user */
   suggestion?: string;
   /** If true, this is the last onboarding message */
   final?: boolean;
 }
+
+// ── Personas ────────────────────────────────────────────────────────────────
+
+export const PERSONAS: PersonaOption[] = [
+  {
+    id: 'professional',
+    label: '1. Professional',
+    description: 'Clear, concise, business-like. Sticks to facts and figures.',
+    example: '"Your portfolio is up 3.2% today. ETH is at $3,847. Shall I proceed with the swap?"',
+  },
+  {
+    id: 'degen',
+    label: '2. Degen',
+    description: 'CT native. Speaks the language of crypto twitter.',
+    example: '"ser that token is absolutely ripping rn 🚀 ape in or stay poor, your call anon"',
+  },
+  {
+    id: 'chill',
+    label: '3. Chill',
+    description: 'Relaxed, friendly, no pressure. Like texting a knowledgeable friend.',
+    example: '"hey so ETH is looking pretty good today, up about 3%. want me to grab some?"',
+  },
+  {
+    id: 'technical',
+    label: '4. Technical',
+    description: 'Detailed, data-heavy. Includes on-chain metrics and technical analysis.',
+    example: '"ETH/USD at $3,847.32, 24h vol $18.2B, RSI 62.4. Gas at 12 gwei. The 0.3% Uniswap V3 pool has $142M TVL with concentrated liquidity at 3800-3900."',
+  },
+  {
+    id: 'mentor',
+    label: '5. Mentor',
+    description: 'Educational. Explains concepts as it goes, good for DeFi newcomers.',
+    example: '"I\'ll swap your ETH for USDC. Quick explainer: this goes through a DEX (decentralized exchange), which means no middleman — just a smart contract matching your trade. You\'ll approve it on your phone."',
+  },
+];
+
+// ── Capability Categories ───────────────────────────────────────────────────
+
+export const CAPABILITIES: CapabilityCategory[] = [
+  {
+    id: 'wallet',
+    name: 'Wallet & Transactions',
+    description: 'Connect your wallet, send tokens, approve transactions from your phone.',
+    tools: ['clawnchconnect', 'transfer', 'permit2'],
+    requirements: [
+      {
+        name: 'WALLETCONNECT_PROJECT_ID',
+        description: 'WalletConnect cloud project ID for mobile wallet pairing',
+        howToGet: 'Sign up at cloud.walletconnect.com, create a project, and copy the Project ID.',
+      },
+    ],
+  },
+  {
+    id: 'prices',
+    name: 'Prices & Market Data',
+    description: 'Real-time token prices, trending coins, market intelligence.',
+    tools: ['defi_price', 'market_intel', 'herd_intelligence', 'analytics'],
+    requirements: [], // Works out of the box
+  },
+  {
+    id: 'portfolio',
+    name: 'Portfolio & Balance Tracking',
+    description: 'View balances, track cost basis, and monitor your positions.',
+    tools: ['defi_balance', 'cost_basis', 'watch_activity', 'block_explorer'],
+    requirements: [], // Works with wallet connection
+  },
+  {
+    id: 'trading',
+    name: 'DEX Trading & Swaps',
+    description: 'Execute token swaps via DEX aggregators with best-price routing.',
+    tools: ['defi_swap', 'manage_orders', 'crypto_workflow'],
+    requirements: [], // Needs wallet (covered by wallet category)
+  },
+  {
+    id: 'liquidity',
+    name: 'Liquidity Provision',
+    description: 'Manage Uniswap V3/V4 liquidity positions, add/remove liquidity.',
+    tools: ['liquidity'],
+    requirements: [], // Needs wallet
+  },
+  {
+    id: 'launchpad',
+    name: 'Token Launchpad (Clawnch)',
+    description: 'Launch new tokens on Base with Uniswap V4 pools and manage fee revenue.',
+    tools: ['clawnch_launch', 'clawnch_fees', 'clawnch_info'],
+    requirements: [], // Needs wallet
+  },
+  {
+    id: 'bridge',
+    name: 'Cross-Chain Bridge',
+    description: 'Bridge tokens across Ethereum, Base, Arbitrum, Optimism, and other chains.',
+    tools: ['bridge'],
+    requirements: [], // Needs wallet
+  },
+  {
+    id: 'routing',
+    name: 'Smart Routing (Wayfinder)',
+    description: 'AI-powered route optimization across chains and protocols.',
+    tools: ['wayfinder'],
+    requirements: [], // Works out of the box
+  },
+  {
+    id: 'clawnx',
+    name: 'ClawnX Protocol',
+    description: 'Interact with the ClawnX decentralized exchange protocol.',
+    tools: ['clawnx'],
+    requirements: [], // Needs wallet
+  },
+  {
+    id: 'hummingbot',
+    name: 'Market Making (Hummingbot)',
+    description: 'Automated market making and trading bot management.',
+    tools: ['hummingbot'],
+    requirements: [
+      {
+        name: 'HUMMINGBOT_URL',
+        description: 'URL of your running Hummingbot instance',
+        howToGet: 'Install Hummingbot (hummingbot.org), start it, and use the API URL (typically http://localhost:15888).',
+      },
+    ],
+  },
+];
 
 // ── Persistence ─────────────────────────────────────────────────────────────
 
@@ -84,57 +242,188 @@ export function saveState(state: OnboardingState): void {
   writeFileSync(statePath(state.userId), JSON.stringify(state, null, 2), 'utf8');
 }
 
-// ── Welcome Messages ────────────────────────────────────────────────────────
+// ── Messages ────────────────────────────────────────────────────────────────
 
-const WELCOME_MESSAGE = `Hey! I'm your personal DeFi agent.
-
-I can check token prices, track your portfolio, execute swaps, manage liquidity positions, and monitor the market — all from this chat.
-
-But first, let's connect your wallet so I can see your balances and propose transactions for you to approve.
-
-Tap the link below to connect your wallet app (MetaMask, Rainbow, Coinbase Wallet, etc.)`;
-
-const WALLET_CONNECTED_MESSAGE = (address: string, balance: string) =>
-  `Wallet connected! ${address.slice(0, 6)}...${address.slice(-4)}
-Balance: ${balance}
+const WELCOME_MESSAGE = `Welcome. I'm your personal DeFi agent — an AI assistant with direct access to blockchain protocols, market data, and transaction execution.
 
 Here's what I can do:
 
-  - Check token prices and trending coins
-  - Show your full portfolio
-  - Execute swaps (you approve on your phone)
-  - Track on-chain activity
-  - Set conditional orders and alerts
+  Wallet & Transactions — Connect your phone wallet, send tokens, approve txs
+  Prices & Market Data — Real-time prices, trending tokens, market analysis
+  Portfolio Tracking — Balances, cost basis, on-chain activity
+  DEX Trading — Token swaps via aggregators with best-price routing
+  Liquidity — Manage Uniswap V3/V4 positions
+  Token Launchpad — Deploy new tokens on Base
+  Cross-Chain Bridge — Move assets between chains
+  Smart Routing — AI-optimized multi-chain routes
+  Market Making — Automated trading via Hummingbot
 
-Let's try something. Ask me:
+Before we begin, I'd like to know how you prefer me to communicate.
+
+Pick a style (reply with the number, name, or describe your own):
+
+  1. Professional — Clear, concise, business-like
+  2. Degen — CT native, crypto twitter energy
+  3. Chill — Relaxed, like texting a friend
+  4. Technical — Data-heavy, on-chain metrics
+  5. Mentor — Educational, explains as it goes
+
+Or just describe the tone you want in your own words.`;
+
+function buildPersonaConfirmation(persona: PersonaId, customText?: string): string {
+  if (persona === 'custom') {
+    return `Got it. I'll communicate in your preferred style: "${customText}"
+
+Now let's set up your capabilities. Which of these would you like to enable?
+
+Reply with the numbers (e.g. "1, 2, 3, 5") or "all" for everything:
+
+${buildCapabilitiesList()}`;
+  }
+
+  const p = PERSONAS.find(p => p.id === persona);
+  const label = p?.label.replace(/^\d+\.\s*/, '') ?? persona;
+  return `${label} mode selected.
+
+Now let's set up your capabilities. Which of these would you like to enable?
+
+Reply with the numbers (e.g. "1, 2, 3, 5") or "all" for everything:
+
+${buildCapabilitiesList()}`;
+}
+
+function buildCapabilitiesList(): string {
+  return CAPABILITIES.map((c, i) => {
+    const reqs = c.requirements.length > 0
+      ? ` (requires setup)`
+      : ` (works immediately)`;
+    return `  ${i + 1}. ${c.name}${reqs}\n     ${c.description}`;
+  }).join('\n\n');
+}
+
+function buildSetupMessage(category: CapabilityCategory): string {
+  if (category.requirements.length === 0) {
+    return `${category.name} — No setup needed. This works out of the box.`;
+  }
+
+  const reqs = category.requirements.map(r =>
+    `  ${r.name}\n  ${r.description}\n  How to get it: ${r.howToGet}`
+  ).join('\n\n');
+
+  return `Setting up: ${category.name}
+
+This feature requires the following:
+
+${reqs}
+
+If you have the value ready, paste it now. If not, reply "skip" to set this up later, or "done" if it's already configured.`;
+}
+
+function buildSetupCompleteMessage(selectedIds: string[]): string {
+  const walletNeeded = selectedIds.some(id =>
+    ['wallet', 'trading', 'liquidity', 'launchpad', 'bridge', 'clawnx'].includes(id)
+  );
+
+  if (walletNeeded) {
+    return `Configuration complete. Your selected capabilities are ready.
+
+Next step: connect your wallet. This lets me see your balances and propose transactions for you to approve on your phone.
+
+Tap the link below to connect your wallet app (MetaMask, Rainbow, Coinbase Wallet, etc.), or type /connect.`;
+  }
+
+  return `Configuration complete. Your selected capabilities are ready.
+
+You can connect a wallet later with /connect if you want transaction capabilities.
+
+Try asking me something — for example: "What's the price of ETH?" or "What's trending on Base?"`;
+}
+
+const WALLET_CONNECTED_MESSAGE = (address: string, balance: string) =>
+  `Wallet connected: ${address.slice(0, 6)}...${address.slice(-4)}
+Balance: ${balance}
+
+Let's verify everything works. Try a read operation — ask me:
 "What's trending on Base?"`;
 
-const FIRST_READ_DONE_MESSAGE = `Nice! That's how read operations work — instant, no wallet approval needed.
+const FIRST_READ_DONE_MESSAGE = `That's a read operation — instant, no wallet approval needed.
 
 Now let's try a write operation. Say:
 "Swap 0.001 ETH for USDC"
 
-I'll show you the quote, then you'll get a notification on your phone wallet to approve (or reject) the transaction. You're always in control.`;
+I'll prepare the transaction and send it to your phone wallet for approval. You always have final say.`;
 
-const FIRST_WRITE_DONE_MESSAGE = `You've got it! Every transaction needs your explicit approval on your wallet app. I propose, you decide.
+const FIRST_WRITE_DONE_MESSAGE = `Transaction confirmed. Every write operation goes to your wallet for approval. You propose, you decide.
 
-Here's your command reference:
+Command reference:
+  /connect    — Reconnect wallet
+  /wallet     — Balance and wallet info
+  /portfolio  — Full token portfolio
+  /tx         — Recent transactions
+  /policy     — Manage spending policies
+  /help       — All available commands
 
-/connect    — Reconnect your wallet
-/wallet     — Balance and wallet info
-/portfolio  — Full token portfolio
-/tx         — Recent transactions
-/policy     — Manage spending policies
-/help       — All available commands
+Setup complete. Talk to me naturally — "What's the price of ETH?", "Show my portfolio", "Send 10 USDC to 0x...", or anything else.`;
 
-You're all set. Just talk to me naturally — "What's the price of ETH?", "Show my portfolio", "Send 10 USDC to 0x...", or anything else.`;
+const SKIP_MESSAGE = `Onboarding skipped. You can configure everything later:
+  /connect — Pair wallet  |  /wallet — Balances
+  /portfolio — Holdings   |  /tx — History
+  /policy — Auto-approve  |  /help — All commands`;
 
-const SKIP_MESSAGE = `Tutorial skipped. You can use /connect to pair your wallet anytime.
+// ── Persona Parsing ─────────────────────────────────────────────────────────
 
-Quick reference:
-/connect — Pair wallet  |  /wallet — Balances
-/portfolio — Holdings   |  /tx — History
-/policy — Auto-approve  |  /help — All commands`;
+function parsePersonaChoice(message: string): { persona: PersonaId; customText?: string } | null {
+  const lower = message.toLowerCase().trim();
+
+  // Number-based selection
+  if (/^1\b/.test(lower) || lower === 'professional') return { persona: 'professional' };
+  if (/^2\b/.test(lower) || lower === 'degen') return { persona: 'degen' };
+  if (/^3\b/.test(lower) || lower === 'chill') return { persona: 'chill' };
+  if (/^4\b/.test(lower) || lower === 'technical') return { persona: 'technical' };
+  if (/^5\b/.test(lower) || lower === 'mentor') return { persona: 'mentor' };
+
+  // If the message is long enough, treat it as a custom persona description
+  if (message.trim().length >= 5) {
+    return { persona: 'custom', customText: message.trim() };
+  }
+
+  return null;
+}
+
+// ── Capability Parsing ──────────────────────────────────────────────────────
+
+function parseCapabilityChoice(message: string): string[] | null {
+  const lower = message.toLowerCase().trim();
+
+  if (lower === 'all' || lower === 'everything') {
+    return CAPABILITIES.map(c => c.id);
+  }
+
+  // Parse numbers like "1, 2, 3, 5" or "1 2 3 5" or "1,2,3,5"
+  const numbers = message.match(/\d+/g);
+  if (numbers && numbers.length > 0) {
+    const ids: string[] = [];
+    for (const n of numbers) {
+      const idx = parseInt(n, 10) - 1;
+      const cap = CAPABILITIES[idx];
+      if (idx >= 0 && idx < CAPABILITIES.length && cap) {
+        ids.push(cap.id);
+      }
+    }
+    if (ids.length > 0) return [...new Set(ids)]; // dedupe
+  }
+
+  // Try matching by name
+  const ids: string[] = [];
+  for (const cap of CAPABILITIES) {
+    if (lower.includes(cap.id) || lower.includes(cap.name.toLowerCase())) {
+      ids.push(cap.id);
+    }
+  }
+  if (ids.length > 0) return [...new Set(ids)];
+
+  return null;
+}
 
 // ── State Machine ───────────────────────────────────────────────────────────
 
@@ -181,14 +470,13 @@ export class OnboardingFlow {
   getWelcomeMessage(): OnboardingMessage | null {
     if (this.state.step !== 'welcome') return null;
 
-    this.state.step = 'connect_wallet';
+    this.state.step = 'choose_persona';
     this.state.lastInteraction = Date.now();
     saveState(this.state);
 
     return {
       text: WELCOME_MESSAGE,
-      showQr: true,
-      suggestion: 'Tap the wallet connect link',
+      suggestion: 'Reply with a number (1-5) or describe your preferred tone',
     };
   }
 
@@ -200,6 +488,154 @@ export class OnboardingFlow {
     saveState(this.state);
 
     return { text: SKIP_MESSAGE, final: true };
+  }
+
+  /**
+   * Process a persona selection from the user.
+   */
+  onPersonaSelected(message: string): OnboardingMessage | null {
+    if (this.state.step !== 'choose_persona') return null;
+
+    const choice = parsePersonaChoice(message);
+    if (!choice) {
+      return {
+        text: 'Please pick a communication style (1-5) or describe the tone you want in your own words.',
+        suggestion: 'Reply with a number or describe your preferred style',
+      };
+    }
+
+    this.state.persona = choice.persona;
+    if (choice.customText) this.state.customPersona = choice.customText;
+    this.state.step = 'choose_capabilities';
+    this.state.lastInteraction = Date.now();
+    saveState(this.state);
+
+    return {
+      text: buildPersonaConfirmation(choice.persona, choice.customText),
+      suggestion: 'Reply with numbers (e.g. "1, 2, 3") or "all"',
+    };
+  }
+
+  /**
+   * Process a capability selection from the user.
+   */
+  onCapabilitiesSelected(message: string): OnboardingMessage | null {
+    if (this.state.step !== 'choose_capabilities') return null;
+
+    const ids = parseCapabilityChoice(message);
+    if (!ids) {
+      return {
+        text: `Reply with the numbers of the capabilities you want (e.g. "1, 2, 3, 5") or "all" for everything.\n\n${buildCapabilitiesList()}`,
+        suggestion: 'Reply with numbers or "all"',
+      };
+    }
+
+    this.state.selectedCapabilities = ids;
+    this.state.completedSetups = [];
+    this.state.lastInteraction = Date.now();
+
+    // Find capabilities that need setup
+    const needsSetup = ids
+      .map(id => CAPABILITIES.find(c => c.id === id))
+      .filter((c): c is CapabilityCategory => c != null && c.requirements.length > 0);
+
+    if (needsSetup.length > 0) {
+      this.state.step = 'guided_setup';
+      this.state.setupIndex = 0;
+      saveState(this.state);
+
+      const first = needsSetup[0]!;
+      return {
+        text: `Selected ${ids.length} capabilities. ${needsSetup.length} need configuration.\n\n${buildSetupMessage(first)}`,
+        suggestion: 'Paste the value, or reply "skip" to set up later',
+      };
+    }
+
+    // No setup needed — go straight to wallet connect or complete
+    const walletNeeded = ids.some(id =>
+      ['wallet', 'trading', 'liquidity', 'launchpad', 'bridge', 'clawnx'].includes(id)
+    );
+
+    if (walletNeeded) {
+      this.state.step = 'connect_wallet';
+      saveState(this.state);
+
+      return {
+        text: buildSetupCompleteMessage(ids),
+        showConnectLink: true,
+        suggestion: 'Tap the link to connect your wallet',
+      };
+    }
+
+    this.state.step = 'first_read';
+    saveState(this.state);
+
+    return {
+      text: buildSetupCompleteMessage(ids),
+      suggestion: "What's the price of ETH?",
+    };
+  }
+
+  /**
+   * Process a guided setup response (API key paste, "skip", or "done").
+   */
+  onSetupResponse(message: string): OnboardingMessage | null {
+    if (this.state.step !== 'guided_setup') return null;
+
+    const lower = message.toLowerCase().trim();
+    const selectedIds = this.state.selectedCapabilities ?? [];
+    const needsSetup = selectedIds
+      .map(id => CAPABILITIES.find(c => c.id === id))
+      .filter((c): c is CapabilityCategory => c != null && c.requirements.length > 0);
+
+    const currentIndex = this.state.setupIndex ?? 0;
+
+    // Record completion (skip or done or pasted value)
+    if (currentIndex < needsSetup.length) {
+      const current = needsSetup[currentIndex]!;
+      if (lower !== 'skip') {
+        this.state.completedSetups = [...(this.state.completedSetups ?? []), current.id];
+      }
+    }
+
+    // Move to next capability that needs setup
+    const nextIndex = currentIndex + 1;
+    if (nextIndex < needsSetup.length) {
+      this.state.setupIndex = nextIndex;
+      this.state.lastInteraction = Date.now();
+      saveState(this.state);
+
+      return {
+        text: buildSetupMessage(needsSetup[nextIndex]!),
+        suggestion: 'Paste the value, or reply "skip"',
+      };
+    }
+
+    // All setups done — move to wallet connect or first read
+    this.state.lastInteraction = Date.now();
+
+    const walletNeeded = selectedIds.some(id =>
+      ['wallet', 'trading', 'liquidity', 'launchpad', 'bridge', 'clawnx'].includes(id)
+    );
+
+    if (walletNeeded) {
+      this.state.step = 'connect_wallet';
+      saveState(this.state);
+
+      return {
+        text: buildSetupCompleteMessage(selectedIds),
+        showConnectLink: true,
+        suggestion: 'Tap the link to connect your wallet',
+      };
+    }
+
+    this.state.step = 'first_read';
+    saveState(this.state);
+
+    return {
+      text: buildSetupCompleteMessage(selectedIds),
+      suggestion: "What's the price of ETH?",
+    };
   }
 
   /**
@@ -278,6 +714,21 @@ export class OnboardingFlow {
       return this.getWelcomeMessage();
     }
 
+    // Persona selection step
+    if (this.state.step === 'choose_persona') {
+      return this.onPersonaSelected(message);
+    }
+
+    // Capability selection step
+    if (this.state.step === 'choose_capabilities') {
+      return this.onCapabilitiesSelected(message);
+    }
+
+    // Guided setup step
+    if (this.state.step === 'guided_setup') {
+      return this.onSetupResponse(message);
+    }
+
     // If waiting for wallet connect, nudge
     if (this.state.step === 'connect_wallet') {
       if (lower.includes('/connect')) {
@@ -285,7 +736,7 @@ export class OnboardingFlow {
       }
       return {
         text: "Let's connect your wallet first. Tap the link above, or type /connect for a new one.",
-        showQr: true,
+        showConnectLink: true,
       };
     }
 
