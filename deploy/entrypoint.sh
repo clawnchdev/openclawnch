@@ -61,6 +61,13 @@ if [ -n "$OPENCLAW_TG_WEBHOOK_SECRET" ]; then
   "
 fi
 
+# ── Create required directories ─────────────────────────────────────────
+# Doctor flags these as CRITICAL if missing; create them before gateway start.
+mkdir -p /root/.openclaw/agents/main/sessions \
+         /root/.openclaw/credentials
+chmod 700 /root/.openclaw
+chmod 600 /root/.openclaw/openclaw.json
+
 # ── Persist identity/devices across restarts ────────────────────────────
 # OpenClaw generates an identity (device ID, auth tokens) on first run.
 # We symlink these to the persistent Fly volume so they survive restarts.
@@ -81,16 +88,35 @@ export WALLETCONNECT_SESSION="/workspace/.openclaw-state/wc/session.json"
 mkdir -p /workspace/.openclaw-state/tx
 export OPENCLAWNCH_TX_DIR="/workspace/.openclaw-state/tx"
 
-# ── Skip doctor on boot (pre-ran at build time) ────────────────────────
-# Only run doctor if this is the first-ever boot (no identity dir yet).
-if [ ! -f /workspace/.openclaw-state/identity/.initialized ]; then
-  echo "First boot — running openclaw doctor..."
-  openclaw doctor --fix 2>/dev/null || true
-  touch /workspace/.openclaw-state/identity/.initialized
-fi
+# ── No doctor on boot ───────────────────────────────────────────────────
+# Doctor was pre-run at build time (Dockerfile step 7). Running it again
+# on boot is counterproductive — it rewrites the config, migrating keys
+# and potentially stripping gateway.mode. We create all needed dirs above
+# instead of relying on doctor --fix.
+
+# ── Generate gateway auth token ─────────────────────────────────────────
+# Non-loopback binds require auth. Generate a random token on each boot.
+# This token is internal only (Fly proxy → gateway); not exposed externally.
+GATEWAY_TOKEN=$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')
+export OPENCLAW_GATEWAY_TOKEN="$GATEWAY_TOKEN"
+
+# Inject token into config so gateway reads it
+node -e "
+  const fs = require('fs');
+  const cfg = JSON.parse(fs.readFileSync('/root/.openclaw/openclaw.json', 'utf8'));
+  cfg.gateway = cfg.gateway || {};
+  cfg.gateway.auth = cfg.gateway.auth || {};
+  cfg.gateway.auth.token = process.env.OPENCLAW_GATEWAY_TOKEN;
+  fs.writeFileSync('/root/.openclaw/openclaw.json', JSON.stringify(cfg, null, 2));
+"
 
 # ── Start OpenClaw gateway ──────────────────────────────────────────────
 # --bind lan: bind to 0.0.0.0 so Fly's proxy can reach the gateway.
-# Default is loopback (127.0.0.1) which is unreachable from Fly proxy.
+# --allow-unconfigured: skip interactive setup prompts in container.
 echo "Starting OpenClawnch (Telegram mode)..."
-exec openclaw gateway --port 18789 --bind lan --verbose
+
+# Debug: log what we're about to run
+echo "Gateway config:"
+node -e "const c=JSON.parse(require('fs').readFileSync('/root/.openclaw/openclaw.json','utf8')); console.log(JSON.stringify({gateway:c.gateway,channels:c.channels,plugins:c.plugins?{entries:Object.keys(c.plugins.entries||{})}:null},null,2))"
+
+exec openclaw gateway --port 18789 --bind lan --allow-unconfigured 2>&1

@@ -69,7 +69,7 @@ describe('crypto-workflow tool', () => {
 
     expect(tool.name).toBe('crypto_workflow');
     expect(tool.label).toBe('Crypto Workflow');
-    expect(tool.ownerOnly).toBe(true);
+    expect(tool.ownerOnly).toBe(false);
     expect(typeof tool.execute).toBe('function');
     expect(tool.parameters.type).toBe('object');
     expect(tool.parameters.properties).toHaveProperty('workflow');

@@ -1,21 +1,43 @@
 {
-  "agent": {
-    "model": "anthropic/claude-sonnet-4-20250514"
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "anthropic/claude-sonnet-4-20250514"
+      },
+      "memorySearch": {
+        "enabled": false
+      }
+    }
   },
   "channels": {
-    "telegram": {}
+    "telegram": {
+      "enabled": true
+    }
   },
   "gateway": {
-    "port": 18789
+    "port": 18789,
+    "mode": "local",
+    "bind": "lan",
+    "auth": {
+      "mode": "token"
+    },
+    "controlUi": {
+      "dangerouslyAllowHostHeaderOriginFallback": true
+    }
   },
   "plugins": {
     "load": {
-      "paths": ["/usr/local/lib/node_modules/openclawnch/extensions/crypto"]
+      "paths": ["/usr/local/lib/node_modules/@clawnch/openclawnch/extensions/crypto"]
     },
     "entries": {
-      "@clawnch/openclaw-crypto": {
+      "openclaw-crypto": {
         "enabled": true
       }
+    }
+  },
+  "skills": {
+    "load": {
+      "extraDirs": ["/usr/local/lib/node_modules/@clawnch/openclawnch/extensions/crypto/skills"]
     }
   }
 }

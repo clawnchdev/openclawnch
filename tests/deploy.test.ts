@@ -56,7 +56,7 @@ describe('parseDeployArgs', () => {
 
     expect(config).not.toBeNull();
     expect(config!.region).toBe('iad');
-    expect(config!.memoryMb).toBe(512);
+    expect(config!.memoryMb).toBe(2048);
   });
 
   it('accepts custom region and memory', () => {
@@ -132,26 +132,28 @@ describe('deploy artifacts', () => {
     const dockerfile = readFileSync(join(deployDir, 'Dockerfile'), 'utf8');
 
     expect(dockerfile).toContain('FROM node:22-slim');
-    expect(dockerfile).toContain('openclawnch@latest');
+    expect(dockerfile).toContain('openclawnch.tgz');
     expect(dockerfile).toContain('openclaw@latest');
     expect(dockerfile).toContain('ENTRYPOINT ["/entrypoint.sh"]');
     expect(dockerfile).toContain('HEALTHCHECK');
     expect(dockerfile).toContain('18789');
   });
 
-  it('Dockerfile has optimized healthcheck start-period (15s, not 60s)', () => {
+  it('Dockerfile has generous healthcheck start-period (60s for slow gateway boot)', () => {
     const dockerfile = readFileSync(join(deployDir, 'Dockerfile'), 'utf8');
-    expect(dockerfile).toContain('--start-period=15s');
-    expect(dockerfile).not.toContain('--start-period=60s');
+    expect(dockerfile).toContain('--start-period=60s');
   });
 
-  it('Dockerfile pre-runs doctor at build time', () => {
+  it('Dockerfile does NOT run doctor (OOM risk)', () => {
     const dockerfile = readFileSync(join(deployDir, 'Dockerfile'), 'utf8');
-    const doctorLine = dockerfile.indexOf('openclaw doctor --fix');
-    const copyEntrypoint = dockerfile.indexOf('COPY entrypoint.sh');
-    expect(doctorLine).toBeGreaterThan(-1);
-    expect(copyEntrypoint).toBeGreaterThan(-1);
-    expect(doctorLine).toBeLessThan(copyEntrypoint);
+    expect(dockerfile).not.toContain('openclaw doctor');
+  });
+
+  it('Dockerfile creates required dirs at build time', () => {
+    const dockerfile = readFileSync(join(deployDir, 'Dockerfile'), 'utf8');
+    expect(dockerfile).toContain('agents/main/sessions');
+    expect(dockerfile).toContain('credentials');
+    expect(dockerfile).toContain('chmod 700');
   });
 
   it('entrypoint.sh blocks CLAWNCHER_PRIVATE_KEY', () => {
@@ -190,15 +192,16 @@ describe('deploy artifacts', () => {
     expect(entrypoint).toContain('ln -sf');
   });
 
-  it('entrypoint.sh skips doctor on subsequent boots', () => {
+  it('entrypoint.sh never runs doctor (OOM risk, config rewriting)', () => {
     const entrypoint = readFileSync(join(deployDir, 'entrypoint.sh'), 'utf8');
-    expect(entrypoint).toContain('.initialized');
-    expect(entrypoint).toContain('First boot');
+    expect(entrypoint).not.toContain('openclaw doctor');
+    // Restores clean config from baked copy instead
+    expect(entrypoint).toContain('openclaw-clean.json');
   });
 
-  it('entrypoint.sh starts openclaw gateway on port 18789 with lan bind', () => {
+  it('entrypoint.sh starts openclaw gateway on port 18789 with lan bind and --allow-unconfigured', () => {
     const entrypoint = readFileSync(join(deployDir, 'entrypoint.sh'), 'utf8');
-    expect(entrypoint).toContain('exec openclaw gateway --port 18789 --bind lan --verbose');
+    expect(entrypoint).toContain('exec openclaw gateway --port 18789 --bind lan --allow-unconfigured');
   });
 
   it('openclaw.json has Telegram channel enabled', () => {
@@ -216,19 +219,34 @@ describe('deploy artifacts', () => {
     expect(config.plugins).toBeDefined();
     // Must be absolute path matching npm global install location
     expect(config.plugins.load.paths[0]).toBe(
-      '/usr/local/lib/node_modules/openclawnch/extensions/crypto',
+      '/usr/local/lib/node_modules/@clawnch/openclawnch/extensions/crypto',
     );
     expect(
-      config.plugins.entries['@clawnch/openclaw-crypto'].enabled,
+      config.plugins.entries['openclaw-crypto'].enabled,
     ).toBe(true);
   });
 
-  it('openclaw.json sets gateway port', () => {
+  it('openclaw.json sets gateway port, mode, bind, and controlUi', () => {
     const config = JSON.parse(
       readFileSync(join(deployDir, 'openclaw.json'), 'utf8'),
     );
     expect(config.gateway).toBeDefined();
     expect(config.gateway.port).toBe(18789);
+    expect(config.gateway.mode).toBe('local');
+    expect(config.gateway.bind).toBe('lan');
+    expect(config.gateway.auth).toBeDefined();
+    expect(config.gateway.auth.mode).toBe('token');
+    expect(config.gateway.controlUi).toBeDefined();
+    expect(config.gateway.controlUi.dangerouslyAllowHostHeaderOriginFallback).toBe(true);
+  });
+
+  it('openclaw.json uses new config schema (agents.defaults, not agent)', () => {
+    const config = JSON.parse(
+      readFileSync(join(deployDir, 'openclaw.json'), 'utf8'),
+    );
+    expect(config.agent).toBeUndefined();
+    expect(config.agents?.defaults?.model?.primary).toBeDefined();
+    expect(config.agents.defaults.memorySearch?.enabled).toBe(false);
   });
 
   it('fly.template.toml uses suspend mode', () => {
@@ -273,12 +291,12 @@ describe('deploy artifacts', () => {
     expect(flyToml).toContain('destination = "/workspace"');
   });
 
-  it('fly.template.toml uses 512mb memory', () => {
+  it('fly.template.toml uses 1024mb memory', () => {
     const flyToml = readFileSync(
       join(deployDir, 'fly.template.toml'),
       'utf8',
     );
-    expect(flyToml).toContain('memory = "512mb"');
+    expect(flyToml).toContain('memory = "1024mb"');
   });
 });
 

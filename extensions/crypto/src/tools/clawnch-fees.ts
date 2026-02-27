@@ -29,7 +29,7 @@ export function createClawnchFeesTool() {
   return {
     name: 'clawnch_fees',
     label: 'Clawnch Fees',
-    ownerOnly: true,
+    ownerOnly: false,
     description:
       'Check and claim trading fee revenue from Clawnch-launched tokens. ' +
       'Every swap pays 1% LP fees — 80% goes to you as the deployer. ' +

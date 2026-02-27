@@ -67,7 +67,7 @@ const plugin = {
   register(api: any) {
     // ─── Register Tools (22 total) ────────────────────────────────
     // Core tools (13)
-    api.registerTool(createClawnchConnectTool());
+    api.registerTool(createClawnchConnectTool(api));
     api.registerTool(createDefiPriceTool());
     api.registerTool(createDefiBalanceTool());
     api.registerTool(createDefiSwapTool());
@@ -102,7 +102,9 @@ const plugin = {
     api.registerCommand(txCommand);
 
     // ─── Gateway Startup Hook ──────────────────────────────────────
-    // Initialize WalletConnect session at gateway boot
+    // Only init wallet at boot for private key mode (headless).
+    // WalletConnect init is deferred to the clawnchconnect tool to avoid
+    // double-init of WC Core which breaks the pairing handshake.
     api.on('gateway_start', async () => {
       const projectId = process.env.WALLETCONNECT_PROJECT_ID;
       const privateKey = process.env.CLAWNCHER_PRIVATE_KEY;
@@ -114,38 +116,26 @@ const plugin = {
         return;
       }
 
-      try {
-        const result = await initWalletService({
-          privateKey,
-          walletConnectProjectId: projectId,
-          rpcUrl: process.env.CLAWNCHER_RPC_URL,
-          network: (process.env.CLAWNCHER_NETWORK as 'mainnet' | 'sepolia') || 'mainnet',
-          sessionPath: process.env.WALLETCONNECT_SESSION
-            || `${process.env.HOME ?? ''}/.openclawnch/wc-session.json`,
-          onSessionChange: (state) => {
-            if (state.status === 'connected') {
-              api.logger?.info?.(`[crypto] Wallet connected: ${state.address}`);
-            } else if (state.status === 'disconnected') {
-              api.logger?.info?.('[crypto] Wallet disconnected');
-            }
-          },
-        });
-
-        if (result.mode === 'private_key') {
+      if (privateKey) {
+        try {
+          const result = await initWalletService({
+            privateKey,
+            rpcUrl: process.env.CLAWNCHER_RPC_URL,
+            network: (process.env.CLAWNCHER_NETWORK as 'mainnet' | 'sepolia') || 'mainnet',
+          });
           api.logger?.info?.(`[crypto] Wallet ready (private key mode): ${result.address}`);
-        } else if (result.pairingUri) {
-          api.logger?.info?.(
-            `[crypto] WalletConnect pairing URI generated. ` +
-            `The agent will present the QR code when a user connects.`
+        } catch (err) {
+          api.logger?.warn?.(
+            `[crypto] Private key wallet init failed: ${err instanceof Error ? err.message : String(err)}`
           );
-        } else if (result.address) {
-          api.logger?.info?.(`[crypto] Wallet session restored: ${result.address}`);
         }
-      } catch (err) {
-        api.logger?.warn?.(
-          `[crypto] Wallet initialization failed: ${err instanceof Error ? err.message : String(err)}`
-        );
+        return;
       }
+
+      api.logger?.info?.(
+        `[crypto] WalletConnect available (project ID configured). ` +
+        `Use the clawnchconnect tool to pair a wallet.`
+      );
     });
 
     // ─── Onboarding: Message Received Hook ─────────────────────────────

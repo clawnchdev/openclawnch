@@ -79,7 +79,7 @@ export function createHummingbotTool() {
   return {
     name: 'hummingbot',
     label: 'Hummingbot',
-    ownerOnly: true,
+    ownerOnly: false,
     description:
       'Control Hummingbot market-making bots. Place orders, manage executors, ' +
       'deploy bots with strategies, check portfolio, get market data, run backtests. ' +

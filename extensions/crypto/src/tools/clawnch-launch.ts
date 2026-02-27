@@ -38,7 +38,7 @@ export function createClawnchLaunchTool() {
   return {
     name: 'clawnch_launch',
     label: 'Clawnch Launch',
-    ownerOnly: true,
+    ownerOnly: false,
     description:
       'Deploy a new ERC-20 token on Base via the Clawnch launchpad. ' +
       'Creates a Uniswap V4 pool with MEV protection and fee distribution. ' +

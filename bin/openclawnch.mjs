@@ -53,8 +53,12 @@ function ensureCryptoExtension() {
 
   // Enable the plugin entry
   if (!config.plugins.entries) config.plugins.entries = {};
-  if (!config.plugins.entries['@clawnch/openclaw-crypto']) {
-    config.plugins.entries['@clawnch/openclaw-crypto'] = { enabled: true };
+  // Clean up old scoped key if present
+  if (config.plugins.entries['@clawnch/openclaw-crypto']) {
+    delete config.plugins.entries['@clawnch/openclaw-crypto'];
+  }
+  if (!config.plugins.entries['openclaw-crypto']) {
+    config.plugins.entries['openclaw-crypto'] = { enabled: true };
   }
 
   // Ensure crypto skills are discoverable

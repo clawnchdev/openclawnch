@@ -20,7 +20,7 @@ describe('permit2 tool', () => {
   it('has correct metadata', () => {
     expect(tool.name).toBe('permit2');
     expect(tool.label).toBe('Permit2');
-    expect(tool.ownerOnly).toBe(true);
+    expect(tool.ownerOnly).toBe(false);
     expect(tool.parameters.type).toBe('object');
     expect(tool.parameters.properties.action).toBeDefined();
     expect(typeof tool.execute).toBe('function');
@@ -102,7 +102,7 @@ describe('cost_basis tool', () => {
   it('has correct metadata', () => {
     expect(tool.name).toBe('cost_basis');
     expect(tool.label).toBe('Cost Basis');
-    expect(tool.ownerOnly).toBe(true);
+    expect(tool.ownerOnly).toBe(false);
     expect(tool.parameters.type).toBe('object');
     expect(typeof tool.execute).toBe('function');
   });

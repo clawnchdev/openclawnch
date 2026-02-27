@@ -19,7 +19,7 @@ describe('transfer tool', () => {
   it('has correct metadata', () => {
     expect(tool.name).toBe('transfer');
     expect(tool.label).toBe('Transfer');
-    expect(tool.ownerOnly).toBe(true);
+    expect(tool.ownerOnly).toBe(false);
     expect(tool.parameters.type).toBe('object');
     expect(tool.parameters.properties.action).toBeDefined();
     expect(tool.parameters.properties.to).toBeDefined();
@@ -94,7 +94,7 @@ describe('liquidity tool', () => {
   it('has correct metadata', () => {
     expect(tool.name).toBe('liquidity');
     expect(tool.label).toBe('Liquidity');
-    expect(tool.ownerOnly).toBe(true);
+    expect(tool.ownerOnly).toBe(false);
     expect(tool.parameters.type).toBe('object');
     expect(typeof tool.execute).toBe('function');
   });
@@ -155,7 +155,7 @@ describe('wayfinder tool', () => {
   it('has correct metadata', () => {
     expect(tool.name).toBe('wayfinder');
     expect(tool.label).toBe('Wayfinder');
-    expect(tool.ownerOnly).toBe(true);
+    expect(tool.ownerOnly).toBe(false);
     expect(tool.parameters.type).toBe('object');
     expect(typeof tool.execute).toBe('function');
   });

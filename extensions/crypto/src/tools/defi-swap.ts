@@ -56,7 +56,7 @@ export function createDefiSwapTool() {
   return {
     name: 'defi_swap',
     label: 'DeFi Swap',
-    ownerOnly: true,
+    ownerOnly: false,
     description:
       'Swap tokens on Base via DEX aggregator. ' +
       'Get quotes with price impact and gas estimates, then execute swaps. ' +

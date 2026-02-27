@@ -150,7 +150,7 @@ export function createCostBasisTool() {
   return {
     name: 'cost_basis',
     label: 'Cost Basis',
-    ownerOnly: true,
+    ownerOnly: false,
     description:
       'Track trade cost basis and calculate P&L. Records buy/sell prices, computes ' +
       'unrealized/realized profit using FIFO. Use record_trade to log trades, ' +

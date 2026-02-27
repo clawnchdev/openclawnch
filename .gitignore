@@ -27,6 +27,10 @@ npm-debug.log*
 # Coverage
 coverage/
 
+# Deploy artifacts (generated, contain app-specific config)
+deploy/fly.toml
+deploy/openclawnch.tgz
+
 # Package lock (using npm)
 # yarn.lock
 # pnpm-lock.yaml

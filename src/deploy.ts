@@ -30,8 +30,8 @@ const FLY_GQL = 'https://api.fly.io/graphql';
 const TELEGRAM_API = 'https://api.telegram.org';
 const IMAGE = 'ghcr.io/openclawnch/telegram:latest';
 const DEFAULT_REGION = 'iad';
-const DEFAULT_VM_SIZE = 'shared-cpu-1x';
-const DEFAULT_MEMORY_MB = 512;
+const DEFAULT_VM_SIZE = 'shared-cpu-2x';
+const DEFAULT_MEMORY_MB = 2048;
 const VOLUME_SIZE_GB = 1;
 const INTERNAL_PORT = 18789;
 const WEBHOOK_PATH = '/telegram-webhook';
@@ -119,7 +119,7 @@ async function flyFetch(
 
 async function validateFlyToken(token: string): Promise<void> {
   try {
-    await flyFetch('/apps', token);
+    await flyFetch('/apps?org_slug=personal', token);
   } catch (err) {
     throw new Error(
       `Invalid Fly token. Get one at https://fly.io/user/personal_access_tokens\n  ${(err as Error).message}`,
@@ -205,7 +205,7 @@ async function createApp(
     });
   } catch (err) {
     const msg = (err as Error).message;
-    if (msg.includes('already exists')) {
+    if (msg.includes('already') || msg.includes('taken')) {
       log('App already exists, reusing.');
       return;
     }
@@ -353,7 +353,7 @@ function buildMachineConfig(
       env,
       guest: {
         cpu_kind: 'shared',
-        cpus: 1,
+        cpus: 2,
         memory_mb: config.memoryMb,
       },
       services: [
@@ -364,11 +364,11 @@ function buildMachineConfig(
             {
               port: 443,
               handlers: ['tls', 'http'],
-              force_https: true,
             },
             {
               port: 80,
               handlers: ['http'],
+              force_https: true,
             },
           ],
           autostart: true,
@@ -386,8 +386,9 @@ function buildMachineConfig(
           type: 'http',
           port: INTERNAL_PORT,
           path: '/healthz',
-          interval: '10s',
-          timeout: '3s',
+          interval: '15s',
+          timeout: '5s',
+          grace_period: '90s',
         },
       },
       // Mount the volume by ID — not by name.
@@ -408,7 +409,7 @@ async function waitForHealth(
   appName: string,
   token: string,
   machineId: string,
-  timeoutMs = 120_000,
+  timeoutMs = 300_000,
 ): Promise<void> {
   const start = Date.now();
   const healthUrl = `https://${appName}.fly.dev/healthz`;
@@ -458,7 +459,7 @@ function printUsage(): void {
 
   Optional:
     --region           Fly.io region (default: iad)
-    --memory           Machine memory in MB (default: 512)
+    --memory           Machine memory in MB (default: 2048)
     --wc-project-id    WalletConnect project ID (uses default if omitted)
     --app-name         Resume a partial deploy with this app name
     --help             Show this message
@@ -471,7 +472,7 @@ function printUsage(): void {
     5. OpenClaw's gateway registers the Telegram webhook on startup
     6. Your bot is live — message it on Telegram!
 
-  Cost: ~$1-2/month (machine suspends when idle, resumes in <1s)
+  Cost: ~$3-5/month (machine suspends when idle, resumes in <1s)
 
   Resuming a partial deploy:
     npx openclawnch deploy --app-name openclawnch-a1b2c3 [same args]
@@ -653,7 +654,7 @@ export async function deploy(config: DeployConfig): Promise<void> {
   console.log(`    fly ssh console -a ${appName}     # SSH access`);
   console.log(`    fly apps destroy ${appName}       # Tear everything down`);
   console.log('');
-  console.log('  Cost: ~$1-2/month (auto-suspends when idle, <1s wake)');
+  console.log('  Cost: ~$3-5/month (auto-suspends when idle, <1s wake)');
   console.log('');
   console.log(`  To resume a failed deploy with this app:`);
   console.log(`    npx openclawnch deploy --app-name ${appName} [same args]`);

@@ -68,7 +68,7 @@ export function createPermit2Tool() {
   return {
     name: 'permit2',
     label: 'Permit2',
-    ownerOnly: true,
+    ownerOnly: false,
     description:
       'Manage Uniswap Permit2 token allowances. Check, approve, or revoke Permit2 ' +
       'allowances for DeFi protocols. Use "lockdown" for emergency revocation.',

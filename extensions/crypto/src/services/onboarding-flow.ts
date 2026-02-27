@@ -2,7 +2,7 @@
  * Teleost Bot Onboarding Flow — first-run tutorial state machine.
  *
  * Detects new users and walks them through:
- * 1. Welcome + wallet connect (WalletConnect QR)
+ * 1. Welcome + wallet connect (WalletConnect link)
  * 2. Show balance, explain capabilities
  * 3. Guided first read action ("What's trending?")
  * 4. Guided first write action ("Swap 0.001 ETH for USDC") + explain approval
@@ -41,7 +41,7 @@ export interface OnboardingMessage {
   text: string;
   /** Telegram parse mode */
   parseMode?: 'HTML' | 'Markdown';
-  /** If true, include WalletConnect QR image */
+  /** If true, include WalletConnect link */
   showQr?: boolean;
   /** Suggested next action for the user */
   suggestion?: string;
@@ -92,7 +92,7 @@ I can check token prices, track your portfolio, execute swaps, manage liquidity 
 
 But first, let's connect your wallet so I can see your balances and propose transactions for you to approve.
 
-Tap the QR code below to scan with your wallet app (MetaMask, Rainbow, Coinbase Wallet, etc.)`;
+Tap the link below to connect your wallet app (MetaMask, Rainbow, Coinbase Wallet, etc.)`;
 
 const WALLET_CONNECTED_MESSAGE = (address: string, balance: string) =>
   `Wallet connected! ${address.slice(0, 6)}...${address.slice(-4)}
@@ -188,7 +188,7 @@ export class OnboardingFlow {
     return {
       text: WELCOME_MESSAGE,
       showQr: true,
-      suggestion: 'Scan the QR code with your wallet app',
+      suggestion: 'Tap the wallet connect link',
     };
   }
 
@@ -284,7 +284,7 @@ export class OnboardingFlow {
         return null; // let the connect command handle it
       }
       return {
-        text: "Let's connect your wallet first. Scan the QR code above, or type /connect for a new one.",
+        text: "Let's connect your wallet first. Tap the link above, or type /connect for a new one.",
         showQr: true,
       };
     }

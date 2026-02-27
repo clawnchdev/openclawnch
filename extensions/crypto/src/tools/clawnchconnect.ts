@@ -29,11 +29,38 @@ const ACTIONS = [
   'sign_message',
 ] as const;
 
+const WALLETS = [
+  'metamask',
+  'rainbow',
+  'coinbase',
+  'trust',
+  'zerion',
+  'uniswap',
+  'rabby',
+  'other',
+] as const;
+
+// Mobile wallet deep links — tappable on phone
+const WALLET_DEEPLINKS: Record<string, string> = {
+  metamask: 'https://metamask.app.link/wc?uri=',
+  rainbow: 'https://rnbwapp.com/wc?uri=',
+  coinbase: 'https://go.cb-w.com/wc?uri=',
+  trust: 'https://link.trustwallet.com/wc?uri=',
+  zerion: 'https://wallet.zerion.io/wc?uri=',
+  uniswap: 'https://uniswap.org/app/wc?uri=',
+};
+
+// Desktop/browser extension wallets — need raw URI to paste
+const DESKTOP_WALLETS = new Set(['rabby', 'other']);
+
 const ClawnchConnectSchema = Type.Object({
   action: stringEnum(ACTIONS, {
     description: 'The action to perform',
   }),
   // connect
+  wallet: Type.Optional(stringEnum(WALLETS, {
+    description: 'Which wallet app the user wants to connect. ASK THE USER which wallet they use before calling connect. Mobile: metamask, rainbow, coinbase, trust, zerion, uniswap. Desktop: rabby, other.',
+  })),
   project_id: Type.Optional(Type.String({
     description: 'WalletConnect project ID (if not set via env)',
   })),
@@ -60,14 +87,20 @@ const ClawnchConnectSchema = Type.Object({
   })),
 });
 
-export function createClawnchConnectTool() {
+/**
+ * @param api - OpenClawPluginApi instance (optional). When provided, the connect
+ *   action sends the WalletConnect link directly to the user via the channel,
+ *   bypassing LLM summarization which tends to drop URLs.
+ */
+export function createClawnchConnectTool(api?: any) {
   return {
     name: 'clawnchconnect',
     label: 'ClawnchConnect',
-    ownerOnly: true,
+    ownerOnly: false,
     description:
-      'Connect a mobile wallet for human-approved blockchain transactions. ' +
-      'Actions: connect (pair wallet via QR), status (check connection), ' +
+      'Connect a wallet for human-approved blockchain transactions. ' +
+      'IMPORTANT: For the connect action, you MUST ask the user which wallet app they use BEFORE calling this tool, then pass it as the wallet parameter. ' +
+      'Actions: connect (pair wallet — requires wallet param), status (check connection), ' +
       'disconnect, send_tx (submit transaction for approval), ' +
       'set_policy (configure auto-approval rules in natural language), ' +
       'sign_message (request signature).',
@@ -78,7 +111,7 @@ export function createClawnchConnectTool() {
 
       switch (action) {
         case 'connect':
-          return handleConnect(params);
+          return handleConnect(params, api);
         case 'status':
           return handleStatus();
         case 'disconnect':
@@ -98,10 +131,11 @@ export function createClawnchConnectTool() {
 
 // ─── Action Handlers ─────────────────────────────────────────────────────
 
-async function handleConnect(params: Record<string, unknown>) {
+async function handleConnect(params: Record<string, unknown>, api?: any) {
   const state = getWalletState();
+  console.log(`[clawnchconnect:connect] state: connected=${state.connected} mode=${state.mode} address=${state.address}`);
 
-  if (state.connected) {
+  if (state.connected && state.address) {
     return jsonResult({
       status: 'already_connected',
       address: state.address,
@@ -123,6 +157,7 @@ async function handleConnect(params: Record<string, unknown>) {
   }
 
   try {
+    console.log(`[clawnchconnect:connect] Calling initWalletService (fresh)`);
     const result = await initWalletService({
       privateKey,
       walletConnectProjectId: projectId,
@@ -131,6 +166,8 @@ async function handleConnect(params: Record<string, unknown>) {
       sessionPath: process.env.WALLETCONNECT_SESSION
         || `${process.env.HOME ?? ''}/.openclawnch/wc-session.json`,
     });
+
+    console.log(`[clawnchconnect:connect] initWalletService result: mode=${result.mode} hasUri=${!!result.pairingUri} hasAddress=${!!result.address}`);
 
     if (result.mode === 'private_key') {
       return jsonResult({
@@ -142,21 +179,8 @@ async function handleConnect(params: Record<string, unknown>) {
     }
 
     if (result.pairingUri) {
-      // Generate QR for the channel
-      let qrText = '';
-      try {
-        const { qrTerminal } = await import('@clawnch/sdk');
-        qrText = qrTerminal(result.pairingUri);
-      } catch {
-        // QR generation failed, just show the URI
-      }
-
-      return textResult(
-        `Scan this QR code with your wallet app (MetaMask, Rainbow, Coinbase Wallet, etc.):\n\n` +
-        (qrText ? `${qrText}\n\n` : '') +
-        `Or paste this URI manually:\n${result.pairingUri}\n\n` +
-        `Waiting for you to approve the connection on your phone...`
-      );
+      const wallet = readStringParam(params, 'wallet') || 'other';
+      return returnConnectLink(result.pairingUri, wallet);
     }
 
     if (result.address) {
@@ -168,10 +192,46 @@ async function handleConnect(params: Record<string, unknown>) {
       });
     }
 
-    return errorResult('Failed to establish wallet connection.');
+    return errorResult('WalletConnect failed to generate a pairing link. The relay server may be down. Try again in a minute.');
   } catch (err) {
-    return errorResult(`Connection failed: ${err instanceof Error ? err.message : String(err)}`);
+    const msg = err instanceof Error ? err.message : String(err);
+    console.log(`[clawnchconnect:connect] Error: ${msg}`);
+    return errorResult(`Connection failed: ${msg}`);
   }
+}
+
+/**
+ * Build a wallet-specific connect link and return it.
+ * Mobile wallets get a tappable deep link. Desktop/extension wallets get the raw wc: URI to paste.
+ */
+function returnConnectLink(pairingUri: string, wallet: string) {
+  const encodedUri = encodeURIComponent(pairingUri);
+
+  if (DESKTOP_WALLETS.has(wallet)) {
+    // Desktop/extension wallets — user copies the raw URI and pastes into wallet
+    console.log(`[clawnchconnect] Desktop wallet "${wallet}" — returning raw URI`);
+    return textResult(
+      `Copy this connection code and paste it in your wallet's WalletConnect input:\n\n` +
+      `${pairingUri}\n\n` +
+      `Expires in 5 minutes.`
+    );
+  }
+
+  // Mobile wallet — return tappable deep link
+  const deepLinkBase = WALLET_DEEPLINKS[wallet];
+  if (deepLinkBase) {
+    const deepLink = `${deepLinkBase}${encodedUri}`;
+    console.log(`[clawnchconnect] Deep link for "${wallet}" (${deepLink.length} chars)`);
+    return textResult(deepLink);
+  }
+
+  // Unknown wallet — return raw URI with instructions
+  console.log(`[clawnchconnect] Unknown wallet "${wallet}" — returning raw URI`);
+  return textResult(
+    `Copy this connection code and paste it in your wallet's WalletConnect scanner:\n\n` +
+    `${pairingUri}\n\n` +
+    `Expires in 5 minutes.`
+  );
 }
 
 async function handleStatus() {

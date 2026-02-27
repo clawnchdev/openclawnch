@@ -38,7 +38,7 @@ export function createTransferTool() {
   return {
     name: 'transfer',
     label: 'Transfer',
-    ownerOnly: true,
+    ownerOnly: false,
     description:
       'Send ETH or ERC-20 tokens to a recipient address. ' +
       'Use action "estimate" to preview gas costs and check balance, ' +

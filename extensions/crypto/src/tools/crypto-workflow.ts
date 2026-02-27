@@ -47,7 +47,7 @@ export function createCryptoWorkflowTool() {
   return {
     name: 'crypto_workflow',
     label: 'Crypto Workflow',
-    ownerOnly: true,
+    ownerOnly: false,
     description:
       'Multi-step crypto workflows that chain tools together with safety checks. ' +
       'Use "safe_swap" for audited token swaps, "launch_and_promote" for token launches ' +

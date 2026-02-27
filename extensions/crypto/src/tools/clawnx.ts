@@ -92,7 +92,7 @@ export function createClawnXTool() {
   return {
     name: 'clawnx',
     label: 'ClawnX (X/Twitter)',
-    ownerOnly: true,
+    ownerOnly: false,
     description:
       'X/Twitter integration: post tweets, threads, media. Engage with likes, retweets, bookmarks. ' +
       'Manage followers, lists, DMs. Monitor with streaming. Chain multiple actions together. ' +

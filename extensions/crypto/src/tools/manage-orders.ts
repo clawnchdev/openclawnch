@@ -127,7 +127,7 @@ export function createManageOrdersTool() {
   return {
     name: 'manage_orders',
     label: 'Manage Orders',
-    ownerOnly: true,
+    ownerOnly: false,
     description:
       'Create and manage conditional orders: limit buy/sell, stop-loss, take-profit, ' +
       'DCA, trailing stop, TWAP. Supports order chaining (e.g., buy then set stop-loss). ' +

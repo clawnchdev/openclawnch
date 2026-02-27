@@ -168,7 +168,7 @@ export async function initWalletService(config: WalletServiceConfig): Promise<{
 }
 
 /**
- * Wait for WalletConnect session to be established (after QR scan).
+ * Wait for WalletConnect session to be established (after wallet approval).
  */
 export async function waitForWalletSession(timeoutMs = 300_000): Promise<{
   address: Address;
