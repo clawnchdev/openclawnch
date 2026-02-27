@@ -47,6 +47,18 @@ describe('parseDeployArgs', () => {
     expect(config!.llmProvider).toBe('openai');
   });
 
+  it('detects OpenRouter provider from sk-or- key prefix', () => {
+    const config = parseDeployArgs([
+      '--telegram-token', '123456:ABC-test',
+      '--fly-token', 'FlyV1_test_token',
+      '--llm-key', 'sk-or-v1-test123',
+    ]);
+
+    expect(config).not.toBeNull();
+    expect(config!.llmProvider).toBe('openrouter');
+    expect(config!.llmKey).toBe('sk-or-v1-test123');
+  });
+
   it('applies default region and memory', () => {
     const config = parseDeployArgs([
       '--telegram-token', '123456:ABC-test',
@@ -212,6 +224,15 @@ describe('deploy artifacts', () => {
     expect(entrypoint).toContain('openclaw-clean.json');
   });
 
+  it('entrypoint.sh sets model config based on LLM provider', () => {
+    const entrypoint = readFileSync(join(deployDir, 'entrypoint.sh'), 'utf8');
+    expect(entrypoint).toContain('OPENCLAWNCH_LLM_PROVIDER');
+    // Must handle all three providers
+    expect(entrypoint).toContain('anthropic');
+    expect(entrypoint).toContain('openrouter');
+    expect(entrypoint).toContain('openai');
+  });
+
   it('entrypoint.sh starts openclaw gateway on port 18789 with lan bind and --allow-unconfigured', () => {
     const entrypoint = readFileSync(join(deployDir, 'entrypoint.sh'), 'utf8');
     expect(entrypoint).toContain('exec openclaw gateway --port 18789 --bind lan --allow-unconfigured');
@@ -336,9 +357,11 @@ describe('security properties', () => {
 
     expect(config).not.toContain('sk-ant-');
     expect(config).not.toContain('sk-proj-');
+    expect(config).not.toContain('sk-or-');
     expect(config).not.toContain('FlyV1');
     expect(config).not.toContain('ANTHROPIC_API_KEY');
     expect(config).not.toContain('OPENAI_API_KEY');
+    expect(config).not.toContain('OPENROUTER_API_KEY');
     expect(config).not.toContain('PRIVATE_KEY');
   });
 
@@ -347,6 +370,7 @@ describe('security properties', () => {
 
     expect(dockerfile).not.toContain('sk-ant-');
     expect(dockerfile).not.toContain('sk-proj-');
+    expect(dockerfile).not.toContain('sk-or-');
     expect(dockerfile).not.toContain('FlyV1');
 
     const envLines = dockerfile
@@ -355,6 +379,7 @@ describe('security properties', () => {
     for (const line of envLines) {
       expect(line).not.toContain('ANTHROPIC_API_KEY');
       expect(line).not.toContain('OPENAI_API_KEY');
+      expect(line).not.toContain('OPENROUTER_API_KEY');
       expect(line).not.toContain('TELEGRAM_BOT_TOKEN');
       expect(line).not.toContain('PRIVATE_KEY');
     }

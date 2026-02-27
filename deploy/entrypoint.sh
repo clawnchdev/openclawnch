@@ -113,14 +113,31 @@ export OPENCLAWNCH_TX_DIR="/workspace/.openclaw-state/tx"
 GATEWAY_TOKEN=$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')
 export OPENCLAW_GATEWAY_TOKEN="$GATEWAY_TOKEN"
 
-# Inject token into config so gateway reads it
+# Inject token and provider-specific model into config
 node -e "
   const fs = require('fs');
   const cfg = JSON.parse(fs.readFileSync('/root/.openclaw/openclaw.json', 'utf8'));
+
+  // Gateway auth token
   cfg.gateway = cfg.gateway || {};
   cfg.gateway.auth = cfg.gateway.auth || {};
   cfg.gateway.auth.token = process.env.OPENCLAW_GATEWAY_TOKEN;
+
+  // Set model based on LLM provider
+  const provider = process.env.OPENCLAWNCH_LLM_PROVIDER || 'anthropic';
+  cfg.agents = cfg.agents || {};
+  cfg.agents.defaults = cfg.agents.defaults || {};
+  cfg.agents.defaults.model = cfg.agents.defaults.model || {};
+
+  const models = {
+    anthropic: 'anthropic/claude-sonnet-4-20250514',
+    openrouter: 'openrouter/anthropic/claude-sonnet-4-20250514',
+    openai: 'openai/gpt-4o',
+  };
+  cfg.agents.defaults.model.primary = models[provider] || models.anthropic;
+
   fs.writeFileSync('/root/.openclaw/openclaw.json', JSON.stringify(cfg, null, 2));
+  console.log('LLM provider: ' + provider + ' → model: ' + cfg.agents.defaults.model.primary);
 "
 
 # ── Start OpenClaw gateway ──────────────────────────────────────────────

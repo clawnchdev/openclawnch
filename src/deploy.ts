@@ -42,7 +42,7 @@ interface DeployConfig {
   telegramToken: string;
   flyToken: string;
   llmKey: string;
-  llmProvider: 'anthropic' | 'openai';
+  llmProvider: 'anthropic' | 'openai' | 'openrouter';
   region: string;
   vmSize: string;
   memoryMb: number;
@@ -146,7 +146,7 @@ async function validateTelegramToken(token: string): Promise<TelegramBotInfo> {
 
 async function validateLlmKey(
   key: string,
-): Promise<'anthropic' | 'openai'> {
+): Promise<'anthropic' | 'openai' | 'openrouter'> {
   if (key.startsWith('sk-ant-')) {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -171,6 +171,19 @@ async function validateLlmKey(
     return 'anthropic';
   }
 
+  if (key.startsWith('sk-or-')) {
+    const response = await fetch('https://openrouter.ai/api/v1/models', {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+
+    if (response.status === 401) {
+      throw new Error(
+        'Invalid OpenRouter API key. Get one at https://openrouter.ai/keys',
+      );
+    }
+    return 'openrouter';
+  }
+
   if (key.startsWith('sk-')) {
     const response = await fetch('https://api.openai.com/v1/models', {
       headers: { Authorization: `Bearer ${key}` },
@@ -185,7 +198,7 @@ async function validateLlmKey(
   }
 
   throw new Error(
-    'Unrecognized LLM key format. Provide an Anthropic (sk-ant-...) or OpenAI (sk-...) key.',
+    'Unrecognized LLM key format. Provide an Anthropic (sk-ant-...), OpenRouter (sk-or-...), or OpenAI (sk-...) key.',
   );
 }
 
@@ -339,9 +352,14 @@ function buildMachineConfig(
 
   if (config.llmProvider === 'anthropic') {
     env['ANTHROPIC_API_KEY'] = config.llmKey;
+  } else if (config.llmProvider === 'openrouter') {
+    env['OPENROUTER_API_KEY'] = config.llmKey;
   } else {
     env['OPENAI_API_KEY'] = config.llmKey;
   }
+
+  // Tell the entrypoint which provider to configure in openclaw.json
+  env['OPENCLAWNCH_LLM_PROVIDER'] = config.llmProvider;
 
   if (config.wcProjectId) {
     env['WALLETCONNECT_PROJECT_ID'] = config.wcProjectId;
@@ -455,7 +473,7 @@ function printUsage(): void {
   Required:
     --telegram-token   Telegram bot token from @BotFather
     --fly-token        Fly.io personal access token
-    --llm-key          Anthropic (sk-ant-...) or OpenAI (sk-...) API key
+    --llm-key          Anthropic (sk-ant-...), OpenRouter (sk-or-...), or OpenAI (sk-...) API key
 
   Optional:
     --region           Fly.io region (default: iad)
@@ -522,7 +540,11 @@ export function parseDeployArgs(argv: string[]): DeployConfig | null {
       telegramToken,
       flyToken,
       llmKey,
-      llmProvider: llmKey.startsWith('sk-ant-') ? 'anthropic' : 'openai',
+      llmProvider: llmKey.startsWith('sk-ant-')
+        ? 'anthropic'
+        : llmKey.startsWith('sk-or-')
+          ? 'openrouter'
+          : 'openai',
       region: values.region ?? DEFAULT_REGION,
       vmSize: values['vm-size'] ?? DEFAULT_VM_SIZE,
       memoryMb: parseInt(values.memory ?? String(DEFAULT_MEMORY_MB), 10),
@@ -570,7 +592,8 @@ export async function deploy(config: DeployConfig): Promise<void> {
 
   log(`Checking ${config.llmProvider} API key...`);
   const provider = await validateLlmKey(config.llmKey);
-  log(`${provider === 'anthropic' ? 'Anthropic' : 'OpenAI'} key valid.`);
+  const providerName = provider === 'anthropic' ? 'Anthropic' : provider === 'openrouter' ? 'OpenRouter' : 'OpenAI';
+  log(`${providerName} key valid.`);
 
   // ── Step 2: Create Fly app + volume ────────────────────────────────────
   logStep(2, STEPS, `Creating Fly app: ${appName}`);

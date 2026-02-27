@@ -8,7 +8,7 @@
 #
 # Required env vars (set via Fly secrets, NOT baked into image):
 #   TELEGRAM_BOT_TOKEN   — from @BotFather
-#   ANTHROPIC_API_KEY    — or OPENAI_API_KEY
+#   ANTHROPIC_API_KEY    — or OPENROUTER_API_KEY or OPENAI_API_KEY
 #
 # Optional:
 #   WALLETCONNECT_PROJECT_ID — for mobile wallet pairing
