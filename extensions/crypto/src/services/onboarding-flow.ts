@@ -4,12 +4,15 @@
  * Detects new users and walks them through:
  * 1. Welcome — professional greeting with capabilities overview
  * 2. Persona selection — choose communication style (professional, degen, chill, etc.)
- * 3. Capabilities selection — pick which features to enable, see requirements
- * 4. Guided setup — walk through API key / config for selected capabilities
- * 5. Wallet connect — pair a mobile wallet via deep link
- * 6. First read action — try a read-only query
- * 7. First write action — try a transaction (user approves on phone)
- * 8. Complete — command reference card
+ * 3. Capabilities overview — show what's available, note what needs deploy-time config
+ * 4. Wallet connect — pair a mobile wallet via deep link
+ * 5. First read action — try a read-only query
+ * 6. First write action — try a transaction (user approves on phone)
+ * 7. Complete — command reference card
+ *
+ * All infrastructure config (LLM keys, WalletConnect project ID, etc.) is handled
+ * at deploy time via `openclawnch deploy`. This flow only handles user preferences
+ * and wallet pairing.
  *
  * State persists on volume so interrupted tutorials resume.
  */
@@ -23,7 +26,6 @@ export type OnboardingStep =
   | 'welcome'
   | 'choose_persona'
   | 'choose_capabilities'
-  | 'guided_setup'
   | 'connect_wallet'
   | 'wallet_connected'
   | 'first_read'
@@ -48,8 +50,10 @@ export interface CapabilityCategory {
   name: string;
   description: string;
   tools: string[];
-  /** Env vars or config needed. Empty = works out of the box. */
-  requirements: { name: string; description: string; howToGet: string }[];
+  /** Env var that must be set at deploy time for this to work. Empty = works out of the box. */
+  deployRequirement?: string;
+  /** Whether this capability requires a connected wallet. */
+  needsWallet: boolean;
 }
 
 export interface OnboardingState {
@@ -60,10 +64,6 @@ export interface OnboardingState {
   customPersona?: string;
   /** Selected capability category IDs. */
   selectedCapabilities?: string[];
-  /** Tracks which capability setups have been completed. */
-  completedSetups?: string[];
-  /** Index into selectedCapabilities for guided_setup step. */
-  setupIndex?: number;
   walletConnected: boolean;
   walletAddress?: string;
   firstReadDone: boolean;
@@ -128,82 +128,72 @@ export const CAPABILITIES: CapabilityCategory[] = [
     name: 'Wallet & Transactions',
     description: 'Connect your wallet, send tokens, approve transactions from your phone.',
     tools: ['clawnchconnect', 'transfer', 'permit2'],
-    requirements: [
-      {
-        name: 'WALLETCONNECT_PROJECT_ID',
-        description: 'WalletConnect cloud project ID for mobile wallet pairing',
-        howToGet: 'Sign up at cloud.walletconnect.com, create a project, and copy the Project ID.',
-      },
-    ],
+    deployRequirement: 'WALLETCONNECT_PROJECT_ID',
+    needsWallet: true,
   },
   {
     id: 'prices',
     name: 'Prices & Market Data',
     description: 'Real-time token prices, trending coins, market intelligence.',
     tools: ['defi_price', 'market_intel', 'herd_intelligence', 'analytics'],
-    requirements: [], // Works out of the box
+    needsWallet: false,
   },
   {
     id: 'portfolio',
     name: 'Portfolio & Balance Tracking',
     description: 'View balances, track cost basis, and monitor your positions.',
     tools: ['defi_balance', 'cost_basis', 'watch_activity', 'block_explorer'],
-    requirements: [], // Works with wallet connection
+    needsWallet: false,
   },
   {
     id: 'trading',
     name: 'DEX Trading & Swaps',
     description: 'Execute token swaps via DEX aggregators with best-price routing.',
     tools: ['defi_swap', 'manage_orders', 'crypto_workflow'],
-    requirements: [], // Needs wallet (covered by wallet category)
+    needsWallet: true,
   },
   {
     id: 'liquidity',
     name: 'Liquidity Provision',
     description: 'Manage Uniswap V3/V4 liquidity positions, add/remove liquidity.',
     tools: ['liquidity'],
-    requirements: [], // Needs wallet
+    needsWallet: true,
   },
   {
     id: 'launchpad',
     name: 'Token Launchpad (Clawnch)',
     description: 'Launch new tokens on Base with Uniswap V4 pools and manage fee revenue.',
     tools: ['clawnch_launch', 'clawnch_fees', 'clawnch_info'],
-    requirements: [], // Needs wallet
+    needsWallet: true,
   },
   {
     id: 'bridge',
     name: 'Cross-Chain Bridge',
     description: 'Bridge tokens across Ethereum, Base, Arbitrum, Optimism, and other chains.',
     tools: ['bridge'],
-    requirements: [], // Needs wallet
+    needsWallet: true,
   },
   {
     id: 'routing',
     name: 'Smart Routing (Wayfinder)',
     description: 'AI-powered route optimization across chains and protocols.',
     tools: ['wayfinder'],
-    requirements: [], // Works out of the box
+    needsWallet: false,
   },
   {
     id: 'clawnx',
     name: 'ClawnX Protocol',
     description: 'Interact with the ClawnX decentralized exchange protocol.',
     tools: ['clawnx'],
-    requirements: [], // Needs wallet
+    needsWallet: true,
   },
   {
     id: 'hummingbot',
     name: 'Market Making (Hummingbot)',
     description: 'Automated market making and trading bot management.',
     tools: ['hummingbot'],
-    requirements: [
-      {
-        name: 'HUMMINGBOT_URL',
-        description: 'URL of your running Hummingbot instance',
-        howToGet: 'Install Hummingbot (hummingbot.org), start it, and use the API URL (typically http://localhost:15888).',
-      },
-    ],
+    deployRequirement: 'HUMMINGBOT_URL',
+    needsWallet: false,
   },
 ];
 
@@ -274,7 +264,7 @@ function buildPersonaConfirmation(persona: PersonaId, customText?: string): stri
   if (persona === 'custom') {
     return `Got it. I'll communicate in your preferred style: "${customText}"
 
-Now let's set up your capabilities. Which of these would you like to enable?
+Now let's pick your capabilities. Which of these are you interested in?
 
 Reply with the numbers (e.g. "1, 2, 3, 5") or "all" for everything:
 
@@ -285,7 +275,7 @@ ${buildCapabilitiesList()}`;
   const label = p?.label.replace(/^\d+\.\s*/, '') ?? persona;
   return `${label} mode selected.
 
-Now let's set up your capabilities. Which of these would you like to enable?
+Now let's pick your capabilities. Which of these are you interested in?
 
 Reply with the numbers (e.g. "1, 2, 3, 5") or "all" for everything:
 
@@ -294,49 +284,47 @@ ${buildCapabilitiesList()}`;
 
 function buildCapabilitiesList(): string {
   return CAPABILITIES.map((c, i) => {
-    const reqs = c.requirements.length > 0
-      ? ` (requires setup)`
-      : ` (works immediately)`;
-    return `  ${i + 1}. ${c.name}${reqs}\n     ${c.description}`;
+    const status = getCapabilityStatus(c);
+    return `  ${i + 1}. ${c.name} ${status}\n     ${c.description}`;
   }).join('\n\n');
 }
 
-function buildSetupMessage(category: CapabilityCategory): string {
-  if (category.requirements.length === 0) {
-    return `${category.name} — No setup needed. This works out of the box.`;
-  }
-
-  const reqs = category.requirements.map(r =>
-    `  ${r.name}\n  ${r.description}\n  How to get it: ${r.howToGet}`
-  ).join('\n\n');
-
-  return `Setting up: ${category.name}
-
-This feature requires the following:
-
-${reqs}
-
-If you have the value ready, paste it now. If not, reply "skip" to set this up later, or "done" if it's already configured.`;
+/** Check if a capability's deploy-time requirement is satisfied. */
+function getCapabilityStatus(c: CapabilityCategory): string {
+  if (!c.deployRequirement) return '(ready)';
+  const envVal = process.env[c.deployRequirement];
+  if (envVal && envVal.length > 0) return '(ready)';
+  return '(needs deploy config)';
 }
 
-function buildSetupCompleteMessage(selectedIds: string[]): string {
-  const walletNeeded = selectedIds.some(id =>
-    ['wallet', 'trading', 'liquidity', 'launchpad', 'bridge', 'clawnx'].includes(id)
-  );
+function buildCapabilitiesConfirmation(selectedIds: string[]): string {
+  const selected = selectedIds
+    .map(id => CAPABILITIES.find(c => c.id === id))
+    .filter((c): c is CapabilityCategory => c != null);
 
-  if (walletNeeded) {
-    return `Configuration complete. Your selected capabilities are ready.
+  const ready = selected.filter(c => !c.deployRequirement || (process.env[c.deployRequirement] ?? '').length > 0);
+  const notConfigured = selected.filter(c => c.deployRequirement && !(process.env[c.deployRequirement] ?? '').length);
+  const walletNeeded = selected.some(c => c.needsWallet);
 
-Next step: connect your wallet. This lets me see your balances and propose transactions for you to approve on your phone.
+  let msg = `Selected ${selected.length} capabilities.`;
 
-Tap the link below to connect your wallet app (MetaMask, Rainbow, Coinbase Wallet, etc.), or type /connect.`;
+  if (ready.length > 0) {
+    msg += `\n\nReady to use now:\n${ready.map(c => `  - ${c.name}`).join('\n')}`;
   }
 
-  return `Configuration complete. Your selected capabilities are ready.
+  if (notConfigured.length > 0) {
+    msg += `\n\nNeeds deploy-time configuration:\n${notConfigured.map(c =>
+      `  - ${c.name} — requires ${c.deployRequirement}\n    (set via: fly secrets set ${c.deployRequirement}="..." -a <your-app>)`
+    ).join('\n')}`;
+  }
 
-You can connect a wallet later with /connect if you want transaction capabilities.
+  if (walletNeeded) {
+    msg += `\n\nNext step: connect your wallet. This lets me see your balances and propose transactions for you to approve on your phone.\n\nTap the link below to connect your wallet app (MetaMask, Rainbow, Coinbase Wallet, etc.), or type /connect.`;
+  } else {
+    msg += `\n\nYou can connect a wallet later with /connect if you want transaction capabilities.\n\nTry asking me something — for example: "What's the price of ETH?" or "What's trending on Base?"`;
+  }
 
-Try asking me something — for example: "What's the price of ETH?" or "What's trending on Base?"`;
+  return msg;
 }
 
 const WALLET_CONNECTED_MESSAGE = (address: string, balance: string) =>
@@ -518,6 +506,9 @@ export class OnboardingFlow {
 
   /**
    * Process a capability selection from the user.
+   * After selection, goes directly to wallet connect (if wallet capabilities selected)
+   * or first_read (if no wallet needed). No guided setup step — all infrastructure
+   * config is handled at deploy time.
    */
   onCapabilitiesSelected(message: string): OnboardingMessage | null {
     if (this.state.step !== 'choose_capabilities') return null;
@@ -531,37 +522,19 @@ export class OnboardingFlow {
     }
 
     this.state.selectedCapabilities = ids;
-    this.state.completedSetups = [];
     this.state.lastInteraction = Date.now();
 
-    // Find capabilities that need setup
-    const needsSetup = ids
-      .map(id => CAPABILITIES.find(c => c.id === id))
-      .filter((c): c is CapabilityCategory => c != null && c.requirements.length > 0);
-
-    if (needsSetup.length > 0) {
-      this.state.step = 'guided_setup';
-      this.state.setupIndex = 0;
-      saveState(this.state);
-
-      const first = needsSetup[0]!;
-      return {
-        text: `Selected ${ids.length} capabilities. ${needsSetup.length} need configuration.\n\n${buildSetupMessage(first)}`,
-        suggestion: 'Paste the value, or reply "skip" to set up later',
-      };
-    }
-
-    // No setup needed — go straight to wallet connect or complete
-    const walletNeeded = ids.some(id =>
-      ['wallet', 'trading', 'liquidity', 'launchpad', 'bridge', 'clawnx'].includes(id)
-    );
+    const walletNeeded = ids.some(id => {
+      const cap = CAPABILITIES.find(c => c.id === id);
+      return cap?.needsWallet ?? false;
+    });
 
     if (walletNeeded) {
       this.state.step = 'connect_wallet';
       saveState(this.state);
 
       return {
-        text: buildSetupCompleteMessage(ids),
+        text: buildCapabilitiesConfirmation(ids),
         showConnectLink: true,
         suggestion: 'Tap the link to connect your wallet',
       };
@@ -571,69 +544,7 @@ export class OnboardingFlow {
     saveState(this.state);
 
     return {
-      text: buildSetupCompleteMessage(ids),
-      suggestion: "What's the price of ETH?",
-    };
-  }
-
-  /**
-   * Process a guided setup response (API key paste, "skip", or "done").
-   */
-  onSetupResponse(message: string): OnboardingMessage | null {
-    if (this.state.step !== 'guided_setup') return null;
-
-    const lower = message.toLowerCase().trim();
-    const selectedIds = this.state.selectedCapabilities ?? [];
-    const needsSetup = selectedIds
-      .map(id => CAPABILITIES.find(c => c.id === id))
-      .filter((c): c is CapabilityCategory => c != null && c.requirements.length > 0);
-
-    const currentIndex = this.state.setupIndex ?? 0;
-
-    // Record completion (skip or done or pasted value)
-    if (currentIndex < needsSetup.length) {
-      const current = needsSetup[currentIndex]!;
-      if (lower !== 'skip') {
-        this.state.completedSetups = [...(this.state.completedSetups ?? []), current.id];
-      }
-    }
-
-    // Move to next capability that needs setup
-    const nextIndex = currentIndex + 1;
-    if (nextIndex < needsSetup.length) {
-      this.state.setupIndex = nextIndex;
-      this.state.lastInteraction = Date.now();
-      saveState(this.state);
-
-      return {
-        text: buildSetupMessage(needsSetup[nextIndex]!),
-        suggestion: 'Paste the value, or reply "skip"',
-      };
-    }
-
-    // All setups done — move to wallet connect or first read
-    this.state.lastInteraction = Date.now();
-
-    const walletNeeded = selectedIds.some(id =>
-      ['wallet', 'trading', 'liquidity', 'launchpad', 'bridge', 'clawnx'].includes(id)
-    );
-
-    if (walletNeeded) {
-      this.state.step = 'connect_wallet';
-      saveState(this.state);
-
-      return {
-        text: buildSetupCompleteMessage(selectedIds),
-        showConnectLink: true,
-        suggestion: 'Tap the link to connect your wallet',
-      };
-    }
-
-    this.state.step = 'first_read';
-    saveState(this.state);
-
-    return {
-      text: buildSetupCompleteMessage(selectedIds),
+      text: buildCapabilitiesConfirmation(ids),
       suggestion: "What's the price of ETH?",
     };
   }
@@ -722,11 +633,6 @@ export class OnboardingFlow {
     // Capability selection step
     if (this.state.step === 'choose_capabilities') {
       return this.onCapabilitiesSelected(message);
-    }
-
-    // Guided setup step
-    if (this.state.step === 'guided_setup') {
-      return this.onSetupResponse(message);
     }
 
     // If waiting for wallet connect, nudge

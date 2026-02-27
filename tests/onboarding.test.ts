@@ -34,8 +34,7 @@ afterEach(() => {
 function advanceToConnectWallet(flow: OnboardingFlow): void {
   flow.getWelcomeMessage(); // welcome → choose_persona
   flow.onPersonaSelected('1'); // choose_persona → choose_capabilities
-  flow.onCapabilitiesSelected('1, 2, 3'); // wallet has requirements → guided_setup
-  flow.onSetupResponse('skip'); // skip wallet setup → connect_wallet
+  flow.onCapabilitiesSelected('1, 2, 3'); // wallet selected → connect_wallet (no guided_setup)
 }
 
 // ── Helper: advance flow through persona + capabilities to reach first_read (no wallet) ──
@@ -147,25 +146,33 @@ describe('OnboardingFlow', () => {
     expect(flow.getState().selectedCapabilities).toHaveLength(CAPABILITIES.length);
   });
 
-  it('goes to connect_wallet when wallet capability selected (no extra setup needed)', () => {
+  it('goes to connect_wallet when wallet capability selected', () => {
     const flow = new OnboardingFlow('test-caps-wallet');
     flow.getWelcomeMessage();
     flow.onPersonaSelected('1');
 
-    // Select wallet + prices (wallet has requirements but prices doesn't)
-    // Wallet has WALLETCONNECT_PROJECT_ID requirement → guided_setup
     const msg = flow.onCapabilitiesSelected('1');
     expect(msg).not.toBeNull();
-    // Wallet category has requirements, so goes to guided_setup
-    expect(flow.currentStep).toBe('guided_setup');
+    // Wallet is needsWallet: true → goes directly to connect_wallet (no guided_setup)
+    expect(flow.currentStep).toBe('connect_wallet');
   });
 
-  it('goes to first_read when no wallet capabilities selected and no setup needed', () => {
+  it('goes to connect_wallet when trading capability selected (needs wallet)', () => {
+    const flow = new OnboardingFlow('test-caps-trading');
+    flow.getWelcomeMessage();
+    flow.onPersonaSelected('1');
+
+    const msg = flow.onCapabilitiesSelected('4'); // trading
+    expect(msg).not.toBeNull();
+    expect(flow.currentStep).toBe('connect_wallet');
+  });
+
+  it('goes to first_read when no wallet capabilities selected', () => {
     const flow = new OnboardingFlow('test-caps-no-wallet');
     flow.getWelcomeMessage();
     flow.onPersonaSelected('1');
 
-    // Select only prices (no wallet, no setup)
+    // Select only prices (no wallet needed)
     const msg = flow.onCapabilitiesSelected('2');
     expect(msg).not.toBeNull();
     expect(flow.currentStep).toBe('first_read');
@@ -191,60 +198,16 @@ describe('OnboardingFlow', () => {
     expect(flow.currentStep).toBe('choose_capabilities');
   });
 
-  // ── Guided Setup ──────────────────────────────────────────────────────
-
-  it('walks through setup for capabilities with requirements', () => {
-    const flow = new OnboardingFlow('test-setup');
+  it('shows deploy config info for unconfigured capabilities', () => {
+    const flow = new OnboardingFlow('test-caps-deploy-info');
     flow.getWelcomeMessage();
     flow.onPersonaSelected('1');
 
-    // Select wallet (has WALLETCONNECT_PROJECT_ID requirement) + hummingbot (has HUMMINGBOT_URL)
-    const msg = flow.onCapabilitiesSelected('1, 10');
+    // Hummingbot needs HUMMINGBOT_URL which is not set in test env
+    const msg = flow.onCapabilitiesSelected('10');
     expect(msg).not.toBeNull();
-    expect(msg!.text).toContain('WALLETCONNECT_PROJECT_ID');
-    expect(flow.currentStep).toBe('guided_setup');
-  });
-
-  it('advances through multiple setup steps', () => {
-    const flow = new OnboardingFlow('test-setup-multi');
-    flow.getWelcomeMessage();
-    flow.onPersonaSelected('1');
-
-    // Select wallet + hummingbot (both have requirements)
-    flow.onCapabilitiesSelected('1, 10');
-    expect(flow.currentStep).toBe('guided_setup');
-
-    // Complete first setup (wallet)
-    const msg = flow.onSetupResponse('some-project-id-123');
-    expect(msg).not.toBeNull();
+    expect(msg!.text).toContain('fly secrets set');
     expect(msg!.text).toContain('HUMMINGBOT_URL');
-    expect(flow.currentStep).toBe('guided_setup');
-  });
-
-  it('allows skipping setup steps', () => {
-    const flow = new OnboardingFlow('test-setup-skip');
-    flow.getWelcomeMessage();
-    flow.onPersonaSelected('1');
-
-    flow.onCapabilitiesSelected('1'); // wallet only
-    expect(flow.currentStep).toBe('guided_setup');
-
-    const msg = flow.onSetupResponse('skip');
-    expect(msg).not.toBeNull();
-    // After skipping wallet setup, should go to connect_wallet (since wallet was selected)
-    expect(flow.currentStep).toBe('connect_wallet');
-    expect(flow.getState().completedSetups).toEqual([]);
-  });
-
-  it('records completed setups', () => {
-    const flow = new OnboardingFlow('test-setup-complete');
-    flow.getWelcomeMessage();
-    flow.onPersonaSelected('1');
-
-    flow.onCapabilitiesSelected('1'); // wallet only
-    flow.onSetupResponse('my-project-id');
-
-    expect(flow.getState().completedSetups).toContain('wallet');
   });
 
   // ── Wallet Connection ─────────────────────────────────────────────────
@@ -347,17 +310,6 @@ describe('OnboardingFlow', () => {
     const msg = flow.processMessage('2, 3');
     expect(msg).not.toBeNull();
     expect(flow.getState().selectedCapabilities).toEqual(['prices', 'portfolio']);
-  });
-
-  it('processMessage routes to guided setup', () => {
-    const flow = new OnboardingFlow('test-msg-setup');
-    flow.getWelcomeMessage();
-    flow.onPersonaSelected('1');
-    flow.onCapabilitiesSelected('1'); // → guided_setup (wallet has requirements)
-
-    const msg = flow.processMessage('skip');
-    expect(msg).not.toBeNull();
-    expect(flow.currentStep).toBe('connect_wallet');
   });
 
   it('processMessage nudges wallet connect when waiting', () => {
@@ -464,7 +416,7 @@ describe('Capability definitions', () => {
       expect(c.name).toBeTruthy();
       expect(c.description).toBeTruthy();
       expect(c.tools.length).toBeGreaterThan(0);
-      expect(Array.isArray(c.requirements)).toBe(true);
+      expect(typeof c.needsWallet).toBe('boolean');
     }
   });
 
@@ -473,16 +425,36 @@ describe('Capability definitions', () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it('wallet and hummingbot categories have requirements', () => {
+  it('wallet and hummingbot categories have deploy requirements', () => {
     const wallet = CAPABILITIES.find(c => c.id === 'wallet');
     const hummingbot = CAPABILITIES.find(c => c.id === 'hummingbot');
-    expect(wallet?.requirements.length).toBeGreaterThan(0);
-    expect(hummingbot?.requirements.length).toBeGreaterThan(0);
+    expect(wallet?.deployRequirement).toBeTruthy();
+    expect(hummingbot?.deployRequirement).toBeTruthy();
   });
 
-  it('prices category works out of the box', () => {
+  it('prices category works out of the box (no deploy requirement)', () => {
     const prices = CAPABILITIES.find(c => c.id === 'prices');
-    expect(prices?.requirements).toHaveLength(0);
+    expect(prices?.deployRequirement).toBeUndefined();
+  });
+
+  it('wallet-requiring capabilities are correctly flagged', () => {
+    const walletCaps = CAPABILITIES.filter(c => c.needsWallet);
+    const walletIds = walletCaps.map(c => c.id);
+    expect(walletIds).toContain('wallet');
+    expect(walletIds).toContain('trading');
+    expect(walletIds).toContain('liquidity');
+    expect(walletIds).toContain('launchpad');
+    expect(walletIds).toContain('bridge');
+    expect(walletIds).toContain('clawnx');
+  });
+
+  it('non-wallet capabilities are correctly flagged', () => {
+    const nonWalletCaps = CAPABILITIES.filter(c => !c.needsWallet);
+    const nonWalletIds = nonWalletCaps.map(c => c.id);
+    expect(nonWalletIds).toContain('prices');
+    expect(nonWalletIds).toContain('portfolio');
+    expect(nonWalletIds).toContain('routing');
+    expect(nonWalletIds).toContain('hummingbot');
   });
 });
 
