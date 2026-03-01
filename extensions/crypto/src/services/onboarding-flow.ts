@@ -234,58 +234,89 @@ export function saveState(state: OnboardingState): void {
 
 // ── Messages ────────────────────────────────────────────────────────────────
 
-const WELCOME_MESSAGE = `Welcome. I'm your personal DeFi agent — an AI assistant with direct access to blockchain protocols, market data, and transaction execution.
+const WELCOME_MESSAGE = `Welcome. I'm OpenClawnch, your personal crypto assistant — an AI agent with direct, open-ended access to blockchain protocols, market data, and transaction execution.
 
 Here's what I can do:
 
-  Wallet & Transactions — Connect your phone wallet, send tokens, approve txs
-  Prices & Market Data — Real-time prices, trending tokens, market analysis
-  Portfolio Tracking — Balances, cost basis, on-chain activity
-  DEX Trading — Token swaps via aggregators with best-price routing
-  Liquidity — Manage Uniswap V3/V4 positions
-  Token Launchpad — Deploy new tokens on Base
-  Cross-Chain Bridge — Move assets between chains
-  Smart Routing — AI-optimized multi-chain routes
-  Market Making — Automated trading via Hummingbot
+  Wallet
+    Connect your phone wallet (MetaMask, Rainbow, Coinbase, Trust, Zerion, Uniswap)
+    Send tokens and ETH to any address
+    Gasless token approvals via Permit2
+    Every transaction goes to your phone for approval (or auto-sign in danger mode)
+
+  Prices & Market Intelligence
+    Real-time token prices from DexScreener and CoinGecko
+    Trending tokens, new pairs, and volume leaders
+    Whale activity tracking and smart money flows
+    Clawnch agent leaderboard and herd intelligence
+
+  Portfolio & On-Chain Analytics
+    ETH and ERC-20 balances with USD valuations
+    Cost basis tracking (auto-records your swaps)
+    On-chain activity monitoring for any address
+    Block explorer lookups (tx details, contract info)
+    Protocol-level analytics (TVL, volume, fees)
+
+  Trading
+    Token swaps via DEX aggregators with best-price routing
+    Limit orders and order management
+    Multi-step workflows (e.g. "buy X, set stop-loss, monitor")
+
+  Liquidity
+    Add/remove liquidity on Uniswap V3 and V4 pools
+    Manage concentrated liquidity positions and ranges
+
+  Token Launchpad
+    Deploy new ERC-20 tokens on Base via the Clawnch launchpad
+    Auto-create Uniswap V4 pool with dev buy
+    Claim LP trading fee revenue from launched tokens
+    Token info lookup for any Clawnch-launched token
+
+  Cross-Chain
+    Bridge tokens across Ethereum, Base, Arbitrum, Optimism, Polygon, and more
+    AI-optimized route planning across chains and protocols (Wayfinder)
+
+  Advanced
+    ClawnX protocol interaction
+    Automated market making via Hummingbot
+    Custom multi-step crypto workflows
 
 Before we begin, I'd like to know how you prefer me to communicate.
 
-Pick a style (reply with the number, name, or describe your own):
+Pick a style:
 
-  1. Professional — Clear, concise, business-like
-  2. Degen — CT native, crypto twitter energy
-  3. Chill — Relaxed, like texting a friend
-  4. Technical — Data-heavy, on-chain metrics
-  5. Mentor — Educational, explains as it goes
+  /professional — Clear, concise, business-like
+  /degen — CT native, crypto twitter energy
+  /chill — Relaxed, like texting a friend
+  /technical — Data-heavy, on-chain metrics
+  /mentor — Educational, explains as it goes
 
-Or just describe the tone you want in your own words.`;
+Or just type your own preferred tone.
+
+/skip — Skip onboarding`;
 
 function buildPersonaConfirmation(persona: PersonaId, customText?: string): string {
-  if (persona === 'custom') {
-    return `Got it. I'll communicate in your preferred style: "${customText}"
+  const intro = persona === 'custom'
+    ? `Got it. I'll communicate in your preferred style: "${customText}"`
+    : `${(PERSONAS.find(p => p.id === persona)?.label.replace(/^\d+\.\s*/, '') ?? persona)} mode selected.`;
 
-Now let's pick your capabilities. Which of these are you interested in?
+  return `${intro}
 
-Reply with the numbers (e.g. "1, 2, 3, 5") or "all" for everything:
+Now pick your capabilities:
 
-${buildCapabilitiesList()}`;
-  }
+${buildCapabilitiesList()}
 
-  const p = PERSONAS.find(p => p.id === persona);
-  const label = p?.label.replace(/^\d+\.\s*/, '') ?? persona;
-  return `${label} mode selected.
+/all — Enable everything
 
-Now let's pick your capabilities. Which of these are you interested in?
+Or type numbers (e.g. "1, 2, 3, 5")
 
-Reply with the numbers (e.g. "1, 2, 3, 5") or "all" for everything:
-
-${buildCapabilitiesList()}`;
+/skip — Skip and use defaults`;
 }
 
 function buildCapabilitiesList(): string {
   return CAPABILITIES.map((c, i) => {
     const status = getCapabilityStatus(c);
-    return `  ${i + 1}. ${c.name} ${status}\n     ${c.description}`;
+    return `  ${i + 1}. /cap_${c.id} — ${c.name} ${status}\n     ${c.description}`;
   }).join('\n\n');
 }
 
@@ -344,19 +375,21 @@ I'll prepare the transaction and send it to your phone wallet for approval. You 
 const FIRST_WRITE_DONE_MESSAGE = `Transaction confirmed. Every write operation goes to your wallet for approval. You propose, you decide.
 
 Command reference:
-  /connect    — Reconnect wallet
-  /wallet     — Balance and wallet info
-  /portfolio  — Full token portfolio
-  /tx         — Recent transactions
-  /policy     — Manage spending policies
-  /help       — All available commands
+  /connect        — Reconnect wallet
+  /wallet         — Balance and wallet info
+  /portfolio      — Full token portfolio
+  /tx             — Recent transactions
+  /policy         — Manage spending policies
+  /factoryreset   — Wipe all data and start over
+  /help           — All available commands
 
 Setup complete. Talk to me naturally — "What's the price of ETH?", "Show my portfolio", "Send 10 USDC to 0x...", or anything else.`;
 
 const SKIP_MESSAGE = `Onboarding skipped. You can configure everything later:
-  /connect — Pair wallet  |  /wallet — Balances
-  /portfolio — Holdings   |  /tx — History
-  /policy — Auto-approve  |  /help — All commands`;
+  /connect — Pair wallet      |  /wallet — Balances
+  /portfolio — Holdings       |  /tx — History
+  /policy — Auto-approve      |  /factoryreset — Start over
+  /help — All commands`;
 
 // ── Persona Parsing ─────────────────────────────────────────────────────────
 
@@ -487,8 +520,8 @@ export class OnboardingFlow {
     const choice = parsePersonaChoice(message);
     if (!choice) {
       return {
-        text: 'Please pick a communication style (1-5) or describe the tone you want in your own words.',
-        suggestion: 'Reply with a number or describe your preferred style',
+        text: 'Pick a communication style:\n\n  /professional  /degen  /chill  /technical  /mentor\n\nOr type your own preferred tone.',
+        suggestion: 'Tap a style or describe your own',
       };
     }
 
@@ -516,8 +549,8 @@ export class OnboardingFlow {
     const ids = parseCapabilityChoice(message);
     if (!ids) {
       return {
-        text: `Reply with the numbers of the capabilities you want (e.g. "1, 2, 3, 5") or "all" for everything.\n\n${buildCapabilitiesList()}`,
-        suggestion: 'Reply with numbers or "all"',
+        text: `Tap a capability to select it, or type numbers (e.g. "1, 2, 3, 5"):\n\n${buildCapabilitiesList()}\n\n/all — Enable everything`,
+        suggestion: 'Tap a capability or type numbers',
       };
     }
 
@@ -610,40 +643,16 @@ export class OnboardingFlow {
    * response. Returns null if no onboarding action is needed.
    */
   processMessage(message: string): OnboardingMessage | null {
-    const lower = message.toLowerCase().trim();
-
-    // Handle skip at any point
-    if (lower === '/skip-tutorial' || lower === '/skip') {
-      return this.skip();
-    }
-
     // Only intervene during active onboarding
     if (!this.isActive) return null;
 
-    // If still on welcome step, send the welcome
+    // Only intercept on the welcome step (first-ever message triggers the welcome).
+    // All other onboarding steps are driven by slash commands
+    // (/professional, /degen, /all, /skip, etc.) which are registered as
+    // OpenClaw commands and call back into this flow directly.
+    // Free-form text during onboarding passes through to the LLM normally.
     if (this.state.step === 'welcome') {
       return this.getWelcomeMessage();
-    }
-
-    // Persona selection step
-    if (this.state.step === 'choose_persona') {
-      return this.onPersonaSelected(message);
-    }
-
-    // Capability selection step
-    if (this.state.step === 'choose_capabilities') {
-      return this.onCapabilitiesSelected(message);
-    }
-
-    // If waiting for wallet connect, nudge
-    if (this.state.step === 'connect_wallet') {
-      if (lower.includes('/connect')) {
-        return null; // let the connect command handle it
-      }
-      return {
-        text: "Let's connect your wallet first. Tap the link above, or type /connect for a new one.",
-        showConnectLink: true,
-      };
     }
 
     return null;
