@@ -9,6 +9,7 @@
 
 import { Type } from '@sinclair/typebox';
 import { stringEnum, jsonResult, errorResult, readStringParam, readNumberParam } from '../lib/tool-helpers.js';
+import { checkToolConfig } from '../services/tool-config-service.js';
 
 const ACTIONS = [
   'status', 'portfolio', 'order', 'cancel_order', 'active_orders',
@@ -86,6 +87,10 @@ export function createHummingbotTool() {
       'Requires a running Hummingbot instance (set HUMMINGBOT_API_URL).',
     parameters: HummingbotSchema,
     execute: async (_toolCallId: string, args: unknown) => {
+      // Early check: is the tool configured?
+      const notReady = checkToolConfig('hummingbot');
+      if (notReady) return notReady;
+
       const p = args as Record<string, unknown>;
       const action = readStringParam(p, 'action', { required: true })!;
 

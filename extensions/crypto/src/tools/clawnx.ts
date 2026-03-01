@@ -10,6 +10,7 @@
 
 import { Type } from '@sinclair/typebox';
 import { stringEnum, jsonResult, errorResult, readStringParam, readNumberParam } from '../lib/tool-helpers.js';
+import { checkToolConfig } from '../services/tool-config-service.js';
 
 const ACTIONS = [
   // Content
@@ -99,6 +100,10 @@ export function createClawnXTool() {
       'Requires X API credentials (X_API_KEY, X_API_SECRET, X_ACCESS_TOKEN, X_ACCESS_TOKEN_SECRET).',
     parameters: ClawnXSchema,
     execute: async (_toolCallId: string, args: unknown) => {
+      // Early check: is the tool configured?
+      const notReady = checkToolConfig('clawnx');
+      if (notReady) return notReady;
+
       const p = args as Record<string, unknown>;
       const action = readStringParam(p, 'action', { required: true })!;
 

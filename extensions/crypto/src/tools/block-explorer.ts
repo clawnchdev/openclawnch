@@ -17,6 +17,7 @@
 
 import { Type } from '@sinclair/typebox';
 import { stringEnum, jsonResult, errorResult, readStringParam, readNumberParam } from '../lib/tool-helpers.js';
+import { checkToolConfig } from '../services/tool-config-service.js';
 
 const ACTIONS = ['tx_lookup', 'contract_source', 'gas_tracker', 'token_holders', 'internal_txs'] as const;
 const CHAINS = ['base', 'ethereum'] as const;
@@ -110,6 +111,10 @@ export function createBlockExplorerTool() {
       'contract source code, gas prices, token holders, and internal transactions.',
     parameters: BlockExplorerSchema,
     execute: async (_toolCallId: string, args: unknown) => {
+      // Early check: is the tool configured?
+      const notReady = checkToolConfig('block_explorer');
+      if (notReady) return notReady;
+
       const params = args as Record<string, unknown>;
       const action = readStringParam(params, 'action', { required: true })!;
 

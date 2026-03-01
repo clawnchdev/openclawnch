@@ -11,6 +11,7 @@
 
 import { Type } from '@sinclair/typebox';
 import { stringEnum, jsonResult, errorResult, readStringParam } from '../lib/tool-helpers.js';
+import { checkToolConfig } from '../services/tool-config-service.js';
 
 const ACTIONS = [
   'investigate', 'audit_token', 'validate_swap', 'validate_claim',
@@ -87,6 +88,10 @@ export function createHerdIntelligenceTool() {
       'Search contract source code. Track token flows. All read-only.',
     parameters: HerdSchema,
     execute: async (_toolCallId: string, args: unknown) => {
+      // Early check: is the tool configured?
+      const notReady = checkToolConfig('herd_intelligence');
+      if (notReady) return notReady;
+
       const p = args as Record<string, unknown>;
       const action = readStringParam(p, 'action', { required: true })!;
       const chain = (readStringParam(p, 'chain') || 'base') as 'base' | 'ethereum';
