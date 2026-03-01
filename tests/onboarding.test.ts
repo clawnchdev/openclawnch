@@ -58,10 +58,10 @@ describe('OnboardingFlow', () => {
     const msg = flow.getWelcomeMessage();
 
     expect(msg).not.toBeNull();
-    expect(msg!.text).toContain('DeFi agent');
-    expect(msg!.text).toContain('Professional');
-    expect(msg!.text).toContain('Degen');
-    expect(msg!.text).toContain('Chill');
+    expect(msg!.text).toContain('crypto assistant');
+    expect(msg!.text).toContain('/professional');
+    expect(msg!.text).toContain('/degen');
+    expect(msg!.text).toContain('/chill');
     expect(flow.currentStep).toBe('choose_persona');
   });
 
@@ -113,7 +113,7 @@ describe('OnboardingFlow', () => {
 
     const msg = flow.onPersonaSelected('hi');
     expect(msg).not.toBeNull();
-    expect(msg!.text).toContain('pick a communication style');
+    expect(msg!.text).toContain('Pick a communication style');
     expect(flow.currentStep).toBe('choose_persona');
   });
 
@@ -194,7 +194,7 @@ describe('OnboardingFlow', () => {
 
     const msg = flow.onCapabilitiesSelected('xyz');
     expect(msg).not.toBeNull();
-    expect(msg!.text).toContain('Reply with the numbers');
+    expect(msg!.text).toContain('Tap a capability to select it');
     expect(flow.currentStep).toBe('choose_capabilities');
   });
 
@@ -264,22 +264,23 @@ describe('OnboardingFlow', () => {
     expect(flow.isActive).toBe(false);
   });
 
-  it('processMessage handles /skip-tutorial', () => {
+  it('skip() sets state to skipped', () => {
     const flow = new OnboardingFlow('test-skip-tutorial');
     flow.getWelcomeMessage();
 
-    const msg = flow.processMessage('/skip-tutorial');
+    const msg = flow.skip();
     expect(msg).not.toBeNull();
     expect(flow.isActive).toBe(false);
   });
 
-  it('processMessage handles /skip', () => {
+  it('processMessage returns null for slash commands (handled by registered commands)', () => {
     const flow = new OnboardingFlow('test-skip-cmd');
     flow.getWelcomeMessage();
 
+    // processMessage now returns null for slash commands — they go through
+    // OpenClaw's command system and call flow.skip() etc. directly
     const msg = flow.processMessage('/skip');
-    expect(msg).not.toBeNull();
-    expect(flow.isActive).toBe(false);
+    expect(msg).toBeNull();
   });
 
   it('processMessage returns null for completed users', () => {
@@ -292,34 +293,34 @@ describe('OnboardingFlow', () => {
 
   // ── processMessage routing ────────────────────────────────────────────
 
-  it('processMessage routes to persona selection', () => {
+  it('processMessage returns null after welcome step (persona selection is via slash commands)', () => {
     const flow = new OnboardingFlow('test-msg-persona');
     flow.getWelcomeMessage(); // → choose_persona
 
+    // Free-form text during choose_persona passes through to LLM
     const msg = flow.processMessage('2');
+    expect(msg).toBeNull();
+    // Persona selection happens via /professional, /degen etc. commands
+    // which call flow.onPersonaSelected() directly
+  });
+
+  it('onPersonaSelected routes to capability selection', () => {
+    const flow = new OnboardingFlow('test-msg-caps');
+    flow.getWelcomeMessage();
+
+    // Direct call simulating /degen command
+    const msg = flow.onPersonaSelected('degen');
     expect(msg).not.toBeNull();
-    expect(msg!.text).toContain('Degen');
     expect(flow.currentStep).toBe('choose_capabilities');
   });
 
-  it('processMessage routes to capability selection', () => {
-    const flow = new OnboardingFlow('test-msg-caps');
-    flow.getWelcomeMessage();
-    flow.onPersonaSelected('1'); // → choose_capabilities
-
-    const msg = flow.processMessage('2, 3');
-    expect(msg).not.toBeNull();
-    expect(flow.getState().selectedCapabilities).toEqual(['prices', 'portfolio']);
-  });
-
-  it('processMessage nudges wallet connect when waiting', () => {
+  it('processMessage returns null for non-welcome steps (handled by LLM or commands)', () => {
     const flow = new OnboardingFlow('test-msg-nudge');
     advanceToConnectWallet(flow);
 
+    // Non-welcome-step messages pass through to LLM
     const msg = flow.processMessage('What is the price of ETH?');
-    expect(msg).not.toBeNull();
-    expect(msg!.text).toContain('wallet');
-    expect(msg!.showConnectLink).toBe(true);
+    expect(msg).toBeNull();
   });
 
   // ── processToolResult ─────────────────────────────────────────────────

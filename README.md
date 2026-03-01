@@ -1,205 +1,125 @@
 # OpenClawnch
 
-OpenClaw for crypto. The biggest open-source AI assistant, now it handles real money.
+Your personal crypto agent on Telegram. AI assistant with direct access to blockchain protocols, market data, and transaction execution.
 
-OpenClawnch is a thin wrapper around [OpenClaw](https://github.com/openclaw/openclaw) (229k stars) that adds crypto/DeFi capabilities via a standalone extension. Not a fork — a clean plugin that registers tools, commands, and skills through OpenClaw's plugin API.
+Built on [OpenClaw](https://github.com/openclaw/openclaw) — not a fork, a plugin.
 
-## Architecture
+## Setup
 
-Two npm packages, one repo:
+Paste the following into your AI coding agent (OpenCode, Claude Code, Cursor, etc.):
 
-| Package | Purpose |
-|---------|---------|
-| `openclawnch` | CLI wrapper — injects the crypto extension into OpenClaw's config, then delegates |
-| `@clawnch/openclaw-crypto` | Standalone extension — also works with vanilla OpenClaw via `openclaw extensions add` |
+```
+Set up OpenClawnch — a personal crypto Telegram bot deployed on Fly.io.
 
-The extension registers:
-- **12 agent tools** — wallet, prices, balances, swaps, launches, fees, market intel, hummingbot, orders, watcher, X/Twitter, herd intelligence
-- **3 slash commands** — `/wallet`, `/policy`, `/tx`
-- **4 skills** — ClawnchConnect, DeFi Trading, Clawnch Launchpad, Market Intel
-- **1 gateway hook** — auto-initializes WalletConnect at startup
+Here's what I need you to do:
 
-## Security Model: ClawnchConnect
+1. PREREQUISITES — make sure these are installed:
+   - Node.js 22+ (check: node --version)
+   - flyctl (install: curl -L https://fly.io/install.sh | sh)
+   - Docker Desktop (needs to be running for local builds)
 
-The agent never holds private keys. Every write transaction goes through one of two paths:
+2. FLY.IO ACCOUNT — if I don't have one:
+   - Run: fly auth signup
+   - Or if I have one: fly auth login
 
-1. **WalletConnect** (production) — TX approval on your phone via MetaMask/Rainbow/etc.
-2. **Private key** (testing) — set `CLAWNCHER_PRIVATE_KEY` for headless CI/testing
+3. TELEGRAM BOT — create one:
+   - Open Telegram, message @BotFather
+   - Send /newbot
+   - Pick a name and username
+   - Copy the bot token (looks like: 1234567890:ABCdefGHIjklMNOpqrsTUVwxyz)
 
-Spending policies let you auto-approve small transactions ("approve under 0.01 ETH, max 5/hour") while requiring manual approval for larger ones.
+4. LLM API KEY — I need one of:
+   - Anthropic: https://console.anthropic.com/settings/keys (starts with sk-ant-)
+   - OpenRouter: https://openrouter.ai/keys (starts with sk-or-)
+   - OpenAI: https://platform.openai.com/api-keys (starts with sk-)
 
-## Quick Start
+5. WALLETCONNECT PROJECT ID (optional, needed for wallet features):
+   - Go to https://cloud.reown.com
+   - Create a project, copy the Project ID
 
-```bash
-# Install globally
-npm install -g openclawnch
+6. CLONE AND DEPLOY:
+   git clone https://github.com/clawnch/openclawnch.git
+   cd openclawnch
+   pnpm install && pnpm build
+   npm run deploy:pack
 
-# Run (uses OpenClaw under the hood)
-openclawnch
+   cd deploy
+   cp fly.template.toml fly.toml
 
-# Or install the extension into existing OpenClaw
-openclaw extensions add @clawnch/openclaw-crypto
+   # Edit fly.toml: pick a unique app name (replace "openclawnch-tg")
+   # Then:
+   fly apps create <your-app-name>
+   fly volumes create workspace --region ewr --size 1 -a <your-app-name>
+
+   # Set secrets (paste the values from steps 3-5):
+   fly secrets set TELEGRAM_BOT_TOKEN="<your-bot-token>" -a <your-app-name>
+   fly secrets set ANTHROPIC_API_KEY="<your-api-key>" -a <your-app-name>
+   fly secrets set OPENCLAWNCH_LLM_PROVIDER=anthropic -a <your-app-name>
+   # If using OpenRouter instead:
+   # fly secrets set OPENROUTER_API_KEY="<your-key>" -a <your-app-name>
+   # fly secrets set OPENCLAWNCH_LLM_PROVIDER=openrouter -a <your-app-name>
+
+   # Optional:
+   fly secrets set WALLETCONNECT_PROJECT_ID="<your-project-id>" -a <your-app-name>
+
+   # Deploy:
+   fly deploy --local-only
+
+   # Wait ~60s for the gateway to boot, then message your bot on Telegram.
+   # You'll get a pairing code. Approve it:
+   fly ssh console -a <your-app-name> -C "openclaw pairing approve telegram <PAIRING_CODE>"
+
+7. DONE — message your bot. It will walk you through the rest.
+
+Cost: ~$12/month on Fly.io for a 24/7 instance. You pay your own LLM and Fly bills.
 ```
 
-## Environment Variables
+## What It Does
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `WALLETCONNECT_PROJECT_ID` | For WC mode | Get one at [cloud.reown.com](https://cloud.reown.com) |
-| `CLAWNCHER_PRIVATE_KEY` | For testing | Hex private key (0x...) for headless mode |
-| `CLAWNCHER_API_KEY` | For launches | API key for Clawnch deploy API. Get at [clawn.ch/agents](https://clawn.ch/agents) |
-| `CLAWNCHER_API_URL` | No | API base URL (default: https://clawn.ch) |
-| `CLAWNCHER_NETWORK` | No | `mainnet` or `sepolia` (default: mainnet) |
-| `HUMMINGBOT_API_URL` | For hummingbot | Hummingbot API URL (default: http://localhost:8000) |
-| `HUMMINGBOT_USERNAME` | For hummingbot | Hummingbot API username (default: admin) |
-| `HUMMINGBOT_PASSWORD` | For hummingbot | Hummingbot API password (default: admin) |
-| `X_API_KEY` | For clawnx | X/Twitter API key |
-| `X_API_SECRET` | For clawnx | X/Twitter API secret |
-| `X_ACCESS_TOKEN` | For clawnx | X/Twitter access token |
-| `X_ACCESS_TOKEN_SECRET` | For clawnx | X/Twitter access token secret |
-| `X_BEARER_TOKEN` | For clawnx | X/Twitter bearer token (optional) |
-| `HERD_ACCESS_TOKEN` | For herd | Herd Intelligence access token |
+22 tools across wallet management, DeFi trading, market intelligence, portfolio tracking, token launches, cross-chain bridging, and more. Full list shows up when you first message the bot.
 
-## Tools
-
-### `clawnchconnect` — Wallet Connection
-Connect your wallet, send transactions, manage spending policies, sign messages.
-- `connect` — Start WalletConnect pairing (shows QR code)
-- `status` — Check connection state
-- `disconnect` — End session
-- `send_tx` — Submit a transaction for approval
-- `set_policy` — Set spending auto-approval rules
-- `sign_message` — Sign an arbitrary message
-
-### `defi_price` — Token Prices
-Real-time prices from DexScreener with CoinGecko fallback.
-- `lookup` — Price by address
-- `search` — Search by name/symbol
-- `trending` — Trending tokens on Base
-
-### `defi_balance` — Wallet Balances
-Check ETH and ERC-20 balances.
-- `overview` — Full portfolio summary
-- `tokens` — All token balances
-- `eth` — ETH balance only
-
-### `defi_swap` — Token Swaps
-Swap any tokens on Base via 0x aggregator, routed through ClawnchConnect.
-- `quote` — Get price, impact, gas estimate
-- `execute` — Execute the swap
-
-### `clawnch_launch` — Token Deployment
-Deploy ERC-20 tokens via the Clawnch launchpad with Uniswap V4 pools, MEV protection, and fee distribution.
-
-### `clawnch_fees` — Fee Claims
-Check and claim LP trading fees from Clawnch-launched tokens (80/20 split).
-- `check` — See unclaimed fees
-- `claim` — Claim for specific token
-- `claim_all` — Claim all available fees
-
-### `market_intel` — Market Intelligence
-Trending tokens, new pairs, whale activity, token analysis, and leaderboards.
-
-### `hummingbot` — Market Making Bot Control
-Control Hummingbot instances: place orders, manage executors, deploy bots with strategies, get market data, run backtests.
-- `status` — Health check
-- `portfolio` — Balances and positions
-- `order` / `cancel_order` / `active_orders` — Trading
-- `executor` / `stop_executor` / `executors` — Executor management
-- `market_data` / `candles` / `orderbook` — Market data
-- `bot_deploy` / `bot_status` / `bot_stop` — Bot orchestration
-- `templates` / `backtest` — Strategy templates and backtesting
-- `gateway_status` / `gateway_start` / `gateway_stop` — DEX gateway
-
-### `manage_orders` — Conditional Orders
-Create and manage conditional orders with risk management.
-- 7 order types: `limit_buy`, `limit_sell`, `stop_loss`, `take_profit`, `dca`, `trailing_stop`, `twap`
-- Order chaining (e.g., buy then auto-set stop-loss)
-- Risk management: position sizing, drawdown circuit breaker, rate limiting
-- Actions: `create`, `list`, `cancel`, `check`, `executed`, `failed`, `pause`, `resume`, `risk`, `cleanup`
-
-### `watch_activity` — On-Chain Monitoring
-Monitor on-chain activity on Base. Read-only, no wallet needed.
-- `token_activity` — Full activity report (swaps + transfers + stats)
-- `recent_swaps` — Recent swaps for a pool
-- `recent_transfers` — Token transfers
-- `deployments` — Recent Clawnch token deployments
-
-### `clawnx` — X/Twitter Integration
-45+ actions for X/Twitter: post, engage, manage followers, DMs, lists, streaming.
-- Content: `post_tweet`, `post_thread`, `post_with_media`, `search`
-- Engagement: `like`, `retweet`, `bookmark`, and more
-- Social: `follow`, `block`, `mute`, `get_user`
-- Timelines: `get_timeline`, `home_timeline`, `get_mentions`
-- DMs: `send_dm`, `list_dms`
-- Lists: `create_list`, `list_tweets`, `list_members`
-- Streaming: `stream_start`, `stream_rules_set`
-- Orchestration: `action_chain` (chain multiple actions with PREV_TWEET_ID substitution)
-
-### `herd_intelligence` — On-Chain Intelligence
-Investigate contracts, transactions, wallets. Audit tokens. Validate swaps and fee claims. All read-only.
-- `investigate` — Auto-detect and analyze address or tx hash
-- `audit_token` — Token safety audit (rug pull, honeypot detection)
-- `validate_swap` — Check swap route viability
-- `validate_claim` — Verify fee claim profitability
-- `profile_counterparty` — Assess wallet trustworthiness
-- `search_code` — Search contract source code
-- `track_token` — Trace token flow for a holder
-- `bookmark` — Manage investigation bookmarks
-- `simulate` — Build HAL simulation expressions
-
-## Commands
+### Commands
 
 | Command | Description |
 |---------|-------------|
-| `/wallet` | Quick wallet status check |
-| `/policy` | View/manage spending policies |
-| `/tx` | View recent transaction history |
+| `/wallet` | Wallet status and balance |
+| `/connect` | Connect mobile wallet via WalletConnect |
+| `/tx` | Transaction history |
+| `/policy` | Spending auto-approval rules |
+| `/llm` | View or switch LLM model (e.g. `/llm sonnet`) |
+| `/mode` | Show current safety/signing mode |
+| `/safemode` | Agent confirms before acting (default) |
+| `/dangermode` | Agent acts immediately |
+| `/walletsign` | Transactions require phone approval (default) |
+| `/autosign` | Auto-sign with private key (if configured) |
+| `/professional` | Set communication style: business-like |
+| `/degen` | Set communication style: CT native |
+| `/chill` | Set communication style: casual |
+| `/technical` | Set communication style: data-heavy |
+| `/mentor` | Set communication style: educational |
+| `/skip` | Skip onboarding |
+| `/factoryreset` | Wipe all data and start over |
+
+### Security
+
+The agent never holds your private keys (unless you opt into `/autosign` mode with `CLAWNCHER_PRIVATE_KEY`). Default mode: every transaction goes to your phone wallet for approval via WalletConnect.
+
+### Architecture
+
+Two npm packages, one repo:
+
+- `openclawnch` — CLI wrapper + deploy tooling
+- `@clawnch/openclaw-crypto` — Standalone OpenClaw plugin (22 tools, 16+ commands, 20 skill docs, 8 services)
+
+Each user runs their own Fly.io instance with their own API keys. No shared infrastructure.
 
 ## Development
 
 ```bash
-# Install dependencies
 pnpm install
-
-# Type check
-npx tsc --noEmit
-
-# Build both packages
 pnpm build
-
-# Run tests
-pnpm test
-
-# Clean build artifacts
-pnpm clean
+pnpm test        # 273 tests
 ```
-
-## Project Structure
-
-```
-openclawnch/
-├── bin/openclawnch.mjs          # CLI entry point
-├── src/wrapper.ts               # Programmatic API
-├── extensions/crypto/
-│   ├── index.ts                 # Plugin registration
-│   ├── src/
-│   │   ├── tools/               # 12 agent tools
-│   │   ├── commands/            # 3 slash commands
-│   │   ├── services/            # WalletConnect service
-│   │   └── lib/                 # Shared types & helpers
-│   └── skills/                  # 4 SKILL.md files
-├── SOUL.md                      # Agent persona
-└── PLAN.md                      # Build spec
-```
-
-## Dependencies
-
-- **[@clawnch/sdk](https://www.npmjs.com/package/@clawnch/sdk)** — WalletConnectSigner, spending policies, session persistence
-- **[@clawnch/clawncher-sdk](https://www.npmjs.com/package/@clawnch/clawncher-sdk)** — Token deployment, swaps, fee claims, price feeds, orders, watcher, herd intelligence, hummingbot
-- **[@clawnch/clawnx](https://www.npmjs.com/package/@clawnch/clawnx)** — X/Twitter API client
-- **[viem](https://viem.sh)** — Ethereum client library
-- **[@sinclair/typebox](https://github.com/sinclairzx81/typebox)** — JSON schema for tool parameters (matches OpenClaw convention)
 
 ## License
 

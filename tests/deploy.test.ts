@@ -168,11 +168,11 @@ describe('deploy artifacts', () => {
     expect(dockerfile).toContain('chmod 700');
   });
 
-  it('entrypoint.sh blocks CLAWNCHER_PRIVATE_KEY', () => {
+  it('entrypoint.sh warns about CLAWNCHER_PRIVATE_KEY (autosign mode)', () => {
     const entrypoint = readFileSync(join(deployDir, 'entrypoint.sh'), 'utf8');
     expect(entrypoint).toContain('CLAWNCHER_PRIVATE_KEY');
-    expect(entrypoint).toContain('exit 1');
-    expect(entrypoint).toContain('SECURITY ERROR');
+    expect(entrypoint).toContain('WARNING');
+    expect(entrypoint).toContain('autosign');
   });
 
   it('entrypoint.sh also blocks PRIVATE_KEY', () => {
@@ -339,7 +339,7 @@ describe('deploy artifacts', () => {
 describe('security properties', () => {
   const deployDir = join(__dirname, '..', 'deploy');
 
-  it('entrypoint blocks both known private key env var names', () => {
+  it('entrypoint warns about both known private key env var names', () => {
     const entrypoint = readFileSync(join(deployDir, 'entrypoint.sh'), 'utf8');
 
     const clawnchBlock = entrypoint.indexOf('CLAWNCHER_PRIVATE_KEY');
@@ -348,8 +348,9 @@ describe('security properties', () => {
     expect(clawnchBlock).toBeGreaterThan(-1);
     expect(genericBlock).toBeGreaterThan(-1);
 
-    const exitCount = (entrypoint.match(/exit 1/g) ?? []).length;
-    expect(exitCount).toBeGreaterThanOrEqual(2);
+    // Entrypoint now warns instead of blocking (autosign mode)
+    const warningCount = (entrypoint.match(/WARNING/g) ?? []).length;
+    expect(warningCount).toBeGreaterThanOrEqual(2);
   });
 
   it('openclaw.json does not contain any API keys', () => {

@@ -156,7 +156,7 @@ async function validateLlmKey(
         'content-type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-opus-4-20250514',
         max_tokens: 1,
         messages: [{ role: 'user', content: 'hi' }],
       }),

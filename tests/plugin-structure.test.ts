@@ -9,7 +9,7 @@ describe('crypto plugin structure', () => {
     expect(typeof plugin.register).toBe('function');
   });
 
-  it('registers all 17 tools', () => {
+  it('registers all 27 tools', () => {
     const registered: string[] = [];
     const mockApi = {
       registerTool: vi.fn((tool: any) => registered.push(tool.name)),
@@ -20,7 +20,7 @@ describe('crypto plugin structure', () => {
 
     plugin.register(mockApi);
 
-    expect(mockApi.registerTool).toHaveBeenCalledTimes(22);
+    expect(mockApi.registerTool).toHaveBeenCalledTimes(27);
     // Original 7
     expect(registered).toContain('clawnchconnect');
     expect(registered).toContain('defi_price');
@@ -42,6 +42,13 @@ describe('crypto plugin structure', () => {
     expect(registered).toContain('liquidity');
     expect(registered).toContain('wayfinder');
     expect(registered).toContain('clawnch_info');
+    // Phase 5: Molten agent matching
+    expect(registered).toContain('molten');
+    // Phase 6: Bankr Agent API (4 new)
+    expect(registered).toContain('bankr_launch');
+    expect(registered).toContain('bankr_automate');
+    expect(registered).toContain('bankr_polymarket');
+    expect(registered).toContain('bankr_leverage');
   });
 
   it('registers all 3 commands', () => {
@@ -55,10 +62,46 @@ describe('crypto plugin structure', () => {
 
     plugin.register(mockApi);
 
-    expect(mockApi.registerCommand).toHaveBeenCalledTimes(3);
+    // 4 core + 1 reset_confirm + 5 persona + 10 cap + 1 skip + 5 mode + 9 connect (1 base + 8 wallets) + 1 model + 11 llm shortcuts + 1 reset + 1 molten + 2 bankr LLM (credits, usage) + 2 bankr agent (connect_bankr, automations) + 7 fly control (provider + 3 provider_X + flykeys, flystatus, flyrestart) + 1 setup = 61
+    expect(mockApi.registerCommand).toHaveBeenCalledTimes(61);
     expect(commands).toContain('wallet');
     expect(commands).toContain('policy');
     expect(commands).toContain('tx');
+    expect(commands).toContain('connect');
+    expect(commands).toContain('connect_metamask');
+    expect(commands).toContain('connect_rainbow');
+    expect(commands).toContain('connect_coinbase');
+    expect(commands).toContain('connect_trust');
+    expect(commands).toContain('connect_zerion');
+    expect(commands).toContain('connect_uniswap');
+    expect(commands).toContain('connect_rabby');
+    expect(commands).toContain('connect_other');
+    expect(commands).toContain('llm');
+    expect(commands).toContain('molten');
+    expect(commands).toContain('llmcredits');
+    expect(commands).toContain('llmcost');
+    expect(commands).toContain('connect_bankr');
+    expect(commands).toContain('automations');
+    expect(commands).toContain('factoryreset');
+    expect(commands).toContain('safemode');
+    expect(commands).toContain('professional');
+    // Fly control commands
+    expect(commands).toContain('provider');
+    expect(commands).toContain('provider_anthropic');
+    expect(commands).toContain('provider_bankr');
+    expect(commands).toContain('provider_openrouter');
+    expect(commands).toContain('flykeys');
+    expect(commands).toContain('flystatus');
+    expect(commands).toContain('flyrestart');
+    // Setup
+    expect(commands).toContain('setup');
+    // Model shortcuts
+    expect(commands).toContain('llm_opus');
+    expect(commands).toContain('llm_sonnet');
+    expect(commands).toContain('llm_haiku');
+    expect(commands).toContain('llm_gemini');
+    // Reset confirm
+    expect(commands).toContain('factoryreset_confirm');
   });
 
   it('registers gateway_start hook', () => {

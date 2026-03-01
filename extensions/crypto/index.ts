@@ -39,14 +39,41 @@ import { createBlockExplorerTool } from './src/tools/block-explorer.js';
 // Tools — Phase 4 (bridge aggregation)
 import { createBridgeTool } from './src/tools/bridge.js';
 
+// Tools — Phase 5 (Molten agent-to-agent matching)
+import { createMoltenTool } from './src/tools/molten.js';
+
+// Tools — Phase 6 (Bankr Agent API)
+import { createBankrLaunchTool } from './src/tools/bankr-launch.js';
+import { createBankrAutomateTool } from './src/tools/bankr-automate.js';
+import { createBankrPolymarketTool } from './src/tools/bankr-polymarket.js';
+import { createBankrLeverageTool } from './src/tools/bankr-leverage.js';
+
 // Commands
 import { walletCommand } from './src/commands/wallet-command.js';
 import { policyCommand } from './src/commands/policy-command.js';
 import { txCommand } from './src/commands/tx-command.js';
+import { resetCommand, resetConfirmCommand } from './src/commands/reset-command.js';
+import {
+  professionalCommand, degenCommand, chillCommand, technicalCommand, mentorCommand,
+  capAllCommand, capCommands, skipCommand,
+} from './src/commands/onboarding-commands.js';
+import {
+  safemodeCommand, dangermodeCommand, walletsignCommand, autosignCommand, modeCommand,
+} from './src/commands/mode-commands.js';
+import { connectCommand, walletConnectCommands, setConnectCommandApi, connectBankrCommand } from './src/commands/connect-command.js';
+import { modelCommand, llmShortcutCommands } from './src/commands/model-command.js';
+import { moltenCommand } from './src/commands/molten-command.js';
+import { creditsCommand, usageCommand, automationsCommand } from './src/commands/bankr-commands.js';
+import {
+  providerCommand, providerAnthropicCommand, providerBankrCommand, providerOpenrouterCommand,
+  flykeysCommand, flystatusCommand, flyrestartCommand,
+} from './src/commands/fly-commands.js';
+import { setupCommand } from './src/commands/setup-command.js';
+import { getUserMode } from './src/services/mode-service.js';
 
 // Services
-import { initWalletService } from './src/services/walletconnect-service.js';
-import { getOnboardingFlow, isNewUser } from './src/services/onboarding-flow.js';
+import { initWalletService, getWalletState as getWalletStateFn } from './src/services/walletconnect-service.js';
+import { getOnboardingFlow, isNewUser, type OnboardingMessage } from './src/services/onboarding-flow.js';
 import { recordSwapTrade } from './src/tools/cost-basis.js';
 
 /**
@@ -65,7 +92,7 @@ const plugin = {
   version: '0.1.0',
 
   register(api: any) {
-    // ─── Register Tools (22 total) ────────────────────────────────
+    // ─── Register Tools (27 total) ────────────────────────────────
     // Core tools (13)
     api.registerTool(createClawnchConnectTool(api));
     api.registerTool(createDefiPriceTool());
@@ -96,10 +123,79 @@ const plugin = {
     // Phase 4 tools (1) — cross-chain bridge
     api.registerTool(createBridgeTool());
 
+    // Phase 5 tools (1) — Molten agent-to-agent matching
+    api.registerTool(createMoltenTool());
+
+    // Phase 6 tools (4) — Bankr Agent API (launch, automate, polymarket, leverage)
+    api.registerTool(createBankrLaunchTool());
+    api.registerTool(createBankrAutomateTool());
+    api.registerTool(createBankrPolymarketTool());
+    api.registerTool(createBankrLeverageTool());
+
     // ─── Register Chat Commands ────────────────────────────────────
     api.registerCommand(walletCommand);
     api.registerCommand(policyCommand);
     api.registerCommand(txCommand);
+    api.registerCommand(resetCommand);
+    api.registerCommand(resetConfirmCommand);
+
+    // Onboarding: persona selection
+    api.registerCommand(professionalCommand);
+    api.registerCommand(degenCommand);
+    api.registerCommand(chillCommand);
+    api.registerCommand(technicalCommand);
+    api.registerCommand(mentorCommand);
+
+    // Onboarding: capability selection
+    api.registerCommand(capAllCommand);
+    for (const cmd of capCommands) {
+      api.registerCommand(cmd);
+    }
+
+    // Onboarding: skip
+    api.registerCommand(skipCommand);
+
+    // Mode: safety and signing
+    api.registerCommand(safemodeCommand);
+    api.registerCommand(dangermodeCommand);
+    api.registerCommand(walletsignCommand);
+    api.registerCommand(autosignCommand);
+    api.registerCommand(modeCommand);
+
+    // Wallet connect (direct slash commands, not routed through LLM)
+    // /connect shows menu, /connect_metamask etc. initiate pairing
+    setConnectCommandApi(api);
+    api.registerCommand(connectCommand);
+    for (const cmd of walletConnectCommands) {
+      api.registerCommand(cmd);
+    }
+
+    // Model switching
+    api.registerCommand(modelCommand);
+    for (const cmd of llmShortcutCommands) {
+      api.registerCommand(cmd);
+    }
+
+    // Molten status
+    api.registerCommand(moltenCommand);
+
+    // Bankr LLM Gateway + Agent API
+    api.registerCommand(creditsCommand);
+    api.registerCommand(usageCommand);
+    api.registerCommand(connectBankrCommand);
+    api.registerCommand(automationsCommand);
+
+    // Fly.io runtime control (provider switching, secrets, restart)
+    api.registerCommand(providerCommand);
+    api.registerCommand(providerAnthropicCommand);
+    api.registerCommand(providerBankrCommand);
+    api.registerCommand(providerOpenrouterCommand);
+    api.registerCommand(flykeysCommand);
+    api.registerCommand(flystatusCommand);
+    api.registerCommand(flyrestartCommand);
+
+    // Setup / configuration status
+    api.registerCommand(setupCommand);
 
     // ─── Gateway Startup Hook ──────────────────────────────────────
     // Only init wallet at boot for private key mode (headless).
@@ -109,9 +205,11 @@ const plugin = {
       const projectId = process.env.WALLETCONNECT_PROJECT_ID;
       const privateKey = process.env.CLAWNCHER_PRIVATE_KEY;
 
-      if (!projectId && !privateKey) {
+      const bankrApiKey = process.env.BANKR_API_KEY;
+
+      if (!projectId && !privateKey && !bankrApiKey) {
         api.logger?.info?.(
-          '[crypto] No wallet configured. Set WALLETCONNECT_PROJECT_ID or CLAWNCHER_PRIVATE_KEY to enable write operations.'
+          '[crypto] No wallet configured. Set WALLETCONNECT_PROJECT_ID, CLAWNCHER_PRIVATE_KEY, or BANKR_API_KEY to enable write operations.'
         );
         return;
       }
@@ -132,29 +230,96 @@ const plugin = {
         return;
       }
 
-      api.logger?.info?.(
-        `[crypto] WalletConnect available (project ID configured). ` +
-        `Use the clawnchconnect tool to pair a wallet.`
-      );
+      if (projectId) {
+        api.logger?.info?.(
+          `[crypto] WalletConnect available (project ID configured). ` +
+          `Use the clawnchconnect tool to pair a wallet.`
+        );
+        return;
+      }
+
+      // Mode 3: Bankr (auto-connect at boot when no other wallet is configured)
+      if (bankrApiKey) {
+        try {
+          const result = await initWalletService({ bankrApiKey });
+          if (result.mode === 'bankr') {
+            api.logger?.info?.(
+              `[crypto] Bankr wallet ready: ${result.address}${result.solAddress ? ` (+ Solana: ${result.solAddress})` : ''}`
+            );
+          } else {
+            api.logger?.warn?.('[crypto] Bankr wallet init returned unexpected mode');
+          }
+        } catch (err) {
+          api.logger?.warn?.(
+            `[crypto] Bankr wallet init failed: ${err instanceof Error ? err.message : String(err)}`
+          );
+        }
+      }
     });
 
-    // ─── Onboarding: Message Received Hook ─────────────────────────────
-    // Intercepts first message from new Telegram users to start the tutorial.
-    api.on('message_received', (event: any) => {
+    // ─── Onboarding State Tracking ──────────────────────────────────────
+    // Track which conversations are currently being handled by onboarding
+    // so the message_sending hook can cancel the LLM response.
+    const onboardingHandledConversations = new Set<string>();
+
+    /** Send an onboarding message directly to a Telegram chat. */
+    async function sendOnboardingMessage(chatId: string, msg: OnboardingMessage): Promise<void> {
       try {
-        const userId = event?.userId ?? event?.context?.userId;
+        const sendFn = api.runtime?.channel?.telegram?.sendMessageTelegram;
+        if (!sendFn) {
+          api.logger?.warn?.('[crypto] sendMessageTelegram not available on runtime');
+          return;
+        }
+        await sendFn(chatId, msg.text, { accountId: 'default' });
+      } catch (err) {
+        api.logger?.warn?.(
+          `[crypto] Failed to send onboarding message: ${err instanceof Error ? err.message : String(err)}`
+        );
+      }
+    }
+
+    // ─── Onboarding: Message Received Hook ─────────────────────────────
+    // Detects new/in-progress onboarding users and sends the onboarding
+    // response directly via Telegram API (bypassing the LLM). Sets a flag
+    // so message_sending can cancel the LLM's response.
+    //
+    // Hook signature: (event: PluginHookMessageReceivedEvent, ctx: PluginHookMessageContext) => void
+    // event.from = sender ID, event.content = message text
+    // ctx.channelId = "telegram", ctx.conversationId = chat ID
+    api.on('message_received', async (event: any, ctx: any) => {
+      try {
+        const channelId = ctx?.channelId;
+        if (channelId !== 'telegram') return; // Only handle Telegram
+
+        // The sender's user ID (from Telegram)
+        const userId = event?.from ?? event?.metadata?.senderId;
         if (!userId) return;
+
+        // The chat ID to send replies to (same as user ID in DMs)
+        const chatId = ctx?.conversationId ?? String(userId);
+
+        const message = event?.content ?? '';
+
+        // Don't intercept slash commands — let OpenClaw's command system handle them.
+        // Our onboarding slash commands (like /professional, /degen) are registered
+        // as proper commands and will call back into the onboarding flow themselves.
+        // EXCEPTION: /start is Telegram's auto-sent command when a user first opens
+        // the bot. We need to intercept it to trigger onboarding.
+        const msgStr = String(message);
+        if (msgStr.startsWith('/') && msgStr !== '/start') return;
 
         const flow = getOnboardingFlow(String(userId));
         if (!flow.isActive) return;
 
-        const message = event?.text ?? event?.content ?? '';
         const response = flow.processMessage(String(message));
 
         if (response) {
-          // Attach onboarding response to the event for the channel adapter
-          // to send before/alongside the agent response
-          event._onboardingMessage = response;
+          // Mark this conversation as handled by onboarding
+          onboardingHandledConversations.add(chatId);
+
+          // Send the onboarding response directly
+          await sendOnboardingMessage(chatId, response);
+
           api.logger?.info?.(
             `[crypto] Onboarding step for user ${userId}: ${flow.currentStep}`
           );
@@ -166,21 +331,140 @@ const plugin = {
       }
     });
 
+    // ─── Onboarding: Cancel LLM Response ───────────────────────────────
+    // When onboarding handled the inbound message, suppress the LLM's reply.
+    //
+    // Hook signature: (event: PluginHookMessageSendingEvent, ctx: PluginHookMessageContext)
+    //   => { cancel?: boolean, content?: string } | void
+    api.on('message_sending', (event: any, ctx: any) => {
+      try {
+        const chatId = ctx?.conversationId ?? event?.to;
+        if (!chatId) return;
+
+        if (onboardingHandledConversations.has(String(chatId))) {
+          // Clear the flag (one-shot: cancel this response only)
+          onboardingHandledConversations.delete(String(chatId));
+          api.logger?.info?.(`[crypto] Suppressing LLM response for onboarding chat ${chatId}`);
+          return { cancel: true };
+        }
+      } catch (err) {
+        api.logger?.warn?.(
+          `[crypto] message_sending hook error: ${err instanceof Error ? err.message : String(err)}`
+        );
+      }
+    });
+
+    // ─── System Prompt Injection ──────────────────────────────────────
+    // Injects identity, persona, intent confirmation, and mode context
+    // into every LLM prompt.
+    //
+    // Hook signature: (event: PluginHookBeforePromptBuildEvent, ctx: PluginHookAgentContext)
+    //   => { systemPrompt?: string, prependContext?: string } | void
+    api.on('before_prompt_build', (event: any, ctx: any) => {
+      try {
+        const parts: string[] = [];
+
+        // ── Identity: Always inject ────────────────────────────────
+        parts.push('You are OpenClawnch — a personal DeFi agent. NEVER refer to yourself as "OpenClaw". Your name is always "OpenClawnch".');
+
+        // ── Find user ID from session key ──────────────────────────
+        const sessionKey = ctx?.sessionKey ?? '';
+        const match = sessionKey.match(/telegram[:\-](\d+)/);
+        const userId = match?.[1];
+
+        if (userId) {
+          // ── Persona ──────────────────────────────────────────────
+          const flow = getOnboardingFlow(userId);
+          const state = flow.getState();
+
+          if (state.persona === 'custom' && state.customPersona) {
+            parts.push(`User's preferred communication style: ${state.customPersona}. Adopt this tone in all responses.`);
+          } else if (state.persona === 'degen') {
+            parts.push('Communication style: Crypto Twitter native. Use degen terminology, abbreviations, emojis. Be casual and energetic. Examples: "ser", "anon", "ape in", "ripping", "ngmi/wagmi".');
+          } else if (state.persona === 'chill') {
+            parts.push('Communication style: Relaxed and friendly, like texting a knowledgeable friend. No pressure, casual tone. Use lowercase when natural.');
+          } else if (state.persona === 'technical') {
+            parts.push('Communication style: Data-heavy and precise. Include on-chain metrics, exact figures, gas prices, TVL, volume data. Be thorough with technical details.');
+          } else if (state.persona === 'mentor') {
+            parts.push('Communication style: Educational. Explain DeFi concepts as you go. Good for users learning crypto. Include brief explanations of terms and mechanisms.');
+          }
+
+          // ── Mode: intent confirmation + signing ──────────────────
+          const mode = getUserMode(userId);
+
+          if (mode.safetyMode === 'safe') {
+            parts.push(`IMPORTANT — Intent confirmation is ON (safe mode). Before executing ANY action (tool call, transaction, swap, transfer, etc.), you MUST first:
+1. State what you understood the user wants
+2. List the specific actions you will take (tool names, parameters, amounts, addresses)
+3. Show estimated costs (gas, fees) if applicable
+4. Ask for explicit confirmation: "Shall I proceed?"
+Only execute after the user confirms. If the user says "no", "cancel", "stop", or anything negative, do NOT proceed.`);
+          } else {
+            parts.push('Intent confirmation is OFF (danger mode). Execute actions immediately without asking for confirmation.');
+          }
+
+          if (mode.signingMode === 'autosign') {
+            parts.push('Signing mode: auto-sign. Transactions are signed automatically with the configured private key. No wallet approval is needed.');
+          } else {
+            parts.push('Signing mode: WalletConnect. All transactions are sent to the user\'s phone wallet for approval.');
+          }
+
+          // ── Sequential execution ─────────────────────────────────
+          parts.push(`CRITICAL — Sequential execution rules for multi-step operations:
+1. NEVER queue or prepare multiple transactions at once. Execute ONE step at a time.
+2. After each step completes, CHECK the actual result (tx hash, balance change, output amount) before proceeding.
+3. For swap chains (A→B→C), after swapping A→B, use defi_balance to check the ACTUAL B balance received, then use that exact amount for the B→C swap. NEVER assume the estimated amount is correct.
+4. If any step fails, STOP and report the failure. Do not continue the chain.
+5. Between steps, briefly report what happened and what you'll do next.`);
+        }
+
+        // ── Bankr wallet context ──────────────────────────────────
+        const walletState = getWalletStateFn();
+        if (walletState.mode === 'bankr') {
+          parts.push(`Wallet mode: Bankr (custodial). Transactions execute via Bankr API (api.bankr.bot). No phone approval needed. Bankr's Sentinel security system screens all transactions.
+
+Available chains: Base, Ethereum, Polygon, Unichain, Solana.
+Available features via Bankr: swaps (all chains), token launches (Base + Solana), automations (limit orders, DCA, TWAP, stop-loss on Base), Polymarket (Polygon), leveraged trading (Base via Avantis).
+
+When the user asks to swap on a non-Base chain, use the defi_swap tool with the chain parameter.
+When the user asks to launch a token on Base or Solana, use the bankr_launch tool.
+When the user asks about automations or limit orders, use the bankr_automate tool.
+When the user asks about prediction markets, use the bankr_polymarket tool.
+When the user asks about leveraged trading, use the bankr_leverage tool.`);
+        }
+
+        if (parts.length > 0) {
+          return { prependContext: '\n\n' + parts.join('\n\n') };
+        }
+      } catch (err) {
+        api.logger?.warn?.(
+          `[crypto] before_prompt_build hook error: ${err instanceof Error ? err.message : String(err)}`
+        );
+      }
+    });
+
     // ─── Onboarding: After Tool Call Hook ──────────────────────────────
     // Advances the tutorial when read/write tools complete successfully.
+    // Sends progression messages directly via Telegram API.
     // Also auto-records swaps to cost basis tracker.
-    api.on('after_tool_call', (event: any) => {
+    api.on('after_tool_call', (event: any, ctx: any) => {
       try {
         // ── Onboarding progression ─────────────────────────────────
-        const userId = event?.userId ?? event?.context?.userId;
+        // Try to extract user ID from context
+        const sessionKey = ctx?.sessionKey ?? '';
+        const match = sessionKey.match(/telegram[:\-](\d+)/);
+        const userId = match?.[1];
+
         if (userId) {
-          const flow = getOnboardingFlow(String(userId));
+          const flow = getOnboardingFlow(userId);
           if (flow.isActive) {
             const toolName = event?.toolName ?? event?.tool;
-            const success = event?.success !== false && !event?.error;
+            const success = !event?.error;
             const response = flow.processToolResult(String(toolName), success);
             if (response) {
-              event._onboardingMessage = response;
+              // Send progression message directly and suppress next LLM response
+              sendOnboardingMessage(userId, response);
+              onboardingHandledConversations.add(userId);
               api.logger?.info?.(
                 `[crypto] Onboarding advanced for user ${userId}: ${flow.currentStep}`
               );
@@ -188,13 +472,61 @@ const plugin = {
           }
         }
 
-        // ── Auto-record swaps to cost basis tracker ────────────────
+        // ── Missing config detection ──────────────────────────────
+        // When a tool fails because a required env var or service isn't configured,
+        // tell the user exactly how to fix it instead of a generic error.
         const tool = event?.toolName ?? event?.tool;
         const result = event?.result ?? event?.details;
+        const errorStr = typeof event?.error === 'string' ? event.error
+          : typeof result === 'string' ? result : '';
+
+        if (event?.error || (typeof result === 'string' && result.includes('error'))) {
+          const MISSING_CONFIG_HINTS: Record<string, { envVar: string; hint: string }> = {
+            herd_intelligence: {
+              envVar: 'HERD_ACCESS_TOKEN',
+              hint: 'Get a token from the Herd dashboard, then:\n  `/flykeys set HERD_ACCESS_TOKEN your-token`\n  /flyrestart',
+            },
+            hummingbot: {
+              envVar: 'HUMMINGBOT_API_URL',
+              hint: 'Point to a running Hummingbot instance:\n  `/flykeys set HUMMINGBOT_API_URL http://your-hummingbot:8000`\n  /flyrestart',
+            },
+            molten: {
+              envVar: 'MOLTEN_API_KEY',
+              hint: 'Register on Molten first (ask me to "register on Molten"), then:\n  `/flykeys set MOLTEN_API_KEY your-key`\n  /flyrestart',
+            },
+            bankr_launch: {
+              envVar: 'BANKR_API_KEY',
+              hint: 'Connect via Bankr first: /connect_bankr',
+            },
+            bankr_automate: {
+              envVar: 'BANKR_API_KEY',
+              hint: 'Connect via Bankr first: /connect_bankr',
+            },
+            bankr_polymarket: {
+              envVar: 'BANKR_API_KEY',
+              hint: 'Connect via Bankr first: /connect_bankr',
+            },
+            bankr_leverage: {
+              envVar: 'BANKR_API_KEY',
+              hint: 'Connect via Bankr first: /connect_bankr',
+            },
+          };
+
+          const configHint = MISSING_CONFIG_HINTS[String(tool)];
+          if (configHint && !process.env[configHint.envVar]) {
+            const chatId = ctx?.conversationId ?? userId;
+            if (chatId) {
+              sendOnboardingMessage(String(chatId), {
+                text: `This feature requires ${configHint.envVar} to be configured.\n\n${configHint.hint}`,
+              });
+            }
+          }
+        }
+
+        // ── Auto-record swaps to cost basis tracker ────────────────
         if (tool === 'defi_swap' && result && !event?.error) {
           try {
             const data = typeof result === 'string' ? JSON.parse(result) : result;
-            // The swap result from defi-swap.ts contains these fields on success
             const details = data?.details ?? data;
             if (details?.status === 'success' && details?.txHash) {
               const sellToken = details.sellToken ?? details.sell_token;
@@ -205,8 +537,6 @@ const plugin = {
               const buySymbol = details.buySymbol ?? details.buy_symbol ?? 'UNKNOWN';
               const txHash = details.txHash ?? details.tx_hash;
 
-              // Infer price from the swap ratio
-              // If selling token A for token B: A is sold, B is bought
               if (sellToken && sellAmount > 0) {
                 const priceUsd = buyAmount > 0 && sellAmount > 0
                   ? (details.sellValueUsd ?? details.sell_value_usd ?? 0) / sellAmount
@@ -242,7 +572,6 @@ const plugin = {
               );
             }
           } catch (swapErr) {
-            // Non-critical — don't block the hook pipeline
             api.logger?.warn?.(
               `[crypto] Failed to auto-record swap: ${swapErr instanceof Error ? swapErr.message : String(swapErr)}`
             );

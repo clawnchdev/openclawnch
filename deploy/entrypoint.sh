@@ -9,36 +9,30 @@ set -e
 # signing. If a private key is present, someone misconfigured the deploy —
 # refuse to start rather than risk key exposure.
 
+# ── Private key warning (autosign mode) ─────────────────────────────
+# If a private key is present, the user has opted into autosign mode.
+# Warn loudly but don't block — they can toggle /walletsign at runtime.
 if [ -n "$CLAWNCHER_PRIVATE_KEY" ]; then
   echo ""
   echo "================================================================"
-  echo "  SECURITY ERROR: CLAWNCHER_PRIVATE_KEY is set."
+  echo "  WARNING: CLAWNCHER_PRIVATE_KEY is set (autosign available)."
   echo ""
-  echo "  OpenClawnch Telegram mode requires WalletConnect for"
-  echo "  transaction signing. Private keys must NEVER be stored"
-  echo "  on the machine."
+  echo "  The agent can sign transactions without wallet approval."
+  echo "  Use /autosign to enable, /walletsign to disable."
+  echo "  Default is wallet signing (WalletConnect)."
   echo ""
-  echo "  Fix: Remove the secret and use /connect in Telegram"
-  echo "  to pair your phone wallet."
-  echo ""
-  echo "    fly secrets unset CLAWNCHER_PRIVATE_KEY -a <your-app>"
+  echo "  Only use a dedicated hot wallet with limited funds."
   echo "================================================================"
   echo ""
-  exit 1
 fi
 
 if [ -n "$PRIVATE_KEY" ]; then
   echo ""
   echo "================================================================"
-  echo "  SECURITY ERROR: PRIVATE_KEY is set."
-  echo ""
-  echo "  OpenClawnch Telegram mode does not accept raw private keys."
-  echo "  Use WalletConnect via /connect in Telegram instead."
-  echo ""
-  echo "    fly secrets unset PRIVATE_KEY -a <your-app>"
+  echo "  WARNING: PRIVATE_KEY is set. Mapping to CLAWNCHER_PRIVATE_KEY."
   echo "================================================================"
   echo ""
-  exit 1
+  export CLAWNCHER_PRIVATE_KEY="$PRIVATE_KEY"
 fi
 
 # ── Restore clean config on each start ──────────────────────────────────
@@ -130,11 +124,25 @@ node -e "
   cfg.agents.defaults.model = cfg.agents.defaults.model || {};
 
   const models = {
-    anthropic: 'anthropic/claude-sonnet-4-20250514',
-    openrouter: 'openrouter/anthropic/claude-sonnet-4-20250514',
+    anthropic: 'anthropic/claude-opus-4-6',
+    openrouter: 'openrouter/anthropic/claude-opus-4-6',
     openai: 'openai/gpt-4o',
+    bankr: 'bankr/claude-opus-4.6',
   };
   cfg.agents.defaults.model.primary = models[provider] || models.anthropic;
+
+  // When using Bankr, strip the provider config if no BANKR_LLM_KEY is set
+  // (avoids OpenClaw trying to init a broken provider)
+  if (provider !== 'bankr' && !process.env.BANKR_LLM_KEY) {
+    if (cfg.models && cfg.models.providers && cfg.models.providers.bankr) {
+      delete cfg.models.providers.bankr;
+      // Clean up empty providers/models objects
+      if (Object.keys(cfg.models.providers).length === 0) {
+        delete cfg.models.providers;
+        delete cfg.models;
+      }
+    }
+  }
 
   fs.writeFileSync('/root/.openclaw/openclaw.json', JSON.stringify(cfg, null, 2));
   console.log('LLM provider: ' + provider + ' → model: ' + cfg.agents.defaults.model.primary);
