@@ -7,7 +7,7 @@
 
 import { Type } from '@sinclair/typebox';
 import { stringEnum, jsonResult, errorResult, readStringParam } from '../lib/tool-helpers.js';
-import { getWalletState, getPublicClient } from '../services/walletconnect-service.js';
+import { getWalletState, getPublicClient, isBankrMode } from '../services/walletconnect-service.js';
 import { getRpcManager } from '../services/rpc-provider.js';
 import { getPriceOracle } from '../services/price-oracle.js';
 import type { PortfolioSummary } from '../lib/types.js';
@@ -22,7 +22,7 @@ const DefiBalanceSchema = Type.Object({
     description: 'Wallet address to check (defaults to connected wallet)',
   })),
   chain: Type.Optional(Type.String({
-    description: 'Chain to check (default: "base"). Options: base, ethereum, arbitrum, optimism, polygon',
+    description: 'Chain to check (default: "base"). Options: base, ethereum, arbitrum, optimism, polygon. Bankr mode adds: solana, unichain',
   })),
 });
 
@@ -33,9 +33,9 @@ export function createDefiBalanceTool() {
     ownerOnly: false,
     description:
       'Check wallet balances — ETH, ERC-20 tokens, and total portfolio value. ' +
-      'Defaults to the connected ClawnchConnect wallet on Base. ' +
+      'Defaults to the connected wallet on Base. ' +
       'Supports Base, Ethereum, Arbitrum, Optimism, Polygon via multi-RPC failover. ' +
-      'Can also check any address.',
+      'In Bankr mode, also supports Solana and Unichain with full token breakdowns.',
     parameters: DefiBalanceSchema,
     execute: async (_toolCallId: string, args: unknown) => {
       const params = args as Record<string, unknown>;
@@ -53,6 +53,11 @@ export function createDefiBalanceTool() {
           );
         }
         address = state.address;
+      }
+
+      // Bankr mode: route all balance queries through Bankr API
+      if (isBankrMode() && !readStringParam(params, 'address')) {
+        return handleBankrBalance(action, chain);
       }
 
       switch (action) {
@@ -161,6 +166,87 @@ async function handleTokens(address: `0x${string}`, chain: string) {
     return errorResult(`Token balance check failed: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
+
+// ─── Bankr Balance Handler ────────────────────────────────────────────────
+
+async function handleBankrBalance(action: string, chain: string) {
+  try {
+    const { getBankrBalances } = await import('../services/bankr-api.js');
+    const { CHAIN_MAP } = await import('../services/bankr-types.js');
+
+    // Determine which chains to query
+    const bankrChain = CHAIN_MAP[chain.toLowerCase()];
+    const chains = bankrChain
+      ? [bankrChain]
+      : ['base' as const, 'mainnet' as const, 'polygon' as const, 'unichain' as const, 'solana' as const];
+
+    const data = await getBankrBalances(chains);
+
+    if (action === 'eth') {
+      // Just native balances
+      const nativeBalances = data.chains.map(c => ({
+        chain: c.chain,
+        balance: c.nativeBalance,
+        balanceUsd: c.nativeBalanceUsd,
+      }));
+      return jsonResult({
+        source: 'bankr',
+        nativeBalances,
+        totalNativeUsd: nativeBalances.reduce((sum, b) => sum + b.balanceUsd, 0),
+      });
+    }
+
+    if (action === 'tokens') {
+      // Token breakdowns per chain
+      const tokensByChain = data.chains
+        .filter(c => c.tokens.length > 0)
+        .map(c => ({
+          chain: c.chain,
+          tokens: c.tokens.map(t => ({
+            symbol: t.symbol,
+            name: t.name,
+            balance: t.balance,
+            balanceUsd: t.balanceUsd,
+            price: t.price,
+          })),
+        }));
+      return jsonResult({
+        source: 'bankr',
+        tokensByChain,
+        totalTokensUsd: data.chains.reduce(
+          (sum, c) => sum + c.tokens.reduce((s, t) => s + t.balanceUsd, 0), 0
+        ),
+      });
+    }
+
+    // Overview: full portfolio
+    const portfolio = data.chains.map(c => ({
+      chain: c.chain,
+      native: {
+        balance: c.nativeBalance,
+        balanceUsd: c.nativeBalanceUsd,
+      },
+      tokens: c.tokens.map(t => ({
+        symbol: t.symbol,
+        name: t.name,
+        balance: t.balance,
+        balanceUsd: t.balanceUsd,
+        price: t.price,
+      })),
+      totalUsd: c.totalUsd,
+    }));
+
+    return jsonResult({
+      source: 'bankr',
+      portfolio,
+      totalUsd: data.totalUsd,
+    });
+  } catch (err) {
+    return errorResult(`Bankr balance check failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+// ─── Local Balance Handlers ──────────────────────────────────────────────
 
 async function handleOverview(address: `0x${string}`, chain: string) {
   try {

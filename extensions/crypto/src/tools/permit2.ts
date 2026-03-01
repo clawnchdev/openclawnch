@@ -22,6 +22,7 @@ import {
   getWalletState,
   requireWalletClient,
   requirePublicClient,
+  isBankrMode,
 } from '../services/walletconnect-service.js';
 
 const ACTIONS = ['check_allowance', 'approve', 'approve_batch', 'revoke', 'lockdown'] as const;
@@ -80,6 +81,17 @@ export function createPermit2Tool() {
       const state = getWalletState();
       if (!state.connected) {
         return errorResult('No wallet connected. Use clawnchconnect tool to connect first.');
+      }
+
+      // Bankr mode: Permit2 operations are handled differently
+      // Approvals go through Bankr prompt API, not local wallet
+      if (isBankrMode() && (action === 'approve' || action === 'approve_batch')) {
+        return jsonResult({
+          status: 'not_needed',
+          mode: 'bankr',
+          message: 'Bankr wallet handles token approvals automatically during swaps. ' +
+            'No manual Permit2 approval is needed.',
+        });
       }
 
       switch (action) {

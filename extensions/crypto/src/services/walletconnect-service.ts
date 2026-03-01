@@ -5,9 +5,10 @@
  * Every write transaction goes through the user's phone wallet for approval,
  * unless a spending policy auto-approves it.
  * 
- * Supports two modes:
+ * Supports three modes:
  * 1. WalletConnect — human approves from MetaMask/Rainbow/etc. (production)
  * 2. Private key — for headless testing (set CLAWNCHER_PRIVATE_KEY)
+ * 3. Bankr — custodial wallet via Bankr Agent API (set BANKR_API_KEY)
  */
 
 import type { Address } from 'viem';
@@ -27,14 +28,20 @@ let _walletClient: any = null;
 let _publicClient: any = null;
 let _wcSigner: WalletConnectSigner | null = null;
 let _connectedAddress: Address | null = null;
-let _mode: 'private_key' | 'walletconnect' | 'none' = 'none';
+let _mode: 'private_key' | 'walletconnect' | 'bankr' | 'none' = 'none';
 let _transactionHistory: TransactionRecord[] = [];
+
+// Bankr-specific state
+let _bankrEvmAddress: string | null = null;
+let _bankrSolAddress: string | null = null;
+let _bankrClub: boolean = false;
 
 // ─── Configuration ───────────────────────────────────────────────────────
 
 interface WalletServiceConfig {
   privateKey?: string;
   walletConnectProjectId?: string;
+  bankrApiKey?: string;
   rpcUrl?: string;
   network?: 'mainnet' | 'sepolia';
   sessionPath?: string;
@@ -53,11 +60,13 @@ interface WalletServiceConfig {
  * Priority:
  * 1. Private key env var (headless/testing)
  * 2. WalletConnect (production)
+ * 3. Bankr API key (custodial wallet)
  */
 export async function initWalletService(config: WalletServiceConfig): Promise<{
-  mode: 'private_key' | 'walletconnect' | 'none';
+  mode: 'private_key' | 'walletconnect' | 'bankr' | 'none';
   pairingUri?: string;
   address?: Address;
+  solAddress?: string;
 }> {
   const { createPublicClient, http } = await import('viem');
   const { base, baseSepolia } = await import('viem/chains');
@@ -162,6 +171,44 @@ export async function initWalletService(config: WalletServiceConfig): Promise<{
     }
   }
 
+  // Mode 3: Bankr custodial wallet
+  if (config.bankrApiKey) {
+    try {
+      const { getBankrUserInfo } = await import('./bankr-api.js');
+
+      // Temporarily set the env var so bankr-api can read it
+      // (it may already be set, but ensure it is for this call)
+      const prevKey = process.env.BANKR_API_KEY;
+      process.env.BANKR_API_KEY = config.bankrApiKey;
+
+      const userInfo = await getBankrUserInfo();
+      const { isBankrClubActive } = await import('./bankr-types.js');
+
+      // Restore previous key if different (shouldn't happen in practice)
+      if (prevKey !== undefined && prevKey !== config.bankrApiKey) {
+        process.env.BANKR_API_KEY = prevKey;
+      }
+
+      const evmWallet = userInfo.wallets.find(w => w.chain === 'evm');
+      const solWallet = userInfo.wallets.find(w => w.chain === 'solana');
+
+      _bankrEvmAddress = evmWallet?.address ?? null;
+      _bankrSolAddress = solWallet?.address ?? null;
+      _bankrClub = isBankrClubActive(userInfo);
+      _connectedAddress = (_bankrEvmAddress as Address) ?? null;
+      _mode = 'bankr';
+
+      return {
+        mode: 'bankr',
+        address: _connectedAddress ?? undefined,
+        solAddress: _bankrSolAddress ?? undefined,
+      };
+    } catch (err) {
+      // Bankr init failed — fall through to none
+      console.warn(`[wallet] Bankr init failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
   // No wallet configured
   _mode = 'none';
   return { mode: 'none' };
@@ -203,11 +250,39 @@ export function getWalletState(): WalletState {
   return {
     connected: _connectedAddress !== null,
     address: _connectedAddress,
-    chainId: _publicClient ? (_publicClient as any).chain?.id ?? null : null,
+    chainId: _mode === 'bankr' ? 8453 : (_publicClient ? (_publicClient as any).chain?.id ?? null : null),
     mode: _mode,
     policies: _wcSigner?.getPolicies() ?? [],
     wcState: _wcSigner?.getState() ?? null,
+    bankrEvmAddress: _bankrEvmAddress ?? undefined,
+    bankrSolAddress: _bankrSolAddress ?? undefined,
+    bankrClub: _bankrClub || undefined,
   };
+}
+
+// ─── Bankr Mode Helpers ──────────────────────────────────────────────────
+
+/**
+ * Check if the wallet is in Bankr custodial mode.
+ */
+export function isBankrMode(): boolean {
+  return _mode === 'bankr';
+}
+
+/**
+ * Returns the appropriate execution context for tools that support both
+ * local wallet and Bankr paths.
+ */
+export function requireBankrOrWallet(): { mode: 'bankr' } | { mode: 'local'; client: any } {
+  if (_mode === 'bankr') {
+    return { mode: 'bankr' };
+  }
+  if (_walletClient) {
+    return { mode: 'local', client: _walletClient };
+  }
+  throw new Error(
+    'No wallet connected. Use /connect or /connect_bankr to connect a wallet first.'
+  );
 }
 
 export function getTransactionHistory(): TransactionRecord[] {
@@ -239,6 +314,9 @@ export async function disconnectWallet(): Promise<void> {
   }
   _walletClient = null;
   _connectedAddress = null;
+  _bankrEvmAddress = null;
+  _bankrSolAddress = null;
+  _bankrClub = false;
   _mode = 'none';
 }
 

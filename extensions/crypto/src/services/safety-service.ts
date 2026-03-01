@@ -6,7 +6,7 @@
  * Uses defi-balance logic for balance sufficiency checks.
  */
 
-import { getWalletState, requirePublicClient } from './walletconnect-service.js';
+import { getWalletState, requirePublicClient, isBankrMode } from './walletconnect-service.js';
 import { getPrice, getEthPrice } from './price-service.js';
 
 // ─── Types ───────────────────────────────────────────────────────────────
@@ -124,12 +124,24 @@ export async function auditToken(tokenAddress: string): Promise<SafetyCheckResul
 
 /**
  * Validate a swap before execution: balance + token audit + route check.
+ * When routing through Bankr, skip local checks — Bankr's Sentinel handles security.
  */
 export async function validateSwap(opts: {
   tokenIn: string;
   tokenOut: string;
   amountEth: number;
+  viaBankr?: boolean;
 }): Promise<SafetyCheckResult> {
+  // Bankr's Sentinel handles security server-side — skip local checks
+  if (opts.viaBankr || isBankrMode()) {
+    return {
+      safe: true,
+      warnings: ['Bankr Sentinel active — security screening handled server-side'],
+      blockers: [],
+      details: { bankrMode: true },
+    };
+  }
+
   const allWarnings: string[] = [];
   const allBlockers: string[] = [];
   const allDetails: Record<string, unknown> = {};

@@ -40,11 +40,17 @@ export interface WalletState {
   /** Chain ID */
   chainId: number | null;
   /** Connection mode */
-  mode: 'private_key' | 'walletconnect' | 'none';
+  mode: 'private_key' | 'walletconnect' | 'bankr' | 'none';
   /** Active spending policies */
   policies: SpendingPolicy[];
   /** WalletConnect session state (null if using private key) */
   wcState: SessionState | null;
+  /** Bankr EVM address (only in bankr mode) */
+  bankrEvmAddress?: string;
+  /** Bankr Solana address (only in bankr mode) */
+  bankrSolAddress?: string;
+  /** Bankr Club membership status */
+  bankrClub?: boolean;
 }
 
 // ─── Tool Result Helpers ─────────────────────────────────────────────────

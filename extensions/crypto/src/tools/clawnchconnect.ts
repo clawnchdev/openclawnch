@@ -18,6 +18,7 @@ import {
   addPolicy,
   removePolicy,
   clearPolicies,
+  isBankrMode,
 } from '../services/walletconnect-service.js';
 
 const ACTIONS = [
@@ -37,6 +38,7 @@ const WALLETS = [
   'zerion',
   'uniswap',
   'rabby',
+  'bankr',
   'other',
 ] as const;
 
@@ -141,7 +143,36 @@ async function handleConnect(params: Record<string, unknown>, api?: any) {
       address: state.address,
       chainId: state.chainId,
       mode: state.mode,
+      bankrEvmAddress: state.bankrEvmAddress,
+      bankrSolAddress: state.bankrSolAddress,
     });
+  }
+
+  // Bankr wallet — simplified connect (no pairing URI)
+  const wallet = readStringParam(params, 'wallet') || 'other';
+  if (wallet === 'bankr') {
+    const bankrApiKey = process.env.BANKR_API_KEY;
+    if (!bankrApiKey) {
+      return errorResult(
+        'BANKR_API_KEY not set. Get a key at bankr.bot/api with Agent API enabled, ' +
+        'then set: fly secrets set BANKR_API_KEY="bk_your_key" -a <your-app>'
+      );
+    }
+    try {
+      const result = await initWalletService({ bankrApiKey });
+      if (result.mode === 'bankr') {
+        return jsonResult({
+          status: 'connected',
+          mode: 'bankr',
+          address: result.address,
+          solAddress: result.solAddress,
+          note: 'Connected via Bankr custodial wallet. Transactions execute server-side.',
+        });
+      }
+      return errorResult('Bankr wallet initialization failed.');
+    } catch (err) {
+      return errorResult(`Bankr connect failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   const projectId = readStringParam(params, 'project_id')
@@ -180,6 +211,33 @@ async function handleConnect(params: Record<string, unknown>, api?: any) {
 
     if (result.pairingUri) {
       const wallet = readStringParam(params, 'wallet') || 'other';
+
+      // Start background session wait. When the user approves in their wallet,
+      // this resolves and sets _walletClient so subsequent tools can use it.
+      // We don't await it here — the tool returns the link immediately,
+      // and the session establishes in the background.
+      waitForWalletSession(300_000)
+        .then((session) => {
+          console.log(`[clawnchconnect] Session established: ${session.address} (chain ${session.chainId})`);
+          // Proactively confirm wallet pairing to the user
+          if (api) {
+            const sendFn = api.runtime?.channel?.telegram?.sendMessageTelegram;
+            // Try to find the chat ID from the current context
+            const chatId = params._chatId ?? params._senderId;
+            if (sendFn && chatId) {
+              sendFn(String(chatId),
+                `Wallet connected!\n\nAddress: ${session.address.slice(0, 6)}...${session.address.slice(-4)}\nChain: ${session.chainId}\n\nYou're ready to trade. Try: "What's the price of ETH?" or "Show my balance"`,
+                { accountId: 'default' }
+              ).catch((err: any) => console.log(`[clawnchconnect] Failed to send confirmation: ${err}`));
+            } else {
+              api.logger?.info?.(`[clawnchconnect] Wallet connected: ${session.address} — no chatId available to send confirmation`);
+            }
+          }
+        })
+        .catch((err) => {
+          console.log(`[clawnchconnect] Session wait failed: ${err instanceof Error ? err.message : String(err)}`);
+        });
+
       return returnConnectLink(result.pairingUri, wallet);
     }
 
@@ -244,6 +302,20 @@ async function handleStatus() {
     });
   }
 
+  // Bankr mode: show both EVM and Solana addresses, Club status
+  if (state.mode === 'bankr') {
+    return jsonResult({
+      status: 'connected',
+      mode: 'bankr',
+      evmAddress: state.bankrEvmAddress,
+      solanaAddress: state.bankrSolAddress,
+      bankrClub: state.bankrClub,
+      chains: ['base', 'ethereum', 'polygon', 'unichain', 'solana'],
+      security: 'Bankr Sentinel (server-side transaction screening)',
+      note: 'Custodial wallet — transactions execute server-side. No phone approval needed.',
+    });
+  }
+
   // Try to get ETH balance
   let ethBalance: string | undefined;
   try {
@@ -294,10 +366,42 @@ async function handleDisconnect() {
 }
 
 async function handleSendTx(params: Record<string, unknown>) {
-  const signer = getWCSigner();
-  if (!signer && !getWalletState().connected) {
+  const state = getWalletState();
+  if (!state.connected) {
     return errorResult('No wallet connected. Use action "connect" first.');
   }
+
+  // Bankr mode: submit via Bankr prompt API
+  if (isBankrMode()) {
+    const to = readStringParam(params, 'to', { required: true })!;
+    const valueStr = readStringParam(params, 'value');
+    const summary = readStringParam(params, 'summary') || 'Transaction submitted by agent';
+
+    try {
+      const { bankrPromptAndPoll } = await import('../services/bankr-api.js');
+      const prompt = valueStr
+        ? `send ${valueStr} ETH to ${to}`
+        : `send transaction to ${to}`;
+      const result = await bankrPromptAndPoll(prompt, { timeoutMs: 60_000 });
+
+      if (result.status === 'failed') {
+        return errorResult(`Transaction failed: ${result.error ?? 'Unknown error'}`);
+      }
+
+      const txData = result.transactions?.[0];
+      return jsonResult({
+        status: 'sent',
+        mode: 'bankr',
+        hash: txData?.hash,
+        summary,
+        response: result.response,
+      });
+    } catch (err) {
+      return errorResult(`Transaction failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  const signer = getWCSigner();
 
   const to = readStringParam(params, 'to', { required: true })!;
   const valueStr = readStringParam(params, 'value');
@@ -394,9 +498,29 @@ async function handleSetPolicy(params: Record<string, unknown>) {
 async function handleSignMessage(params: Record<string, unknown>) {
   const message = readStringParam(params, 'message', { required: true })!;
 
+  // Bankr mode: use Bankr sign endpoint
+  if (isBankrMode()) {
+    try {
+      const { bankrSign } = await import('../services/bankr-api.js');
+      const result = await bankrSign({
+        signatureType: 'personal_sign',
+        message,
+      });
+      return jsonResult({
+        status: 'signed',
+        signature: result.signature,
+        signer: result.signer,
+        mode: 'bankr',
+        message,
+      });
+    } catch (err) {
+      return errorResult(`Bankr signing failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
   const signer = getWCSigner();
   if (!signer) {
-    return errorResult('Message signing requires WalletConnect. Not available in private key mode.');
+    return errorResult('Message signing requires WalletConnect or Bankr. Not available in private key mode.');
   }
 
   try {

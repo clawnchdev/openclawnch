@@ -12,9 +12,11 @@ import {
   getWCSigner,
   requireWalletClient,
   requirePublicClient,
+  isBankrMode,
 } from '../services/walletconnect-service.js';
 import { validateSwap, type SafetyCheckResult } from '../services/safety-service.js';
 import { getPrice } from '../services/price-service.js';
+import { hasBankrApi } from '../services/bankr-api.js';
 
 const ACTIONS = ['quote', 'execute'] as const;
 
@@ -33,6 +35,9 @@ const DefiSwapSchema = Type.Object({
   }),
   slippage: Type.Optional(Type.Number({
     description: 'Max slippage percentage (default: 1.0 for 1%)',
+  })),
+  chain: Type.Optional(Type.String({
+    description: 'Chain for the swap (default: "base"). Bankr mode supports: base, ethereum, polygon, unichain, solana',
   })),
 });
 
@@ -58,18 +63,42 @@ export function createDefiSwapTool() {
     label: 'DeFi Swap',
     ownerOnly: false,
     description:
-      'Swap tokens on Base via DEX aggregator. ' +
+      'Swap tokens via DEX aggregator (Base) or Bankr Agent API (all chains). ' +
       'Get quotes with price impact and gas estimates, then execute swaps. ' +
-      'Transactions go through ClawnchConnect for approval. ' +
-      'Supports ETH, WETH, USDC, USDT, DAI, CLAWNCH, and any ERC-20 by address.',
+      'In Bankr mode, supports Base, Ethereum, Polygon, Unichain, and Solana. ' +
+      'Supports ETH, WETH, USDC, USDT, DAI, CLAWNCH, and any token by address or symbol.',
     parameters: DefiSwapSchema,
     execute: async (_toolCallId: string, args: unknown) => {
       const params = args as Record<string, unknown>;
       const action = readStringParam(params, 'action', { required: true })!;
+      const chain = readStringParam(params, 'chain') || 'base';
 
       const state = getWalletState();
       if (!state.connected) {
         return errorResult('No wallet connected. Use clawnchconnect tool to connect first.');
+      }
+
+      // Bankr routing: all chains go through Bankr when in bankr mode,
+      // non-Base chains go through Bankr when API key is available
+      const useBankr = isBankrMode() || (chain !== 'base' && hasBankrApi());
+
+      if (useBankr) {
+        if (!hasBankrApi()) {
+          return errorResult(
+            `Swaps on ${chain} require Bankr wallet. Connect via /connect_bankr first.`
+          );
+        }
+        return action === 'quote'
+          ? handleBankrQuote(params, chain)
+          : handleBankrSwap(params, chain);
+      }
+
+      // Local path (Base only)
+      if (chain !== 'base') {
+        return errorResult(
+          `Swaps on ${chain} are not supported without Bankr wallet. ` +
+          'Connect via /connect_bankr to access multi-chain swaps.'
+        );
       }
 
       switch (action) {
@@ -83,6 +112,74 @@ export function createDefiSwapTool() {
     },
   };
 }
+
+// ─── Bankr Swap Handlers ─────────────────────────────────────────────────
+
+async function handleBankrQuote(params: Record<string, unknown>, chain: string) {
+  const tokenIn = readStringParam(params, 'token_in', { required: true })!;
+  const tokenOut = readStringParam(params, 'token_out', { required: true })!;
+  const amount = readStringParam(params, 'amount', { required: true })!;
+
+  try {
+    const { bankrPromptAndPoll } = await import('../services/bankr-api.js');
+
+    const prompt = `quote swapping ${amount} ${tokenIn} to ${tokenOut} on ${chain}`;
+    const result = await bankrPromptAndPoll(prompt, { timeoutMs: 30_000 });
+
+    if (result.status === 'failed') {
+      return errorResult(`Quote failed: ${result.error ?? 'Unknown error'}`);
+    }
+
+    return jsonResult({
+      source: 'bankr',
+      chain,
+      tokenIn,
+      tokenOut,
+      amount,
+      response: result.response,
+      richData: result.richData,
+      note: 'Use action "execute" to proceed with this swap.',
+    });
+  } catch (err) {
+    return errorResult(`Bankr quote failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+async function handleBankrSwap(params: Record<string, unknown>, chain: string) {
+  const tokenIn = readStringParam(params, 'token_in', { required: true })!;
+  const tokenOut = readStringParam(params, 'token_out', { required: true })!;
+  const amount = readStringParam(params, 'amount', { required: true })!;
+
+  try {
+    const { bankrPromptAndPoll } = await import('../services/bankr-api.js');
+
+    const prompt = `swap ${amount} ${tokenIn} to ${tokenOut} on ${chain}`;
+    const result = await bankrPromptAndPoll(prompt, { timeoutMs: 120_000 });
+
+    if (result.status === 'failed') {
+      return errorResult(`Swap failed: ${result.error ?? 'Unknown error'}`);
+    }
+
+    // Parse transaction from result
+    const txData = result.transactions?.find(t => t.type === 'swap');
+
+    return jsonResult({
+      status: 'success',
+      source: 'bankr',
+      chain,
+      tokenIn,
+      tokenOut,
+      amountIn: amount,
+      txHash: txData?.hash ?? (txData?.metadata as any)?.transaction?.hash,
+      response: result.response,
+      richData: result.richData,
+    });
+  } catch (err) {
+    return errorResult(`Bankr swap failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+// ─── Local Swap Handlers ─────────────────────────────────────────────────
 
 async function handleQuote(params: Record<string, unknown>) {
   const tokenIn = resolveToken(readStringParam(params, 'token_in', { required: true })!);
@@ -257,12 +354,26 @@ async function handleExecute(params: Record<string, unknown>) {
 
     const { parseEther } = await import('viem');
 
-    const result = await swapper.swap({
+    // Wrap swap in a timeout to prevent hanging when WC/wallet doesn't respond.
+    // The WC signer has a 180s timeout internally, but we add our own 120s timeout
+    // so the tool returns an error to the LLM instead of hanging indefinitely.
+    const SWAP_TIMEOUT_MS = 120_000; // 2 minutes
+
+    const swapPromise = swapper.swap({
       sellToken: tokenIn as `0x${string}`,
       buyToken: tokenOut as `0x${string}`,
       sellAmount: parseEther(amount),
-      slippageBps: Math.round(slippage * 100), // Convert percentage to basis points (1% = 100 bps)
+      slippageBps: Math.round(slippage * 100),
     });
+
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(
+        'Swap timed out after 2 minutes. The transaction may still be pending in your wallet — check Rainbow/MetaMask. ' +
+        'If you see a pending approval or swap, you can approve or reject it there.'
+      )), SWAP_TIMEOUT_MS)
+    );
+
+    const result = await Promise.race([swapPromise, timeoutPromise]);
 
     return jsonResult({
       status: 'success',
@@ -275,7 +386,24 @@ async function handleExecute(params: Record<string, unknown>) {
       gasUsed: result.gasUsed?.toString(),
     });
   } catch (err) {
-    // If ClawnchSwapper not available, try direct 0x execution
-    return errorResult(`Swap failed: ${err instanceof Error ? err.message : String(err)}`);
+    const msg = err instanceof Error ? err.message : String(err);
+    // Provide actionable error messages for common failure modes
+    if (msg.includes('reverted')) {
+      return errorResult(
+        `Swap transaction reverted on-chain. This usually means:\n` +
+        `  - Insufficient token balance or allowance\n` +
+        `  - Price moved beyond slippage tolerance\n` +
+        `  - Token has transfer restrictions\n` +
+        `  - No liquidity for this pair on supported DEXes\n\n` +
+        `Try checking your balance with defi_balance, or try a smaller amount.\n\nError: ${msg}`
+      );
+    }
+    if (msg.includes('rejected') || msg.includes('declined') || msg.includes('denied')) {
+      return errorResult(`Swap cancelled — you rejected the transaction in your wallet.`);
+    }
+    if (msg.includes('timed out') || msg.includes('Swap timed out')) {
+      return errorResult(msg);
+    }
+    return errorResult(`Swap failed: ${msg}`);
   }
 }
