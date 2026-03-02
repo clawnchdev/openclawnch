@@ -39,7 +39,8 @@
   "channels": {
     "telegram": {
       "enabled": true,
-      "linkPreview": false
+      "linkPreview": false,
+      "streamMode": "partial"
     }
   },
   "gateway": {
