@@ -550,7 +550,7 @@ describe('Feature 5: Gas Estimation Service', () => {
       // Expected: RPC will fail in test env
       expect(err.message).toBeDefined();
     }
-  });
+  }, 15_000);
 
   it('accepts custom config', async () => {
     const { GasEstimator } = await import(

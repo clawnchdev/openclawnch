@@ -155,36 +155,36 @@ export class AllowanceManager {
    * Check allowances for a wallet against known spenders.
    * Scans common tokens × common spenders on a given chain.
    */
-  async auditAllowances(
-    ownerAddress: string,
-    chainId = 8453,
-    tokenAddresses?: string[],
-  ): Promise<AllowanceReport> {
-    const rpcManager = getRpcManager();
-    const client = await rpcManager.getClient(chainId);
+   async auditAllowances(
+     ownerAddress: string,
+     chainId = 8453,
+     tokenAddresses?: string[],
+   ): Promise<AllowanceReport> {
+     // Resolve tokens to check
+     const tokens = tokenAddresses
+       ? tokenAddresses.map((addr) => ({ symbol: '???', address: addr }))
+       : Object.entries(WELL_KNOWN_TOKENS[chainId] ?? {}).map(([symbol, address]) => ({ symbol, address }));
 
-    // Resolve tokens to check
-    const tokens = tokenAddresses
-      ? tokenAddresses.map((addr) => ({ symbol: '???', address: addr }))
-      : Object.entries(WELL_KNOWN_TOKENS[chainId] ?? {}).map(([symbol, address]) => ({ symbol, address }));
+     // Resolve spenders
+     const spenders = KNOWN_SPENDERS[chainId] ?? {};
+     const spenderEntries = Object.entries(spenders);
 
-    // Resolve spenders
-    const spenders = KNOWN_SPENDERS[chainId] ?? {};
-    const spenderEntries = Object.entries(spenders);
+     if (tokens.length === 0 || spenderEntries.length === 0) {
+       return {
+         owner: ownerAddress,
+         chainId,
+         chain: CHAIN_NAMES[chainId] ?? String(chainId),
+         totalChecked: 0,
+         unlimited: 0,
+         highRisk: 0,
+         allowances: [],
+         recommendations: ['No known tokens or spenders configured for this chain.'],
+         timestamp: Date.now(),
+       };
+     }
 
-    if (tokens.length === 0 || spenderEntries.length === 0) {
-      return {
-        owner: ownerAddress,
-        chainId,
-        chain: CHAIN_NAMES[chainId] ?? String(chainId),
-        totalChecked: 0,
-        unlimited: 0,
-        highRisk: 0,
-        allowances: [],
-        recommendations: ['No known tokens or spenders configured for this chain.'],
-        timestamp: Date.now(),
-      };
-    }
+     const rpcManager = getRpcManager();
+     const client = await rpcManager.getClient(chainId);
 
     // Build batch of allowance checks
     const checks: Array<{ token: { symbol: string; address: string }; spenderAddr: string; spenderName: string }> = [];
