@@ -695,6 +695,7 @@ export class OnboardingFlow {
 // ── Factory ─────────────────────────────────────────────────────────────────
 
 const flows = new Map<string, OnboardingFlow>();
+const MAX_FLOWS = 500; // Prevent unbounded memory growth
 
 /**
  * Get (or create) the onboarding flow for a user.
@@ -703,6 +704,22 @@ const flows = new Map<string, OnboardingFlow>();
 export function getOnboardingFlow(userId: string): OnboardingFlow {
   let flow = flows.get(userId);
   if (!flow) {
+    // Evict completed/inactive flows when approaching limit
+    if (flows.size >= MAX_FLOWS) {
+      for (const [id, f] of flows) {
+        if (!f.isActive) flows.delete(id);
+      }
+      // If still over limit, evict oldest entries
+      if (flows.size >= MAX_FLOWS) {
+        const toDelete = flows.size - MAX_FLOWS + 50; // free 50 slots
+        let deleted = 0;
+        for (const id of flows.keys()) {
+          if (deleted >= toDelete) break;
+          flows.delete(id);
+          deleted++;
+        }
+      }
+    }
     flow = new OnboardingFlow(userId);
     flows.set(userId, flow);
   }

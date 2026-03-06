@@ -140,6 +140,7 @@ export class PortfolioSnapshotService {
   private config: Required<PortfolioConfig>;
   private cache: Map<string, { snapshot: PortfolioSnapshot; expiresAt: number }> = new Map();
   private previousSnapshots: Map<string, PortfolioSnapshot> = new Map();
+  private static readonly MAX_SNAPSHOTS = 100;
 
   constructor(config: PortfolioConfig = {}) {
     this.config = {
@@ -321,8 +322,12 @@ export class PortfolioSnapshotService {
     const previous = this.previousSnapshots.get(ownerAddress) ?? null;
     const current = await this.getSnapshot(ownerAddress);
 
-    // Save current as previous for next comparison
+    // Save current as previous for next comparison (with size cap)
     this.previousSnapshots.set(ownerAddress, current);
+    if (this.previousSnapshots.size > PortfolioSnapshotService.MAX_SNAPSHOTS) {
+      const first = this.previousSnapshots.keys().next().value;
+      if (first) this.previousSnapshots.delete(first);
+    }
 
     const changeUsd = previous ? current.totalValueUsd - previous.totalValueUsd : 0;
     const changePercent = previous && previous.totalValueUsd > 0
@@ -355,9 +360,10 @@ export class PortfolioSnapshotService {
     }));
   }
 
-  /** Clear the snapshot cache. */
+  /** Clear the snapshot cache and previous snapshots. */
   clearCache(): void {
     this.cache.clear();
+    this.previousSnapshots.clear();
   }
 
   private isStablecoin(symbol: string): boolean {

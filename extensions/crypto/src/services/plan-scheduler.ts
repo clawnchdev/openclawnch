@@ -328,20 +328,28 @@ export class PlanScheduler {
 
   // ─── Tick Loop ────────────────────────────────────────────────────────
 
+  private ticking = false;
+
   private async tick(): Promise<void> {
-    const now = Date.now();
+    if (this.ticking) return; // Reentrancy guard — skip if previous tick still running
+    this.ticking = true;
+    try {
+      const now = Date.now();
 
-    for (const [planId, plan] of this.plans) {
-      if (plan.status === 'paused' || plan.status === 'running') continue;
+      for (const [planId, plan] of this.plans) {
+        if (plan.status === 'paused' || plan.status === 'running') continue;
 
-      try {
-        const shouldFire = await this.shouldTriggerFire(plan, now);
-        if (shouldFire) {
-          await this.fireTrigger(plan);
+        try {
+          const shouldFire = await this.shouldTriggerFire(plan, now);
+          if (shouldFire) {
+            await this.fireTrigger(plan);
+          }
+        } catch (err: any) {
+          this.emit({ type: 'condition_check_error', planId, error: err.message ?? String(err) });
         }
-      } catch (err: any) {
-        this.emit({ type: 'condition_check_error', planId, error: err.message ?? String(err) });
       }
+    } finally {
+      this.ticking = false;
     }
   }
 

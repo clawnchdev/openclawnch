@@ -63,7 +63,25 @@ interface WalletServiceConfig {
  * 2. WalletConnect (production)
  * 3. Bankr API key (custodial wallet)
  */
+let _initPromise: Promise<any> | null = null;
+
 export async function initWalletService(config: WalletServiceConfig): Promise<{
+  mode: 'private_key' | 'walletconnect' | 'bankr' | 'none';
+  pairingUri?: string;
+  address?: Address;
+  solAddress?: string;
+}> {
+  // Mutex: prevent concurrent initialization which can create duplicate WC signers
+  if (_initPromise) return _initPromise;
+  _initPromise = _doInitWalletService(config);
+  try {
+    return await _initPromise;
+  } finally {
+    _initPromise = null;
+  }
+}
+
+async function _doInitWalletService(config: WalletServiceConfig): Promise<{
   mode: 'private_key' | 'walletconnect' | 'bankr' | 'none';
   pairingUri?: string;
   address?: Address;

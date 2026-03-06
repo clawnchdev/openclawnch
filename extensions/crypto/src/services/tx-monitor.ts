@@ -71,6 +71,7 @@ const EXPLORER_URLS: Record<number, string> = {
 
 export class TxMonitor {
   private monitored: Map<string, MonitoredTx> = new Map();
+  private static readonly MAX_MONITORED = 200;
 
   /**
    * Check the current status of a transaction (single poll, no waiting).
@@ -194,7 +195,7 @@ export class TxMonitor {
       const status = await this.checkStatus(hash, chainId);
       lastStatus = status;
 
-      // Track in monitored map
+      // Track in monitored map (with size cap)
       this.monitored.set(hash, {
         hash,
         chainId,
@@ -202,6 +203,15 @@ export class TxMonitor {
         lastStatus: status,
         resolved: status.status === 'confirmed' || status.status === 'failed',
       });
+      // Evict oldest resolved entries when over limit
+      if (this.monitored.size > TxMonitor.MAX_MONITORED) {
+        for (const [key, entry] of this.monitored) {
+          if (entry.resolved) {
+            this.monitored.delete(key);
+            if (this.monitored.size <= TxMonitor.MAX_MONITORED) break;
+          }
+        }
+      }
 
       if (onUpdate) onUpdate(status);
 

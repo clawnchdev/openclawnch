@@ -45,6 +45,8 @@ const WALLETS: WalletOption[] = [
 
 /** Stored plugin API reference for sending messages after session establishes. */
 let _api: any = null;
+/** Guard against duplicate waitForWalletSession callbacks. */
+let _pendingSessionWait = false;
 
 export function setConnectCommandApi(api: any): void {
   _api = api;
@@ -97,7 +99,12 @@ async function doConnect(wallet: WalletOption, ctx: any): Promise<{ text: string
       const channel: ChannelId = extractChannelId(ctx) ?? 'telegram';
 
       // Start background session wait — when approved, send confirmation + advance onboarding
+      // Guard: only one wait at a time to prevent duplicate callbacks
       const connectUserId = ctx?.senderId ?? ctx?.from ?? chatId;
+      if (_pendingSessionWait) {
+        // Already waiting — don't start another
+      } else {
+      _pendingSessionWait = true;
       waitForWalletSession(300_000)
         .then((session) => {
           console.log(`[/connect] Session established: ${session.address} (chain ${session.chainId})`);
@@ -127,7 +134,9 @@ async function doConnect(wallet: WalletOption, ctx: any): Promise<{ text: string
         })
         .catch((err) => {
           console.log(`[/connect] Session wait failed: ${err instanceof Error ? err.message : String(err)}`);
-        });
+        })
+        .finally(() => { _pendingSessionWait = false; });
+      } // end else (_pendingSessionWait guard)
 
       const encodedUri = encodeURIComponent(result.pairingUri);
 

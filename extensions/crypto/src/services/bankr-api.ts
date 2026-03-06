@@ -43,9 +43,15 @@ const DEFAULT_POLL_TIMEOUT_MS = 120_000;
 // ─── Thread ID Storage ──────────────────────────────────────────────────
 
 const _threadIds = new Map<string, string>();
+const MAX_THREAD_IDS = 200;
 
 export function storeBankrThreadId(userId: string, threadId: string): void {
   _threadIds.set(userId, threadId);
+  // Evict oldest entry when over limit
+  if (_threadIds.size > MAX_THREAD_IDS) {
+    const first = _threadIds.keys().next().value;
+    if (first) _threadIds.delete(first);
+  }
 }
 
 export function getBankrThreadId(userId: string): string | undefined {

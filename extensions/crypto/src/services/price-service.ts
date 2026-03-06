@@ -19,6 +19,7 @@ interface CacheEntry {
 }
 
 const CACHE_TTL_MS = 30_000;
+const MAX_CACHE_SIZE = 500;
 const _cache = new Map<string, CacheEntry>();
 
 function cacheKey(token: string, chain: string): string {
@@ -36,6 +37,23 @@ function getCached(token: string, chain: string): CacheEntry | null {
 }
 
 function setCache(token: string, chain: string, entry: Omit<CacheEntry, 'fetchedAt'>): void {
+  // Evict expired entries when cache exceeds size limit
+  if (_cache.size >= MAX_CACHE_SIZE) {
+    const now = Date.now();
+    for (const [key, val] of _cache) {
+      if (now - val.fetchedAt > CACHE_TTL_MS) _cache.delete(key);
+    }
+    // If still over, remove oldest entries
+    if (_cache.size >= MAX_CACHE_SIZE) {
+      const toDelete = _cache.size - MAX_CACHE_SIZE + 50;
+      let deleted = 0;
+      for (const key of _cache.keys()) {
+        if (deleted >= toDelete) break;
+        _cache.delete(key);
+        deleted++;
+      }
+    }
+  }
   _cache.set(cacheKey(token, chain), { ...entry, fetchedAt: Date.now() });
 }
 
