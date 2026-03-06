@@ -54,8 +54,10 @@ async function explorerFetch(config: ExplorerConfig, params: Record<string, stri
     url.searchParams.set(key, value);
   }
 
+  // H10: Add request timeout to prevent hanging
   const response = await fetch(url.toString(), {
     headers: { Accept: 'application/json' },
+    signal: AbortSignal.timeout(15_000),
   });
 
   if (!response.ok) {

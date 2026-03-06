@@ -20,7 +20,7 @@ describe('permit2 tool', () => {
   it('has correct metadata', () => {
     expect(tool.name).toBe('permit2');
     expect(tool.label).toBe('Permit2');
-    expect(tool.ownerOnly).toBe(false);
+    expect(tool.ownerOnly).toBe(true); // C2 fix: write-operation tools are owner-only
     expect(tool.parameters.type).toBe('object');
     expect(tool.parameters.properties.action).toBeDefined();
     expect(typeof tool.execute).toBe('function');

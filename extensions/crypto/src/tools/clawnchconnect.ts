@@ -98,7 +98,7 @@ export function createClawnchConnectTool(api?: any) {
   return {
     name: 'clawnchconnect',
     label: 'ClawnchConnect',
-    ownerOnly: false,
+    ownerOnly: true,
     description:
       'Connect a wallet for human-approved blockchain transactions. ' +
       'IMPORTANT: For the connect action, you MUST ask the user which wallet app they use BEFORE calling this tool, then pass it as the wallet parameter. ' +
@@ -365,6 +365,11 @@ async function handleDisconnect() {
   return textResult(`Disconnected wallet ${state.address}. Session cleared.`);
 }
 
+// H4: Address validation helper
+function isValidAddress(addr: string): boolean {
+  return /^0x[a-fA-F0-9]{40}$/.test(addr);
+}
+
 async function handleSendTx(params: Record<string, unknown>) {
   const state = getWalletState();
   if (!state.connected) {
@@ -374,6 +379,10 @@ async function handleSendTx(params: Record<string, unknown>) {
   // Bankr mode: submit via Bankr prompt API
   if (isBankrMode()) {
     const to = readStringParam(params, 'to', { required: true })!;
+    // H4: Validate address
+    if (!isValidAddress(to)) {
+      return errorResult(`Invalid target address: "${to}". Must be a valid 0x... Ethereum address.`);
+    }
     const valueStr = readStringParam(params, 'value');
     const summary = readStringParam(params, 'summary') || 'Transaction submitted by agent';
 
@@ -404,6 +413,10 @@ async function handleSendTx(params: Record<string, unknown>) {
   const signer = getWCSigner();
 
   const to = readStringParam(params, 'to', { required: true })!;
+  // H4: Validate address
+  if (!isValidAddress(to)) {
+    return errorResult(`Invalid target address: "${to}". Must be a valid 0x... Ethereum address.`);
+  }
   const valueStr = readStringParam(params, 'value');
   const data = readStringParam(params, 'data');
   const summary = readStringParam(params, 'summary') || 'Transaction submitted by agent';

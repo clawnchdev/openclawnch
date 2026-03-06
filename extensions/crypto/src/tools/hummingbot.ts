@@ -68,11 +68,16 @@ let _client: any = null;
 async function getClient(): Promise<any> {
   if (_client) return _client;
   const { HummingbotClient } = await import('@clawnch/clawncher-sdk');
-  _client = new HummingbotClient({
-    apiUrl: process.env.HUMMINGBOT_API_URL || 'http://localhost:8000',
-    username: process.env.HUMMINGBOT_USERNAME || 'admin',
-    password: process.env.HUMMINGBOT_PASSWORD || 'admin',
-  });
+  // H3 FIX: Require explicit credentials — no default admin/admin
+  const apiUrl = process.env.HUMMINGBOT_API_URL;
+  const username = process.env.HUMMINGBOT_USERNAME;
+  const password = process.env.HUMMINGBOT_PASSWORD;
+  if (!apiUrl || !username || !password) {
+    throw new Error(
+      'Hummingbot not configured. Set HUMMINGBOT_API_URL, HUMMINGBOT_USERNAME, and HUMMINGBOT_PASSWORD.'
+    );
+  }
+  _client = new HummingbotClient({ apiUrl, username, password });
   return _client;
 }
 
@@ -80,7 +85,7 @@ export function createHummingbotTool() {
   return {
     name: 'hummingbot',
     label: 'Hummingbot',
-    ownerOnly: false,
+    ownerOnly: true,
     description:
       'Control Hummingbot market-making bots. Place orders, manage executors, ' +
       'deploy bots with strategies, check portfolio, get market data, run backtests. ' +

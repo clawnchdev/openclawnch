@@ -27,7 +27,7 @@ describe('bankr tool shapes', () => {
       expect(tool).toBeDefined();
       expect(tool.name).toBe('bankr_launch');
       expect(tool.label).toBe('Bankr Launch');
-      expect(tool.ownerOnly).toBe(false);
+      expect(tool.ownerOnly).toBe(true); // C2 fix: write-operation tools are owner-only
       expect(tool.description).toContain('Deploy tokens');
       expect(tool.parameters.type).toBe('object');
       expect(tool.parameters.properties.action).toBeDefined();
@@ -55,7 +55,7 @@ describe('bankr tool shapes', () => {
       expect(tool).toBeDefined();
       expect(tool.name).toBe('bankr_automate');
       expect(tool.label).toBe('Bankr Automate');
-      expect(tool.ownerOnly).toBe(false);
+      expect(tool.ownerOnly).toBe(true); // C2 fix: write-operation tools are owner-only
       expect(tool.description).toContain('automations');
       expect(tool.parameters.properties.action).toBeDefined();
       expect(tool.parameters.properties.token).toBeDefined();
@@ -106,7 +106,7 @@ describe('bankr tool shapes', () => {
       expect(tool).toBeDefined();
       expect(tool.name).toBe('bankr_polymarket');
       expect(tool.label).toBe('Bankr Polymarket');
-      expect(tool.ownerOnly).toBe(false);
+      expect(tool.ownerOnly).toBe(true); // C2 fix: write-operation tools are owner-only
       expect(tool.description).toContain('Polymarket');
       expect(tool.parameters.properties.action).toBeDefined();
       expect(tool.parameters.properties.query).toBeDefined();
@@ -145,7 +145,7 @@ describe('bankr tool shapes', () => {
       expect(tool).toBeDefined();
       expect(tool.name).toBe('bankr_leverage');
       expect(tool.label).toBe('Bankr Leverage');
-      expect(tool.ownerOnly).toBe(false);
+      expect(tool.ownerOnly).toBe(true); // C2 fix: write-operation tools are owner-only
       expect(tool.description).toContain('Leveraged trading');
       expect(tool.description).toContain('WARNING');
       expect(tool.parameters.properties.action).toBeDefined();

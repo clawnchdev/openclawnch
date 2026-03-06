@@ -71,10 +71,12 @@ async function flyRequest(
     'Content-Type': 'application/json',
   };
 
+  // H10: Add request timeout to prevent hanging
   const res = await fetch(url, {
     method,
     headers,
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    signal: AbortSignal.timeout(30_000),
   });
 
   if (res.ok) {

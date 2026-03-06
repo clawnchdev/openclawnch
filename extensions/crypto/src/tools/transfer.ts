@@ -38,7 +38,7 @@ export function createTransferTool() {
   return {
     name: 'transfer',
     label: 'Transfer',
-    ownerOnly: false,
+    ownerOnly: true,
     description:
       'Send ETH or ERC-20 tokens to a recipient address. ' +
       'Use action "estimate" to preview gas costs and check balance, ' +
@@ -63,6 +63,11 @@ export function createTransferTool() {
       }
     },
   };
+}
+
+// H4: Address validation helper
+function isValidAddress(addr: string): boolean {
+  return /^0x[a-fA-F0-9]{40}$/.test(addr);
 }
 
 // ─── Well-known tokens on Base ────────────────────────────────────────────
@@ -129,8 +134,15 @@ function parseTokenAmount(amount: string, decimals: number): bigint {
 
 async function handleEstimate(params: Record<string, unknown>) {
   const to = readStringParam(params, 'to', { required: true })!;
+  // H4: Validate recipient address
+  if (!isValidAddress(to)) {
+    return errorResult(`Invalid recipient address: "${to}". Must be a valid 0x... Ethereum address (40 hex chars).`);
+  }
   const amount = readStringParam(params, 'amount', { required: true })!;
   const tokenAddr = readStringParam(params, 'token');
+  if (tokenAddr && !isValidAddress(tokenAddr)) {
+    return errorResult(`Invalid token address: "${tokenAddr}". Must be a valid 0x... address.`);
+  }
   const isErc20 = !!tokenAddr;
 
   try {
@@ -220,8 +232,15 @@ async function handleEstimate(params: Record<string, unknown>) {
 
 async function handleSend(params: Record<string, unknown>) {
   const to = readStringParam(params, 'to', { required: true })!;
+  // H4: Validate recipient address
+  if (!isValidAddress(to)) {
+    return errorResult(`Invalid recipient address: "${to}". Must be a valid 0x... Ethereum address (40 hex chars).`);
+  }
   const amount = readStringParam(params, 'amount', { required: true })!;
   const tokenAddr = readStringParam(params, 'token');
+  if (tokenAddr && !isValidAddress(tokenAddr)) {
+    return errorResult(`Invalid token address: "${tokenAddr}". Must be a valid 0x... address.`);
+  }
   const isErc20 = !!tokenAddr;
 
   try {

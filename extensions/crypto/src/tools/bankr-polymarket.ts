@@ -32,11 +32,37 @@ const BankrPolymarketSchema = Type.Object({
   })),
 });
 
+// ─── Input Sanitization (C3: prevent prompt injection) ──────────────────
+const SAFE_QUERY_RE = /^[a-zA-Z0-9 ?!,.\-'":;$%#@()]{1,200}$/;
+const SAFE_AMOUNT_RE = /^\$?[0-9][0-9,._]*$/;
+const SAFE_OUTCOME_RE = /^[a-zA-Z0-9 .\-]{1,60}$/;
+
+function sanitizeQuery(input: string): string {
+  const trimmed = input.trim();
+  if (SAFE_QUERY_RE.test(trimmed)) return trimmed;
+  throw new Error(`Invalid query: contains disallowed characters. Keep it to simple text.`);
+}
+function sanitizeMarket(input: string): string {
+  const trimmed = input.trim();
+  if (SAFE_QUERY_RE.test(trimmed)) return trimmed;
+  throw new Error(`Invalid market: contains disallowed characters.`);
+}
+function sanitizeOutcome(input: string): string {
+  const trimmed = input.trim();
+  if (SAFE_OUTCOME_RE.test(trimmed)) return trimmed;
+  throw new Error(`Invalid outcome: "${trimmed.slice(0, 20)}". Use "yes", "no", or a simple name.`);
+}
+function sanitizeAmount(input: string): string {
+  const trimmed = input.trim();
+  if (SAFE_AMOUNT_RE.test(trimmed)) return trimmed;
+  throw new Error(`Invalid amount: "${trimmed.slice(0, 20)}". Use a number like "10" or "50".`);
+}
+
 function buildPrompt(action: string, params: Record<string, unknown>): string {
-  const query = readStringParam(params, 'query') || '';
-  const market = readStringParam(params, 'market') || '';
-  const outcome = readStringParam(params, 'outcome') || '';
-  const amount = readStringParam(params, 'amount') || '';
+  const query = readStringParam(params, 'query') ? sanitizeQuery(readStringParam(params, 'query')!) : '';
+  const market = readStringParam(params, 'market') ? sanitizeMarket(readStringParam(params, 'market')!) : '';
+  const outcome = readStringParam(params, 'outcome') ? sanitizeOutcome(readStringParam(params, 'outcome')!) : '';
+  const amount = readStringParam(params, 'amount') ? sanitizeAmount(readStringParam(params, 'amount')!) : '';
 
   switch (action) {
     case 'search':
@@ -56,7 +82,7 @@ export function createBankrPolymarketTool() {
   return {
     name: 'bankr_polymarket',
     label: 'Bankr Polymarket',
-    ownerOnly: false,
+    ownerOnly: true,
     description:
       'Prediction markets via Polymarket. Search for markets on any topic, ' +
       'place bets (yes/no), view your positions, and redeem winnings. ' +

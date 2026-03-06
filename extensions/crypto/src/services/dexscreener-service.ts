@@ -24,8 +24,10 @@ export function resolveChain(input: string): string {
 }
 
 export async function fetchDexScreener(path: string): Promise<any> {
+  // H10: Add request timeout to prevent hanging
   const response = await fetch(`${BASE_URL}${path}`, {
     headers: { Accept: 'application/json' },
+    signal: AbortSignal.timeout(15_000),
   });
   if (!response.ok) {
     throw new Error(`DexScreener API error: ${response.status} ${response.statusText}`);

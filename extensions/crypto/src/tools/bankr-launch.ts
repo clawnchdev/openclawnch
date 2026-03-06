@@ -54,7 +54,7 @@ export function createBankrLaunchTool() {
   return {
     name: 'bankr_launch',
     label: 'Bankr Launch',
-    ownerOnly: false,
+    ownerOnly: true,
     description:
       'Deploy tokens on Base (Uniswap V4) or Solana (Raydium LaunchLab) via Bankr. ' +
       'Fee split: 57% creator / 36.1% Bankr / 5% protocol on Base. ' +

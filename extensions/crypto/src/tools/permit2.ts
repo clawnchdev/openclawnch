@@ -48,6 +48,9 @@ const Permit2Schema = Type.Object({
   token: Type.Optional(Type.String({
     description: 'ERC-20 token contract address (0x...). Required for check_allowance, approve, revoke.',
   })),
+  amount: Type.Optional(Type.String({
+    description: 'Scoped approval amount in token smallest unit. If omitted, max approval is used. Use to limit Permit2 exposure.',
+  })),
   tokens: Type.Optional(Type.Array(Type.String(), {
     description: 'Array of token addresses for approve_batch.',
   })),
@@ -69,7 +72,7 @@ export function createPermit2Tool() {
   return {
     name: 'permit2',
     label: 'Permit2',
-    ownerOnly: false,
+    ownerOnly: true,
     description:
       'Manage Uniswap Permit2 token allowances. Check, approve, or revoke Permit2 ' +
       'allowances for DeFi protocols. Use "lockdown" for emergency revocation.',
@@ -173,8 +176,41 @@ async function handleCheckAllowance(params: Record<string, unknown>) {
 async function handleApprove(params: Record<string, unknown>) {
   const token = readStringParam(params, 'token', { required: true })!;
 
+  // C4: Validate token address
+  if (!token.match(/^0x[a-fA-F0-9]{40}$/)) {
+    return errorResult('Invalid token address. Must be a valid 0x... address.');
+  }
+
   try {
     const client = await getPermit2Client();
+
+    // C4: Support scoped approvals — if caller specifies an amount, use directApprove
+    // with that amount instead of max uint160. This limits exposure.
+    const scopedAmount = readStringParam(params, 'amount');
+    if (scopedAmount) {
+      // Parse the amount as a BigInt (expected in token's smallest unit)
+      const spenderInput = readStringParam(params, 'spender') || 'universal_router';
+      const spender = resolveSpender(spenderInput);
+      const amount = BigInt(scopedAmount);
+      const expiration = Math.floor(Date.now() / 1000) + 86400 * 30; // 30 days
+      const txHash = await client.directApprove(
+        token as `0x${string}`,
+        spender,
+        amount,
+        expiration,
+      );
+      return jsonResult({
+        status: 'approved',
+        token,
+        permit2Address: PERMIT2_ADDRESS,
+        txHash,
+        approvedAmount: scopedAmount,
+        expiresIn: '30 days',
+        message: 'Token approved for Permit2 with scoped allowance.',
+      });
+    }
+
+    // Default path: ensure max approval (for backward compat)
     const txHash = await client.ensureTokenApproval(token as `0x${string}`);
 
     if (txHash === null) {
@@ -191,7 +227,7 @@ async function handleApprove(params: Record<string, unknown>) {
       token,
       permit2Address: PERMIT2_ADDRESS,
       txHash,
-      message: 'Token approved for Permit2 with max allowance.',
+      message: 'Token approved for Permit2 with max allowance. Use "amount" param to scope the approval.',
     });
   } catch (err) {
     return errorResult(`Approve failed: ${err instanceof Error ? err.message : String(err)}`);

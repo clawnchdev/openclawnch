@@ -239,6 +239,13 @@ export class RpcManager {
         return client as PublicClient;
       } catch (err) {
         lastError = err as Error;
+        // H9: Sanitize any API keys that may appear in error messages
+        if (lastError.message) {
+          lastError.message = lastError.message.replace(
+            /[?&/][a-zA-Z0-9_\-]{20,}/g,
+            '/[REDACTED]'
+          );
+        }
         const isRateLimit = lastError.message.includes('429') ||
           lastError.message.toLowerCase().includes('rate limit');
 
@@ -252,8 +259,13 @@ export class RpcManager {
       }
     }
 
+    // H9: Sanitize API keys from error messages before exposing to LLM
+    const sanitizedError = lastError?.message?.replace(
+      /[?&/][a-zA-Z0-9_\-]{20,}/g,
+      '/[REDACTED]'
+    ) ?? 'Unknown error';
     throw new Error(
-      `All RPC providers failed for chain ${chainId}. Last error: ${lastError?.message}`,
+      `All RPC providers failed for chain ${chainId}. Last error: ${sanitizedError}`,
     );
   }
 

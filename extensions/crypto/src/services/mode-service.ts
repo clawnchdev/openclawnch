@@ -34,8 +34,19 @@ function ensureDir(): void {
   }
 }
 
+// M5: Sanitize userId to prevent path traversal
+function sanitizeUserId(userId: string): string {
+  // Only allow alphanumeric, underscores, hyphens, dots
+  const safe = userId.replace(/[^a-zA-Z0-9_\-\.]/g, '_');
+  // Prevent directory traversal
+  if (safe.includes('..') || safe.includes('/') || safe.includes('\\')) {
+    return 'invalid_user';
+  }
+  return safe.slice(0, 64); // Cap length
+}
+
 function modePath(userId: string): string {
-  return join(getStateDir(), `${userId}.json`);
+  return join(getStateDir(), `${sanitizeUserId(userId)}.json`);
 }
 
 function loadMode(userId: string): UserMode {

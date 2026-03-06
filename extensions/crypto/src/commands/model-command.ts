@@ -93,14 +93,25 @@ function setModel(modelId: string): void {
   writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2), 'utf8');
 }
 
+// H7: Validate model IDs to prevent injection via config file writes
+const SAFE_MODEL_ID_RE = /^[a-zA-Z0-9][a-zA-Z0-9._\-\/]{0,120}$/;
+
+function validateModelId(input: string): string {
+  if (!SAFE_MODEL_ID_RE.test(input)) {
+    throw new Error(`Invalid model ID: "${input.slice(0, 30)}". Only alphanumeric, dots, hyphens, underscores, and slashes are allowed.`);
+  }
+  return input;
+}
+
 /** Resolve a shortcut or raw model name to the correct provider-prefixed ID. */
 function resolveModel(input: string): string {
   const provider = getProvider();
   const mapping = MODEL_MAP[input];
   if (mapping) {
-    return mapping[provider] ?? mapping.bankr;
+    return validateModelId(mapping[provider] ?? mapping.bankr);
   }
-  // Not a shortcut — use as-is, but prefix if needed
+  // Not a shortcut — validate and use as-is, but prefix if needed
+  validateModelId(input);
   if (provider === 'bankr' && !input.includes('/')) {
     return `bankr/${input}`;
   }

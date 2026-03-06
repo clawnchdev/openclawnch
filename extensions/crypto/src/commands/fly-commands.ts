@@ -271,6 +271,13 @@ export const flykeysCommand = {
         return { text: `\`${key}\` is protected and cannot be modified from Telegram. Use the Fly CLI.` };
       }
 
+      // H1 FIX: Allowlist — only permit known secret keys to prevent arbitrary env var injection
+      if (!KNOWN_SECRETS[key]) {
+        return {
+          text: `\`${key}\` is not a recognized secret. Only these keys can be set:\n\n${Object.entries(KNOWN_SECRETS).map(([k, v]) => `  \`${k}\` — ${v}`).join('\n')}`,
+        };
+      }
+
       try {
         await setSecrets({ [key]: value });
 

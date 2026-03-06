@@ -82,7 +82,8 @@ async function lifiFetch(path: string, params?: Record<string, string>): Promise
   const apiKey = process.env.LIFI_API_KEY;
   if (apiKey) headers['x-lifi-api-key'] = apiKey;
 
-  const response = await fetch(url.toString(), { headers });
+  // H10: Add request timeout to prevent hanging
+  const response = await fetch(url.toString(), { headers, signal: AbortSignal.timeout(30_000) });
   if (!response.ok) {
     const body = await response.text().catch(() => '');
     throw new Error(`LI.FI API error: ${response.status} ${response.statusText}${body ? ` — ${body.slice(0, 200)}` : ''}`);
@@ -99,10 +100,12 @@ async function lifiPost(path: string, body: unknown): Promise<any> {
   const apiKey = process.env.LIFI_API_KEY;
   if (apiKey) headers['x-lifi-api-key'] = apiKey;
 
+  // H10: Add request timeout to prevent hanging
   const response = await fetch(`${LIFI_BASE_URL}${path}`, {
     method: 'POST',
     headers,
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(30_000),
   });
 
   if (!response.ok) {
@@ -139,7 +142,7 @@ const BridgeSchema = Type.Object({
     description: 'Amount in smallest unit (wei) for quote/routes. Human-readable for execute.',
   })),
   slippage: Type.Optional(Type.Number({
-    description: 'Slippage tolerance (e.g. 0.03 for 3%). Default: 0.03.',
+    description: 'Slippage tolerance (e.g. 0.005 for 0.5%). Default: 0.005.',
   })),
   tx_hash: Type.Optional(Type.String({
     description: 'Transaction hash for status check.',
@@ -156,7 +159,7 @@ export function createBridgeTool() {
   return {
     name: 'bridge',
     label: 'Bridge',
-    ownerOnly: false,
+    ownerOnly: true,
     description:
       'Cross-chain token bridging via LI.FI aggregator. Compares quotes from Across, ' +
       'Stargate, LayerZero, Hop, Synapse, and more. Use "quote" to compare, "execute" to bridge.',
@@ -230,7 +233,7 @@ async function handleQuote(params: Record<string, unknown>) {
   const fromTokenInput = readStringParam(params, 'from_token') ?? readStringParam(params, 'fromToken') ?? 'ETH';
   const toTokenInput = readStringParam(params, 'to_token') ?? readStringParam(params, 'toToken') ?? 'ETH';
   const amount = readStringParam(params, 'amount', { required: true })!;
-  const slippage = readNumberParam(params, 'slippage') ?? 0.03;
+  const slippage = readNumberParam(params, 'slippage') ?? 0.005; // 0.5% default (was 3% — too high, sandwich-exploitable)
 
   const fromToken = resolveTokenAddress(fromTokenInput, fromChainId);
   const toToken = resolveTokenAddress(toTokenInput, toChainId);
@@ -290,7 +293,7 @@ async function handleRoutes(params: Record<string, unknown>) {
   const fromTokenInput = readStringParam(params, 'from_token') ?? readStringParam(params, 'fromToken') ?? 'ETH';
   const toTokenInput = readStringParam(params, 'to_token') ?? readStringParam(params, 'toToken') ?? 'ETH';
   const amount = readStringParam(params, 'amount', { required: true })!;
-  const slippage = readNumberParam(params, 'slippage') ?? 0.03;
+  const slippage = readNumberParam(params, 'slippage') ?? 0.005; // 0.5% default (was 3% — too high, sandwich-exploitable)
   const preferredBridge = readStringParam(params, 'bridge');
 
   const fromToken = resolveTokenAddress(fromTokenInput, fromChainId);
@@ -367,7 +370,7 @@ async function handleExecute(params: Record<string, unknown>) {
   const fromTokenInput = readStringParam(params, 'from_token') ?? readStringParam(params, 'fromToken') ?? 'ETH';
   const toTokenInput = readStringParam(params, 'to_token') ?? readStringParam(params, 'toToken') ?? 'ETH';
   const amount = readStringParam(params, 'amount', { required: true })!;
-  const slippage = readNumberParam(params, 'slippage') ?? 0.03;
+  const slippage = readNumberParam(params, 'slippage') ?? 0.005; // 0.5% default (was 3% — too high, sandwich-exploitable)
 
   const fromToken = resolveTokenAddress(fromTokenInput, fromChainId);
   const toToken = resolveTokenAddress(toTokenInput, toChainId);

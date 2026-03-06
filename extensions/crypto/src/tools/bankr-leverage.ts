@@ -37,12 +37,33 @@ const BankrLeverageSchema = Type.Object({
   })),
 });
 
+// ─── Input Sanitization (C3: prevent prompt injection) ──────────────────
+const SAFE_PAIR_RE = /^[A-Za-z0-9/.\-_ ]{1,30}$/;
+const SAFE_AMOUNT_RE = /^\$?[0-9][0-9,._]*$/;
+const SAFE_PERCENT_RE = /^[0-9]{1,5}%?$/;
+
+function sanitizePair(input: string): string {
+  const trimmed = input.trim();
+  if (SAFE_PAIR_RE.test(trimmed)) return trimmed;
+  throw new Error(`Invalid pair: "${trimmed.slice(0, 20)}". Use format like "BTC/USD" or "ETH/USD".`);
+}
+function sanitizeAmount(input: string): string {
+  const trimmed = input.trim();
+  if (SAFE_AMOUNT_RE.test(trimmed)) return trimmed;
+  throw new Error(`Invalid amount: "${trimmed.slice(0, 20)}". Use a number like "100" or "500".`);
+}
+function sanitizePercent(input: string): string {
+  const trimmed = input.trim();
+  if (SAFE_PERCENT_RE.test(trimmed)) return trimmed;
+  throw new Error(`Invalid percentage: "${trimmed.slice(0, 20)}". Use format like "5%" or "200%".`);
+}
+
 function buildPrompt(action: string, params: Record<string, unknown>): string {
-  const pair = readStringParam(params, 'pair') || '';
-  const amount = readStringParam(params, 'amount') || '';
+  const pair = readStringParam(params, 'pair') ? sanitizePair(readStringParam(params, 'pair')!) : '';
+  const amount = readStringParam(params, 'amount') ? sanitizeAmount(readStringParam(params, 'amount')!) : '';
   const leverage = readNumberParam(params, 'leverage');
-  const stopLoss = readStringParam(params, 'stop_loss');
-  const takeProfit = readStringParam(params, 'take_profit');
+  const stopLoss = readStringParam(params, 'stop_loss') ? sanitizePercent(readStringParam(params, 'stop_loss')!) : undefined;
+  const takeProfit = readStringParam(params, 'take_profit') ? sanitizePercent(readStringParam(params, 'take_profit')!) : undefined;
 
   const leverageStr = leverage && leverage > 1 ? ` with ${leverage}x leverage` : '';
   const slStr = stopLoss ? `, ${stopLoss} stop loss` : '';
@@ -66,7 +87,7 @@ export function createBankrLeverageTool() {
   return {
     name: 'bankr_leverage',
     label: 'Bankr Leverage',
-    ownerOnly: false,
+    ownerOnly: true,
     description:
       'Leveraged trading via Avantis on Base. Open long/short positions ' +
       'with 1-10x leverage on crypto (BTC, ETH), forex (EUR/USD), and ' +

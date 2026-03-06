@@ -48,15 +48,56 @@ const BankrAutomateSchema = Type.Object({
   })),
 });
 
+// ─── Input Sanitization (C3: prevent prompt injection) ──────────────────
+// Bankr NL prompts are built from user-supplied fields. Validate that
+// token symbols/addresses, amounts, and triggers contain only expected chars.
+
+const SAFE_TOKEN_RE = /^[a-zA-Z0-9_.\-\/]{1,60}$/;
+const SAFE_ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
+const SAFE_AMOUNT_RE = /^\$?[0-9][0-9,._]*\s*[a-zA-Z]*$/;
+const SAFE_TRIGGER_RE = /^[a-zA-Z0-9$%.,\s\-+<>=!]{1,120}$/;
+const SAFE_INTERVAL_RE = /^[a-zA-Z0-9\s]{1,60}$/;
+const SAFE_ID_RE = /^[a-zA-Z0-9_\-]{1,80}$/;
+
+function sanitizeToken(input: string): string {
+  const trimmed = input.trim();
+  if (SAFE_ADDRESS_RE.test(trimmed) || SAFE_TOKEN_RE.test(trimmed)) return trimmed;
+  throw new Error(`Invalid token: "${trimmed.slice(0, 30)}". Use a symbol (e.g. "ETH") or address (0x...).`);
+}
+
+function sanitizeAmount(input: string): string {
+  const trimmed = input.trim();
+  if (SAFE_AMOUNT_RE.test(trimmed)) return trimmed;
+  throw new Error(`Invalid amount: "${trimmed.slice(0, 30)}". Use a number like "$100" or "0.5 ETH".`);
+}
+
+function sanitizeTrigger(input: string): string {
+  const trimmed = input.trim();
+  if (SAFE_TRIGGER_RE.test(trimmed)) return trimmed;
+  throw new Error(`Invalid trigger: "${trimmed.slice(0, 30)}". Use a simple condition like "drops 10%" or "reaches $50000".`);
+}
+
+function sanitizeInterval(input: string): string {
+  const trimmed = input.trim();
+  if (SAFE_INTERVAL_RE.test(trimmed)) return trimmed;
+  throw new Error(`Invalid interval: "${trimmed.slice(0, 30)}". Use something like "every day" or "every 6 hours".`);
+}
+
+function sanitizeId(input: string): string {
+  const trimmed = input.trim();
+  if (SAFE_ID_RE.test(trimmed)) return trimmed;
+  throw new Error(`Invalid automation ID: "${trimmed.slice(0, 30)}".`);
+}
+
 // Prompt templates for each action
 function buildPrompt(action: string, params: Record<string, unknown>): string {
-  const token = readStringParam(params, 'token') || '';
-  const amount = readStringParam(params, 'amount') || '';
-  const trigger = readStringParam(params, 'trigger') || '';
-  const interval = readStringParam(params, 'interval') || '';
-  const duration = readStringParam(params, 'duration') || '';
-  const time = readStringParam(params, 'time') || '';
-  const automationId = readStringParam(params, 'automation_id') || '';
+  const token = readStringParam(params, 'token') ? sanitizeToken(readStringParam(params, 'token')!) : '';
+  const amount = readStringParam(params, 'amount') ? sanitizeAmount(readStringParam(params, 'amount')!) : '';
+  const trigger = readStringParam(params, 'trigger') ? sanitizeTrigger(readStringParam(params, 'trigger')!) : '';
+  const interval = readStringParam(params, 'interval') ? sanitizeInterval(readStringParam(params, 'interval')!) : '';
+  const duration = readStringParam(params, 'duration') ? sanitizeInterval(readStringParam(params, 'duration')!) : '';
+  const time = readStringParam(params, 'time') ? sanitizeInterval(readStringParam(params, 'time')!) : '';
+  const automationId = readStringParam(params, 'automation_id') ? sanitizeId(readStringParam(params, 'automation_id')!) : '';
 
   switch (action) {
     case 'limit_buy':
@@ -84,7 +125,7 @@ export function createBankrAutomateTool() {
   return {
     name: 'bankr_automate',
     label: 'Bankr Automate',
-    ownerOnly: false,
+    ownerOnly: true,
     description:
       'Set up trading automations via Bankr: limit orders (buy/sell), stop-loss, ' +
       'dollar-cost averaging (DCA), and time-weighted average price (TWAP) sells. ' +

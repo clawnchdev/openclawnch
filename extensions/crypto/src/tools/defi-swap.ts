@@ -61,7 +61,7 @@ export function createDefiSwapTool() {
   return {
     name: 'defi_swap',
     label: 'DeFi Swap',
-    ownerOnly: false,
+    ownerOnly: true,
     description:
       'Swap tokens via DEX aggregator (Base) or Bankr Agent API (all chains). ' +
       'Get quotes with price impact and gas estimates, then execute swaps. ' +
@@ -115,15 +115,38 @@ export function createDefiSwapTool() {
 
 // ─── Bankr Swap Handlers ─────────────────────────────────────────────────
 
+// ─── Input Sanitization (C3: prevent prompt injection in Bankr NL prompts) ──
+const SAFE_TOKEN_RE = /^[a-zA-Z0-9_.\-\/]{1,60}$/;
+const SAFE_ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
+const SAFE_AMOUNT_RE = /^[0-9][0-9,._]*$/;
+const SAFE_CHAIN_RE = /^[a-zA-Z0-9\-]{1,20}$/;
+
+function sanitizeBankrToken(input: string): string {
+  const trimmed = input.trim();
+  if (SAFE_ADDRESS_RE.test(trimmed) || SAFE_TOKEN_RE.test(trimmed)) return trimmed;
+  throw new Error(`Invalid token: "${trimmed.slice(0, 30)}". Use a symbol (e.g. "ETH") or address (0x...).`);
+}
+function sanitizeBankrAmount(input: string): string {
+  const trimmed = input.trim();
+  if (SAFE_AMOUNT_RE.test(trimmed)) return trimmed;
+  throw new Error(`Invalid amount: "${trimmed.slice(0, 30)}". Use a number like "0.1" or "100".`);
+}
+function sanitizeBankrChain(input: string): string {
+  const trimmed = input.trim();
+  if (SAFE_CHAIN_RE.test(trimmed)) return trimmed;
+  throw new Error(`Invalid chain: "${trimmed.slice(0, 20)}".`);
+}
+
 async function handleBankrQuote(params: Record<string, unknown>, chain: string) {
-  const tokenIn = readStringParam(params, 'token_in', { required: true })!;
-  const tokenOut = readStringParam(params, 'token_out', { required: true })!;
-  const amount = readStringParam(params, 'amount', { required: true })!;
+  const tokenIn = sanitizeBankrToken(readStringParam(params, 'token_in', { required: true })!);
+  const tokenOut = sanitizeBankrToken(readStringParam(params, 'token_out', { required: true })!);
+  const amount = sanitizeBankrAmount(readStringParam(params, 'amount', { required: true })!);
+  const safeChain = sanitizeBankrChain(chain);
 
   try {
     const { bankrPromptAndPoll } = await import('../services/bankr-api.js');
 
-    const prompt = `quote swapping ${amount} ${tokenIn} to ${tokenOut} on ${chain}`;
+    const prompt = `quote swapping ${amount} ${tokenIn} to ${tokenOut} on ${safeChain}`;
     const result = await bankrPromptAndPoll(prompt, { timeoutMs: 30_000 });
 
     if (result.status === 'failed') {
@@ -146,14 +169,15 @@ async function handleBankrQuote(params: Record<string, unknown>, chain: string) 
 }
 
 async function handleBankrSwap(params: Record<string, unknown>, chain: string) {
-  const tokenIn = readStringParam(params, 'token_in', { required: true })!;
-  const tokenOut = readStringParam(params, 'token_out', { required: true })!;
-  const amount = readStringParam(params, 'amount', { required: true })!;
+  const tokenIn = sanitizeBankrToken(readStringParam(params, 'token_in', { required: true })!);
+  const tokenOut = sanitizeBankrToken(readStringParam(params, 'token_out', { required: true })!);
+  const amount = sanitizeBankrAmount(readStringParam(params, 'amount', { required: true })!);
+  const safeChain = sanitizeBankrChain(chain);
 
   try {
     const { bankrPromptAndPoll } = await import('../services/bankr-api.js');
 
-    const prompt = `swap ${amount} ${tokenIn} to ${tokenOut} on ${chain}`;
+    const prompt = `swap ${amount} ${tokenIn} to ${tokenOut} on ${safeChain}`;
     const result = await bankrPromptAndPoll(prompt, { timeoutMs: 120_000 });
 
     if (result.status === 'failed') {
@@ -191,12 +215,37 @@ async function handleQuote(params: Record<string, unknown>) {
     const { parseEther, parseUnits, formatUnits } = await import('viem');
     const state = getWalletState();
 
-    // Convert amount to wei (assume 18 decimals for ETH/WETH, try to detect for others)
+    // L2: Detect actual decimals instead of assuming 18 for all non-ETH tokens
     const isEth = tokenIn.toLowerCase() === BASE_TOKENS.ETH!.toLowerCase()
       || tokenIn.toLowerCase() === BASE_TOKENS.WETH!.toLowerCase();
+    let tokenDecimals = 18;
+    if (!isEth) {
+      // Check well-known tokens first
+      const knownEntry = Object.entries(BASE_TOKENS).find(
+        ([, addr]) => addr.toLowerCase() === tokenIn.toLowerCase()
+      );
+      if (knownEntry) {
+        // USDC/USDT = 6 decimals, others = 18
+        if (['USDC', 'USDT'].includes(knownEntry[0])) tokenDecimals = 6;
+      } else {
+        // Try reading decimals from chain
+        try {
+          const { erc20Abi } = await import('viem');
+          const publicClient = requirePublicClient();
+          const dec = await publicClient.readContract({
+            address: tokenIn as `0x${string}`,
+            abi: erc20Abi,
+            functionName: 'decimals',
+          }) as number;
+          tokenDecimals = dec;
+        } catch {
+          // Fallback to 18 if we can't read
+        }
+      }
+    }
     const amountWei = isEth
       ? parseEther(amount)
-      : parseUnits(amount, 18); // Default to 18 decimals
+      : parseUnits(amount, tokenDecimals);
 
     // Query multiple DEX aggregators in parallel for best price
     const { getDexAggregator } = await import('../services/dex-aggregator.js');
@@ -264,11 +313,13 @@ async function handleQuote(params: Record<string, unknown>) {
     }
 
     // Build comparison table from all aggregator quotes
+    // L2: Use detected tokenDecimals for output formatting
+    const outDecimals = 18; // output token decimals — TODO: detect from tokenOut too
     const comparison = allQuotes
       .filter((q) => !q.error)
       .map((q) => ({
         aggregator: q.aggregator,
-        buyAmount: formatUnits(BigInt(q.buyAmount || '0'), 18),
+        buyAmount: formatUnits(BigInt(q.buyAmount || '0'), outDecimals),
         gasEstimate: q.gasEstimate,
         gasCostUsd: q.gasCostUsd,
         route: q.route,

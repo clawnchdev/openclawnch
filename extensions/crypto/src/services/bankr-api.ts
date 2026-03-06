@@ -124,6 +124,9 @@ async function handleResponse(res: Response): Promise<any> {
   }
 }
 
+// H10: Default request timeout (30s) to prevent hanging on unresponsive APIs
+const BANKR_REQUEST_TIMEOUT_MS = 30_000;
+
 export async function bankrGet(path: string): Promise<any> {
   const key = requireBankrApiKey();
   const res = await fetch(`${BANKR_API}${path}`, {
@@ -132,6 +135,7 @@ export async function bankrGet(path: string): Promise<any> {
       'X-API-Key': key,
       'Content-Type': 'application/json',
     },
+    signal: AbortSignal.timeout(BANKR_REQUEST_TIMEOUT_MS),
   });
   return handleResponse(res);
 }
@@ -145,6 +149,7 @@ export async function bankrPost(path: string, body: unknown): Promise<any> {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(BANKR_REQUEST_TIMEOUT_MS),
   });
   return handleResponse(res);
 }

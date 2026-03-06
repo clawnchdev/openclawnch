@@ -77,7 +77,7 @@ export function createLiquidityTool() {
   return {
     name: 'liquidity',
     label: 'Liquidity',
-    ownerOnly: false,
+    ownerOnly: true,
     description:
       'Manage Uniswap V4 and V3 liquidity positions on Base. ' +
       'List positions, read pool state, mint/add/remove liquidity, and collect fees. ' +

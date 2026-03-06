@@ -13,7 +13,7 @@ describe('bridge tool', () => {
   it('has correct metadata', () => {
     expect(tool.name).toBe('bridge');
     expect(tool.label).toBe('Bridge');
-    expect(tool.ownerOnly).toBe(false); // read operations don't need wallet
+    expect(tool.ownerOnly).toBe(true); // C2 fix: bridge includes write operations (execute), so owner-only
     expect(tool.parameters.type).toBe('object');
     expect(tool.parameters.properties.action).toBeDefined();
     expect(typeof tool.execute).toBe('function');

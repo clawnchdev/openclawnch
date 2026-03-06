@@ -51,7 +51,6 @@
       "mode": "token"
     },
     "controlUi": {
-      "dangerouslyAllowHostHeaderOriginFallback": true
     }
   },
   "plugins": {

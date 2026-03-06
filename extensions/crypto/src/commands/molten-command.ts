@@ -28,7 +28,9 @@ export const moltenCommand = {
       };
     }
 
-    const baseUrl = process.env.MOLTEN_BASE_URL || MOLTEN_BASE_URL;
+    // H8: Removed MOLTEN_BASE_URL env override — prevents credential exfiltration
+    // via attacker-controlled URL. Always use the hardcoded production URL.
+    const baseUrl = MOLTEN_BASE_URL;
 
     try {
       // Try /agents/me for profile

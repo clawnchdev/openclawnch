@@ -271,7 +271,8 @@ describe('deploy artifacts', () => {
     expect(config.gateway.auth).toBeDefined();
     expect(config.gateway.auth.mode).toBe('token');
     expect(config.gateway.controlUi).toBeDefined();
-    expect(config.gateway.controlUi.dangerouslyAllowHostHeaderOriginFallback).toBe(true);
+    // H6 fix: dangerouslyAllowHostHeaderOriginFallback was removed for security (DNS rebinding risk)
+    expect(config.gateway.controlUi.dangerouslyAllowHostHeaderOriginFallback).toBeUndefined();
   });
 
   it('openclaw.json uses new config schema (agents.defaults, not agent)', () => {

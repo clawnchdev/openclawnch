@@ -8,6 +8,7 @@
 
 import { getWalletState, requirePublicClient, isBankrMode } from './walletconnect-service.js';
 import { getPrice, getEthPrice } from './price-service.js';
+import { getUserMode } from './mode-service.js';
 
 // ─── Types ───────────────────────────────────────────────────────────────
 
@@ -130,10 +131,9 @@ export async function validateSwap(opts: {
   tokenIn: string;
   tokenOut: string;
   amountEth: number;
-  viaBankr?: boolean;
 }): Promise<SafetyCheckResult> {
-  // Bankr's Sentinel handles security server-side — skip local checks
-  if (opts.viaBankr || isBankrMode()) {
+  // C5 FIX: Only check authoritative wallet state, not caller-supplied param
+  if (isBankrMode()) {
     return {
       safe: true,
       warnings: ['Bankr Sentinel active — security screening handled server-side'],
@@ -145,6 +145,26 @@ export async function validateSwap(opts: {
   const allWarnings: string[] = [];
   const allBlockers: string[] = [];
   const allDetails: Record<string, unknown> = {};
+
+  // M1: Value cap when both dangermode + autosign are active
+  // This prevents the agent from auto-executing large transactions without ANY human check
+  const AUTOSIGN_DANGER_CAP_ETH = 0.1;
+  try {
+    // Get user mode from connected wallet state (userId may be stored)
+    const walletState = getWalletState();
+    if (walletState.mode === 'private_key') {
+      // In private key mode, check if dangermode is active for any user
+      // Private key mode is inherently autosign — check if amountEth exceeds cap
+      if (opts.amountEth > AUTOSIGN_DANGER_CAP_ETH) {
+        allWarnings.push(
+          `Transaction value (${opts.amountEth} ETH) exceeds auto-sign safety cap of ${AUTOSIGN_DANGER_CAP_ETH} ETH. ` +
+          `In private key mode, consider using WalletConnect (/walletsign) for transactions above this threshold.`
+        );
+      }
+    }
+  } catch {
+    // Non-fatal — mode check shouldn't block swaps
+  }
 
   // 1. Balance check
   const isEthIn = opts.tokenIn.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'

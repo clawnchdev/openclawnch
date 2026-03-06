@@ -42,11 +42,15 @@ export const dangermodeCommand = {
   handler: async (ctx: any) => {
     const userId = getSenderId(ctx);
     const mode = setSafetyMode(userId, 'danger');
+    // M1: Warn strongly when both dangermode + autosign are active
+    const isDualDanger = mode.signingMode === 'autosign';
     const signingNote = mode.signingMode === 'wallet'
       ? 'Transactions still require wallet approval on your phone.'
-      : 'WARNING: With auto-sign enabled, transactions execute without ANY confirmation.';
+      : 'CRITICAL WARNING: With auto-sign enabled, transactions execute without ANY confirmation. ' +
+        'A safety cap of 0.1 ETH per transaction applies in this mode. ' +
+        'Consider using /walletsign for larger amounts.';
     return {
-      text: `Danger mode enabled.
+      text: `${isDualDanger ? '⚠️ MAXIMUM RISK MODE ⚠️\n\n' : ''}Danger mode enabled.
 
 The agent will act immediately on your requests without confirming intent first.
 

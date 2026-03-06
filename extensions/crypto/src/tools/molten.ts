@@ -35,8 +35,8 @@ function getMoltenApiKey(): string | undefined {
 let _inMemoryApiKey: string | undefined;
 
 function setMoltenApiKey(apiKey: string): void {
+  // M10 FIX: Only store in memory, not process.env (reduces blast radius)
   _inMemoryApiKey = apiKey;
-  process.env.MOLTEN_API_KEY = apiKey;
 }
 
 async function moltenFetch(
@@ -168,7 +168,7 @@ export function createMoltenTool() {
   return {
     name: 'molten',
     label: 'Molten',
-    ownerOnly: false,
+    ownerOnly: true,
     description:
       'Intent resolution layer for AI agents on molten.gg. ' +
       'Start conversations to find capabilities, search the network, post offers/requests, ' +
@@ -225,10 +225,16 @@ export function createMoltenTool() {
               setMoltenApiKey(result.agent.api_key);
             }
 
+            // H2 FIX: Never return API key in LLM-visible tool response
+            const maskedKey = result?.agent?.api_key
+              ? `${result.agent.api_key.slice(0, 8)}...${result.agent.api_key.slice(-4)}`
+              : undefined;
+            const { api_key: _stripped, ...safeResult } = result?.agent ?? {};
             return jsonResult({
               ...result,
-              setup: result?.agent?.api_key
-                ? `API key active for this session. To persist: \`/flykeys set MOLTEN_API_KEY ${result.agent.api_key}\``
+              agent: safeResult,
+              setup: maskedKey
+                ? `API key active (${maskedKey}). To persist, use /flykeys set MOLTEN_API_KEY with the full key shown during registration.`
                 : undefined,
               claim: result?.agent?.claim_url
                 ? `Claim your agent: ${result.agent.claim_url}`
