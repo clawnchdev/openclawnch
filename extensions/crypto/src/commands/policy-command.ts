@@ -32,7 +32,18 @@ export const policyCommand = {
       };
     }
 
-    const result = parsePolicies(input);
+    let result: ReturnType<typeof parsePolicies>;
+    try {
+      result = parsePolicies(input);
+    } catch (err) {
+      return {
+        text: `Failed to parse policy: ${err instanceof Error ? err.message : String(err)}\n\n` +
+          '**Examples:**\n' +
+          '`/policy approve under 0.05 ETH`\n' +
+          '`/policy auto-approve below 0.01 ETH, max 10/hour`\n' +
+          '`/policy no auto-approve`',
+      };
+    }
 
     if (result.clearAll) {
       clearPolicies();

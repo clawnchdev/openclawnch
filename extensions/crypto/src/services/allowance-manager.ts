@@ -206,8 +206,8 @@ export class AllowanceManager {
       }
     }
 
-    // Execute all checks in parallel (batched)
-    const results = await Promise.all(
+    // Execute all checks in parallel (batched) with overall 30s timeout
+    const allChecks = Promise.all(
       checks.map(async ({ token, spenderAddr, spenderName }): Promise<AllowanceInfo | null> => {
         try {
           const [allowance, decimals, symbol] = await Promise.all([
@@ -253,6 +253,10 @@ export class AllowanceManager {
         }
       }),
     );
+    const timeoutPromise = new Promise<(AllowanceInfo | null)[]>((_, reject) =>
+      setTimeout(() => reject(new Error('Allowance audit timed out after 30s')), 30_000),
+    );
+    const results = await Promise.race([allChecks, timeoutPromise]);
 
     const allowances = results.filter((r): r is AllowanceInfo => r !== null);
     const unlimited = allowances.filter((a) => a.isUnlimited).length;

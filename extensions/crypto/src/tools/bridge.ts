@@ -403,8 +403,8 @@ async function handleExecute(params: Record<string, unknown>) {
       gasLimit: txRequest.gasLimit ? BigInt(txRequest.gasLimit) : undefined,
     } as any);
 
-    // Step 3: Wait for source chain confirmation
-    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+    // Step 3: Wait for source chain confirmation (120s timeout — bridges can be slow)
+    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash, timeout: 120_000 });
 
     const estimate = quoteData.estimate ?? {};
     const toolData = quoteData.toolDetails ?? {};

@@ -69,6 +69,7 @@ export const creditsCommand = {
     try {
       const res = await fetch(`${BANKR_BASE}/v1/usage?days=30`, {
         headers: { 'X-API-Key': key, 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(15_000),
       });
 
       if (res.status === 403) {
@@ -176,6 +177,7 @@ export const usageCommand = {
     try {
       const res = await fetch(`${BANKR_BASE}/v1/usage?days=${days}`, {
         headers: { 'X-API-Key': key, 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(15_000),
       });
 
       if (res.status === 403) {

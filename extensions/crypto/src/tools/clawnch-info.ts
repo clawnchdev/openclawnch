@@ -370,6 +370,7 @@ async function handleAgentStatus(params: Record<string, unknown>) {
           'x-api-key': apiKey,
           Accept: 'application/json',
         },
+        signal: AbortSignal.timeout(15_000),
       },
     );
 
@@ -414,6 +415,7 @@ async function handlePlatformStats() {
   try {
     const response = await fetch(`${apiUrl}/api/stats`, {
       headers: { Accept: 'application/json' },
+      signal: AbortSignal.timeout(15_000),
     });
 
     if (!response.ok) {
@@ -452,6 +454,7 @@ async function handleListTokens(params: Record<string, unknown>) {
 
     const response = await fetch(`${apiUrl}/api/tokens?${queryParams}`, {
       headers: { Accept: 'application/json' },
+      signal: AbortSignal.timeout(15_000),
     });
 
     if (!response.ok) {
