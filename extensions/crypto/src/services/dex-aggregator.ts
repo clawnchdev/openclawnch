@@ -254,6 +254,94 @@ async function fetchQuoteKyber(
   };
 }
 
+async function fetchQuote1inch(
+  sellToken: string,
+  buyToken: string,
+  sellAmount: string,
+  chainId: number,
+  slippageBps: number,
+  timeoutMs: number,
+): Promise<SwapQuote> {
+  const apiKey = process.env.ONEINCH_API_KEY;
+  if (!apiKey) throw new Error('1inch: ONEINCH_API_KEY not set');
+
+  const params = new URLSearchParams({
+    src: sellToken,
+    dst: buyToken,
+    amount: sellAmount,
+    slippage: String(slippageBps / 100), // 1inch uses percent, not bps
+    includeGas: 'true',
+  });
+
+  const resp = await fetch(
+    `https://api.1inch.dev/swap/v6.0/${chainId}/quote?${params}`,
+    {
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        Accept: 'application/json',
+      },
+      signal: AbortSignal.timeout(timeoutMs),
+    },
+  );
+
+  if (!resp.ok) throw new Error(`1inch: ${resp.status} ${await resp.text()}`);
+  const data = (await resp.json()) as any;
+
+  return {
+    aggregator: '1inch',
+    sellToken,
+    buyToken,
+    sellAmount,
+    buyAmount: data.dstAmount ?? '0',
+    price: parseFloat(data.dstAmount ?? '0') / (parseFloat(sellAmount) || 1),
+    gasEstimate: String(data.gas ?? 0),
+    route: data.protocols?.flat()?.flat()?.map((p: any) => p.name).filter(Boolean).join(' → ') || '1inch',
+    data,
+  };
+}
+
+async function fetchQuoteOpenOcean(
+  sellToken: string,
+  buyToken: string,
+  sellAmount: string,
+  chainId: number,
+  slippageBps: number,
+  timeoutMs: number,
+): Promise<SwapQuote> {
+  const chain = CHAIN_SLUG[chainId]?.openocean ?? 'base';
+
+  const params = new URLSearchParams({
+    inTokenAddress: sellToken,
+    outTokenAddress: buyToken,
+    amount: sellAmount,
+    slippage: String(slippageBps / 100),
+    gasPrice: '5', // placeholder; OpenOcean needs gas price
+    account: '0x0000000000000000000000000000000000000000',
+  });
+
+  const resp = await fetch(
+    `https://open-api.openocean.finance/v4/${chain}/quote?${params}`,
+    { signal: AbortSignal.timeout(timeoutMs) },
+  );
+
+  if (!resp.ok) throw new Error(`OpenOcean: ${resp.status} ${await resp.text()}`);
+  const data = (await resp.json()) as any;
+  const result = data.data;
+
+  return {
+    aggregator: 'OpenOcean',
+    sellToken,
+    buyToken,
+    sellAmount,
+    buyAmount: result?.outAmount ?? '0',
+    price: parseFloat(result?.outAmount ?? '0') / (parseFloat(sellAmount) || 1),
+    gasEstimate: String(result?.estimatedGas ?? 0),
+    gasCostUsd: result?.estimatedGasUsd ? parseFloat(result.estimatedGasUsd) : undefined,
+    route: result?.dexes?.map((d: any) => d.dex).join(' → ') || 'OpenOcean',
+    data: result,
+  };
+}
+
 // ── Aggregator Manager ──────────────────────────────────────────────────────
 
 export class DexAggregator {
@@ -369,6 +457,10 @@ export class DexAggregator {
         return fetchQuoteOdos(sellToken, buyToken, sellAmount, chainId, this.slippageBps, this.timeoutMs);
       case 'kyberswap':
         return fetchQuoteKyber(sellToken, buyToken, sellAmount, chainId, this.slippageBps, this.timeoutMs);
+      case '1inch':
+        return fetchQuote1inch(sellToken, buyToken, sellAmount, chainId, this.slippageBps, this.timeoutMs);
+      case 'openocean':
+        return fetchQuoteOpenOcean(sellToken, buyToken, sellAmount, chainId, this.slippageBps, this.timeoutMs);
       default:
         throw new Error(`Unknown aggregator: ${name}`);
     }

@@ -43,6 +43,8 @@ export interface PriceOracleConfig {
   coingeckoApiKey?: string;
   /** CoinMarketCap API key (required for CMC). */
   cmcApiKey?: string;
+  /** Birdeye API key (required for Birdeye). */
+  birdeyeApiKey?: string;
 }
 
 // ── Token ID Mappings ───────────────────────────────────────────────────────
@@ -57,6 +59,20 @@ const COINGECKO_IDS: Record<string, string> = {
   CRV: 'curve-dao-token', MKR: 'maker', SNX: 'synthetix-network-token',
   COMP: 'compound-governance-token', LDO: 'lido-dao', RPL: 'rocket-pool',
   PEPE: 'pepe', SHIB: 'shiba-inu', DOGE: 'dogecoin',
+};
+
+// Well-known tokens → Birdeye chain-specific addresses (Base and Ethereum)
+const BIRDEYE_ADDRESSES: Record<string, Record<string, string>> = {
+  ETH: { base: 'So11111111111111111111111111111111111111112', ethereum: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2' },
+  WETH: { base: '0x4200000000000000000000000000000000000006', ethereum: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2' },
+  USDC: { base: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', ethereum: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48' },
+  USDT: { base: '0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2', ethereum: '0xdAC17F958D2ee523a2206206994597C13D831ec7' },
+  DAI: { ethereum: '0x6B175474E89094C44Da98b954EedeAC495271d0F' },
+};
+
+const BIRDEYE_CHAIN_MAP: Record<string, string> = {
+  base: 'base', ethereum: 'ethereum', arbitrum: 'arbitrum',
+  optimism: 'optimism', polygon: 'polygon',
 };
 
 // ── Individual Source Fetchers ───────────────────────────────────────────────
@@ -165,6 +181,47 @@ async function fetchCoinMarketCap(
   }
 }
 
+async function fetchBirdeye(
+  token: string,
+  chain: string,
+  tokenAddress: string | undefined,
+  timeoutMs: number,
+  apiKey?: string,
+): Promise<PriceSource> {
+  if (!apiKey) {
+    return { name: 'Birdeye', priceUsd: 0, timestamp: Date.now(), error: 'No API key (BIRDEYE_API_KEY)' };
+  }
+
+  try {
+    // Resolve address: use provided address, or look up from well-known table
+    const address = tokenAddress ?? BIRDEYE_ADDRESSES[token.toUpperCase()]?.[chain];
+    if (!address) {
+      return { name: 'Birdeye', priceUsd: 0, timestamp: Date.now(), error: 'Unknown token address for Birdeye' };
+    }
+
+    const birdeyeChain = BIRDEYE_CHAIN_MAP[chain] ?? 'base';
+    const resp = await fetch(
+      `https://public-api.birdeye.so/defi/price?address=${address}`,
+      {
+        headers: {
+          'X-API-KEY': apiKey,
+          'x-chain': birdeyeChain,
+          Accept: 'application/json',
+        },
+        signal: AbortSignal.timeout(timeoutMs),
+      },
+    );
+
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = (await resp.json()) as any;
+    const price = data.data?.value ?? 0;
+
+    return { name: 'Birdeye', priceUsd: price, timestamp: Date.now() };
+  } catch (err) {
+    return { name: 'Birdeye', priceUsd: 0, timestamp: Date.now(), error: (err as Error).message };
+  }
+}
+
 async function fetchDexScreenerPrice(
   token: string,
   chain: string,
@@ -185,11 +242,12 @@ export class PriceOracle {
 
   constructor(userConfig: PriceOracleConfig = {}) {
     this.config = {
-      sources: userConfig.sources ?? ['DexScreener', 'CoinGecko', 'DeFiLlama', 'CoinMarketCap'],
+      sources: userConfig.sources ?? ['DexScreener', 'CoinGecko', 'DeFiLlama', 'CoinMarketCap', 'Birdeye'],
       divergenceThreshold: userConfig.divergenceThreshold ?? 2,
       timeoutMs: userConfig.timeoutMs ?? 3000,
       coingeckoApiKey: userConfig.coingeckoApiKey ?? process.env.COINGECKO_API_KEY ?? '',
       cmcApiKey: userConfig.cmcApiKey ?? process.env.CMC_API_KEY ?? '',
+      birdeyeApiKey: userConfig.birdeyeApiKey ?? process.env.BIRDEYE_API_KEY ?? '',
     };
   }
 
@@ -216,6 +274,9 @@ export class PriceOracle {
     }
     if (enabled.includes('CoinMarketCap')) {
       fetchers.push(fetchCoinMarketCap(token, this.config.timeoutMs, this.config.cmcApiKey || undefined));
+    }
+    if (enabled.includes('Birdeye')) {
+      fetchers.push(fetchBirdeye(token, chain, tokenAddress, this.config.timeoutMs, this.config.birdeyeApiKey || undefined));
     }
 
     const sources = await Promise.all(fetchers);
