@@ -34,3 +34,4 @@ deploy/openclawnch.tgz
 # Package lock (using npm)
 # yarn.lock
 # pnpm-lock.yaml
+*.textClipping

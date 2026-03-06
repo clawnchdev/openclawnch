@@ -62,8 +62,8 @@ describe('crypto plugin structure', () => {
 
     plugin.register(mockApi);
 
-    // 4 core + 1 reset_confirm + 5 persona + 10 cap + 1 skip + 5 mode + 9 connect (1 base + 8 wallets) + 1 model + 11 llm shortcuts + 1 reset + 1 molten + 2 bankr LLM (credits, usage) + 2 bankr agent (connect_bankr, automations) + 7 fly control (provider + 3 provider_X + flykeys, flystatus, flyrestart) + 1 setup = 61
-    expect(mockApi.registerCommand).toHaveBeenCalledTimes(61);
+    // 4 core + 1 reset_confirm + 5 persona + 10 cap + 1 skip + 5 mode + 9 connect (1 base + 8 wallets) + 1 model + 11 llm shortcuts + 1 reset + 1 molten + 2 bankr LLM (credits, usage) + 2 bankr agent (connect_bankr, automations) + 7 fly control (provider + 3 provider_X + flykeys, flystatus, flyrestart) + 1 setup + 4 plans = 65
+    expect(mockApi.registerCommand).toHaveBeenCalledTimes(65);
     expect(commands).toContain('wallet');
     expect(commands).toContain('policy');
     expect(commands).toContain('tx');

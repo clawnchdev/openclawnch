@@ -72,6 +72,7 @@ import {
   flykeysCommand, flystatusCommand, flyrestartCommand,
 } from './src/commands/fly-commands.js';
 import { setupCommand } from './src/commands/setup-command.js';
+import { plansCommand, plansActiveCommand, plansCancelCommand, plansClearCommand } from './src/commands/plans-command.js';
 import { getUserMode } from './src/services/mode-service.js';
 
 // Services
@@ -205,6 +206,12 @@ const plugin = {
     // Setup / configuration status
     api.registerCommand(setupCommand);
 
+    // Plans management
+    api.registerCommand(plansCommand);
+    api.registerCommand(plansActiveCommand);
+    api.registerCommand(plansCancelCommand);
+    api.registerCommand(plansClearCommand);
+
     // ─── Gateway Startup Hook ──────────────────────────────────────
     // Only init wallet at boot for private key mode (headless).
     // WalletConnect init is deferred to the clawnchconnect tool to avoid
@@ -215,14 +222,12 @@ const plugin = {
 
       const bankrApiKey = process.env.BANKR_API_KEY;
 
+      // ── Wallet initialization (runs before scheduler) ──────────
       if (!projectId && !privateKey && !bankrApiKey) {
         api.logger?.info?.(
           '[crypto] No wallet configured. Set WALLETCONNECT_PROJECT_ID, CLAWNCHER_PRIVATE_KEY, or BANKR_API_KEY to enable write operations.'
         );
-        return;
-      }
-
-      if (privateKey) {
+      } else if (privateKey) {
         // C6 FIX: Gate private key mode behind explicit opt-in flag
         if (process.env.ALLOW_PRIVATE_KEY_MODE !== 'true') {
           api.logger?.warn?.(
@@ -243,19 +248,17 @@ const plugin = {
             );
           }
         }
-        return;
       }
 
-      if (projectId) {
+      if (projectId && !privateKey && !bankrApiKey) {
         api.logger?.info?.(
           `[crypto] WalletConnect available (project ID configured). ` +
           `Use the clawnchconnect tool to pair a wallet.`
         );
-        return;
       }
 
       // Mode 3: Bankr (auto-connect at boot when no other wallet is configured)
-      if (bankrApiKey) {
+      if (bankrApiKey && !privateKey) {
         try {
           const result = await initWalletService({ bankrApiKey });
           if (result.mode === 'bankr') {
@@ -272,10 +275,16 @@ const plugin = {
         }
       }
 
-      // Start the plan scheduler (restores persisted plans from volume)
+      // ─── Start Plan Scheduler + Executor ─────────────────────────
+      // Wire real resolvers, tool dispatcher, and Telegram notifications.
       try {
         const { getScheduler } = await import('./src/services/plan-scheduler.js');
-        const { getPrice, getEthPrice } = await import('./src/services/price-service.js');
+        const { PlanExecutor, formatExecutionSummary } = await import('./src/services/plan-executor.js');
+        const { getPrice } = await import('./src/services/price-service.js');
+        const { getGasEstimator } = await import('./src/services/gas-estimator.js');
+        const { getRpcManager } = await import('./src/services/rpc-provider.js');
+
+        // ── Runtime Resolver: real service calls ─────────────────
         const scheduler = getScheduler({
           resolver: {
             price: async (token: string) => {
@@ -284,12 +293,131 @@ const plugin = {
                 return data?.priceUsd ?? 0;
               } catch { return 0; }
             },
-            balance: async () => 0, // TODO: wire up defi_balance
-            gasPrice: async () => 0, // TODO: wire up gas estimator
+            balance: async (token: string, chainId?: number) => {
+              try {
+                const cid = chainId ?? 8453; // Default to Base
+                const rpc = getRpcManager();
+                const client = await rpc.getClient(cid);
+                const walletState = getWalletStateFn();
+                if (!walletState.address) return 0;
+                if (!token || token.toUpperCase() === 'ETH') {
+                  const balance = await client.getBalance({ address: walletState.address as `0x${string}` });
+                  return Number(balance) / 1e18;
+                }
+                // ERC-20: simplified balanceOf call
+                const data = await client.readContract({
+                  address: token as `0x${string}`,
+                  abi: [{ name: 'balanceOf', type: 'function', stateMutability: 'view', inputs: [{ name: 'account', type: 'address' }], outputs: [{ name: '', type: 'uint256' }] }] as const,
+                  functionName: 'balanceOf',
+                  args: [walletState.address as `0x${string}`],
+                });
+                return Number(data) / 1e18; // Assumes 18 decimals — good enough for condition checks
+              } catch { return 0; }
+            },
+            gasPrice: async (chainId?: number) => {
+              try {
+                const estimator = getGasEstimator();
+                const gas = await estimator.getGasPrice(chainId ?? 8453);
+                return gas.baseFee + gas.priorityFee;
+              } catch { return 0; }
+            },
             timestamp: () => Math.floor(Date.now() / 1000),
-            blockNumber: async () => 0,
+            blockNumber: async (chainId?: number) => {
+              try {
+                const rpc = getRpcManager();
+                const client = await rpc.getClient(chainId ?? 8453);
+                const block = await client.getBlockNumber();
+                return Number(block);
+              } catch { return 0; }
+            },
           },
         });
+
+        // ── Tool Dispatcher: calls real registered tools ──────────
+        // We build a dispatcher that invokes tools through the plugin API.
+        // The api.runtime provides access to the tool registry.
+        const toolDispatcher = {
+          call: async (toolName: string, params: Record<string, unknown>): Promise<unknown> => {
+            // Find the tool in the registered tools
+            const tools = api.runtime?.tools?.getAll?.() ?? [];
+            const tool = tools.find((t: any) => t.name === toolName);
+            if (!tool) throw new Error(`Tool "${toolName}" not found in registry`);
+
+            // Execute the tool — tools return { text, details } or similar
+            const result = await tool.execute(params, {});
+            // Extract the meaningful result
+            if (result && typeof result === 'object') {
+              const r = result as Record<string, unknown>;
+              return r.details ?? r.text ?? result;
+            }
+            return result;
+          },
+          exists: (toolName: string): boolean => {
+            const tools = api.runtime?.tools?.getAll?.() ?? [];
+            return tools.some((t: any) => t.name === toolName);
+          },
+        };
+
+        // ── Executor: wired to real dispatcher and scheduler ─────
+        const executor = new PlanExecutor({
+          dispatcher: toolDispatcher,
+          scheduler,
+        });
+
+        // ── Scheduler Event Handler: Telegram notifications ──────
+        scheduler.on(async (event: any) => {
+          const sendFn = api.runtime?.channel?.telegram?.sendMessageTelegram;
+
+          if (event.type === 'trigger_fired') {
+            const plan = event.plan;
+            api.logger?.info?.(`[crypto] Plan trigger fired: ${plan.name} (${plan.id})`);
+
+            // Notify user that the plan is executing
+            if (sendFn) {
+              try {
+                // Find the chat to notify — use the plan's userId (which is the Telegram chat ID)
+                const chatId = plan.userId;
+                if (chatId && chatId !== 'owner') {
+                  await sendFn(chatId, `**Plan executing:** ${plan.name}\nTrigger fired — running steps now...`, { accountId: 'default' });
+                }
+              } catch { /* best effort notification */ }
+            }
+
+            // Execute the plan
+            try {
+              const execution = await executor.execute(plan, event.executionId);
+              const summary = formatExecutionSummary(execution, plan);
+              api.logger?.info?.(`[crypto] Plan execution complete: ${plan.name} — ${execution.status}`);
+
+              // Notify user of result
+              if (sendFn) {
+                try {
+                  const chatId = plan.userId;
+                  if (chatId && chatId !== 'owner') {
+                    await sendFn(chatId, summary, { accountId: 'default' });
+                  }
+                } catch { /* best effort notification */ }
+              }
+            } catch (execErr) {
+              api.logger?.warn?.(
+                `[crypto] Plan execution failed: ${plan.name} — ${execErr instanceof Error ? execErr.message : String(execErr)}`
+              );
+            }
+          } else if (event.type === 'plan_expired') {
+            api.logger?.info?.(`[crypto] Plan expired: ${event.plan.name} — ${event.reason}`);
+            if (sendFn) {
+              try {
+                const chatId = event.plan.userId;
+                if (chatId && chatId !== 'owner') {
+                  await sendFn(chatId, `**Plan expired:** ${event.plan.name}\nReason: ${event.reason}`, { accountId: 'default' });
+                }
+              } catch { /* best effort */ }
+            }
+          } else if (event.type === 'condition_check_error') {
+            api.logger?.warn?.(`[crypto] Condition check error for plan ${event.planId}: ${event.error}`);
+          }
+        });
+
         scheduler.start();
         api.logger?.info?.(`[crypto] Plan scheduler started (${scheduler.activeCount} active plans)`);
       } catch (err) {
@@ -465,6 +593,16 @@ Only execute after the user confirms. If the user says "no", "cancel", "stop", o
 3. For swap chains (A→B→C), after swapping A→B, use defi_balance to check the ACTUAL B balance received, then use that exact amount for the B→C swap. NEVER assume the estimated amount is correct.
 4. If any step fails, STOP and report the failure. Do not continue the chain.
 5. Between steps, briefly report what happened and what you'll do next.`);
+
+          // ── Compound Operations ──────────────────────────────────
+          parts.push(`You have access to the compound_action tool for scheduled, conditional, and multi-step operations. Use it when the user wants to:
+- Execute something at a specific time: "sell my ETH at 5pm"
+- Set up conditions: "if ETH drops below $3500, buy 0.5 ETH"
+- Create recurring tasks: "every 4 hours, check ETH and buy if dip > 5%"
+- Chain operations: "swap ETH to USDC, bridge to Arbitrum, then buy ARB"
+
+Flow: create (builds + validates the plan) → user confirms → execute (immediate) or schedule (future trigger).
+Use /plans to see scheduled plans. Plans persist across bot restarts.`);
         }
 
         // ── Bankr wallet context ──────────────────────────────────

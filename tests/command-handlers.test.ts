@@ -1,7 +1,7 @@
 /**
  * Command Handler Tests — exercises every command handler with dry-run invocations.
  *
- * Tests that all 61 registered commands:
+ * Tests that all 65 registered commands:
  * 1. Have the correct shape (name, description, handler)
  * 2. Execute without throwing (return text responses)
  * 3. Produce reasonable output for common cases
@@ -27,8 +27,8 @@ describe('all commands registered and executable', () => {
     commands = registeredCommands;
   });
 
-  it('registers exactly 61 commands', () => {
-    expect(commands.length).toBe(61);
+  it('registers exactly 65 commands', () => {
+    expect(commands.length).toBe(65);
   });
 
   it('all commands have required fields', () => {

@@ -76,7 +76,7 @@ Cost: ~$12/month on Fly.io for a 24/7 instance. You pay your own LLM and Fly bil
 
 ## What It Does
 
-28 tools across 7 categories. 61 slash commands. 25 services. Guided onboarding on first message.
+28 tools across 7 categories. 65 slash commands. 25 services. Guided onboarding on first message.
 
 ### Tools
 
@@ -154,6 +154,10 @@ Cost: ~$12/month on Fly.io for a 24/7 instance. You pay your own LLM and Fly bil
 | `/skip` | Skip onboarding |
 | `/molten` | Molten agent profile |
 | `/automations` | Bankr automation status |
+| `/plans` | List scheduled plans |
+| `/plans_active` | Active plans only |
+| `/plans_cancel` | Cancel a plan |
+| `/plans_clear` | Cancel all active plans |
 | `/flykeys` | Manage Fly.io secrets |
 | `/flystatus` | Machine status |
 | `/flyrestart` | Restart bot |
@@ -190,7 +194,7 @@ Plans persist to disk and survive restarts. Scheduler runs a 15-second tick loop
 Two npm packages, one repo:
 
 - `openclawnch` — CLI wrapper + deploy tooling
-- `@clawnch/openclaw-crypto` — Standalone OpenClaw plugin (28 tools, 61 commands, 25 services)
+- `@clawnch/openclaw-crypto` — Standalone OpenClaw plugin (28 tools, 65 commands, 25 services)
 
 Each user runs their own Fly.io instance with their own API keys. No shared infrastructure.
 
