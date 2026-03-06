@@ -95,6 +95,7 @@ export const providerCommand = {
           '  /provider_anthropic — Claude direct',
           '  /provider_bankr — Bankr Gateway (pay with crypto)',
           '  /provider_openrouter — OpenRouter',
+          '  /provider_openai — OpenAI direct',
           '',
           'Switching requires Fly control. Set FLY_API_TOKEN first.',
           '',
@@ -111,6 +112,7 @@ export const providerCommand = {
         '  /provider_anthropic — Claude direct',
         '  /provider_bankr — Bankr Gateway (pay with crypto)',
         '  /provider_openrouter — OpenRouter (multi-model)',
+        '  /provider_openai — OpenAI direct',
         '',
         'Switching restarts the bot (~40s). Model resets to default for the new provider.',
         '',
@@ -135,14 +137,27 @@ async function handleProviderSwitch(providerArg: LlmProvider): Promise<{ text: s
 
   const requiredKey = PROVIDER_KEYS[providerArg];
   if (requiredKey && !process.env[requiredKey]) {
-    return {
-      text: [
-        `**Missing API key for ${PROVIDER_LABELS[providerArg] ?? providerArg}**`,
-        '',
-        `Set \`${requiredKey}\` first, then try again.`,
-        `(Use /flykeys to manage API keys)`,
-      ].join('\n'),
-    };
+    // Key might be set as a Fly secret but not yet in process.env (requires restart).
+    // Check Fly secrets before rejecting.
+    let keyExistsInFly = false;
+    try {
+      const secrets = await listSecrets();
+      keyExistsInFly = secrets.some((s: any) => s.name === requiredKey);
+    } catch {
+      // Can't check Fly secrets — fall through to the error message
+    }
+
+    if (!keyExistsInFly) {
+      return {
+        text: [
+          `**Missing API key for ${PROVIDER_LABELS[providerArg] ?? providerArg}**`,
+          '',
+          `Set \`${requiredKey}\` first, then try again.`,
+          `(Use /flykeys to manage API keys)`,
+        ].join('\n'),
+      };
+    }
+    // Key exists in Fly but not in process.env — it'll be picked up after restart
   }
 
   try {
@@ -179,6 +194,14 @@ export const providerOpenrouterCommand = {
   acceptsArgs: false,
   requireAuth: true,
   handler: async () => handleProviderSwitch('openrouter'),
+};
+
+export const providerOpenaiCommand = {
+  name: 'provider_openai',
+  description: 'Switch LLM to OpenAI (direct)',
+  acceptsArgs: false,
+  requireAuth: true,
+  handler: async () => handleProviderSwitch('openai' as LlmProvider),
 };
 
 // ─── /flykeys ───────────────────────────────────────────────────────────

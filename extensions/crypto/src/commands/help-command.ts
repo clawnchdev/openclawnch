@@ -21,8 +21,11 @@ export const helpCommand = {
 **Wallet**
   /connect — Connect mobile wallet
   /connect_bankr — Connect Bankr (custodial)
-  /wallet — Wallet status and balance
+  /disconnect — Disconnect wallet
+  /wallet — Wallet status
+  /balance — ETH balance
   /portfolio — Token holdings
+  /chain — Current chain
   /tx — Transaction history
 
 **Safety & Signing**
@@ -31,44 +34,104 @@ export const helpCommand = {
   /dangermode — Act immediately
   /walletsign — Phone approval (default)
   /autosign — Auto-sign with private key
-
-**Spending**
-  /policy — Manage auto-approval rules
+  /policy — Auto-approval rules
 
 **LLM**
   /llm — View or switch model
-  /llm_opus — Switch to Claude Opus
-  /llm_sonnet — Switch to Claude Sonnet
-  /provider — View or switch LLM provider
+  /llm_opus — Claude Opus
+  /llm_sonnet — Claude Sonnet
+  /provider — View or switch provider
+  /provider_anthropic /provider_bankr
+  /provider_openrouter /provider_openai
 
 **Persona**
   /professional /degen /chill /technical /mentor
 
-**Scheduled Operations**
-  /plans — List all plans
-  /plans_active — Active plans only
+**Plans**
+  /plans — List all
+  /plans_active — Active only
   /plans_cancel — Cancel a plan
-  /plans_clear — Cancel all plans
+  /plans_clear — Cancel all
 
 **Bankr**
-  /connect_bankr — Connect Bankr wallet
-  /llmcredits — LLM credit balance
-  /llmcost — LLM cost tracking
+  /connect_bankr — Bankr wallet
+  /llmcredits — Credit balance
+  /llmcost — Cost tracking
   /automations — Automation status
 
-**Deploy Control** (Fly.io only)
-  /flykeys — Manage API keys
+**Deploy** (Fly.io)
+  /flykeys — API keys
   /flystatus — Machine status
   /flyrestart — Restart bot
-  /provider_anthropic /provider_bankr /provider_openrouter
 
 **Other**
-  /setup — Configuration status
-  /molten — Molten agent profile
+  /setup — Config status
+  /molten — Molten agent
   /factoryreset — Wipe all data
   /skip — Skip onboarding
 
-Talk to me naturally — I understand freeform requests like "What's the price of ETH?", "Show my portfolio", "Swap 0.1 ETH for USDC", etc.`,
+Just talk to me — "What's the price of ETH?", "Show my portfolio", "Swap 0.1 ETH for USDC", etc.`,
+    };
+  },
+};
+
+// ── /balance ────────────────────────────────────────────────────────────────
+
+export const balanceCommand = {
+  name: 'balance',
+  description: 'Show ETH balance and wallet address',
+  acceptsArgs: false,
+  requireAuth: true,
+  handler: async (_ctx: any) => {
+    const state = getWalletState();
+
+    if (!state.connected || !state.address) {
+      return {
+        text: 'No wallet connected.\n\nUse /connect to pair your mobile wallet, or /connect_bankr for Bankr (custodial).',
+      };
+    }
+
+    const addr = state.address;
+    const short = `${addr.slice(0, 6)}...${addr.slice(-4)}`;
+    const mode = state.mode === 'bankr' ? 'Bankr (custodial)' : state.mode === 'private_key' ? 'Private key' : 'WalletConnect';
+
+    return {
+      text: `**Wallet:** ${short}\n**Mode:** ${mode}${state.chainId ? `\n**Chain:** ${state.chainId}` : ''}\n\nFor token balances with USD values, ask me:\n"What are my balances?" or "Show my balance on Base"`,
+    };
+  },
+};
+
+// ── /chain ──────────────────────────────────────────────────────────────────
+
+export const chainCommand = {
+  name: 'chain',
+  description: 'Show current chain',
+  acceptsArgs: false,
+  requireAuth: false,
+  handler: async (_ctx: any) => {
+    const state = getWalletState();
+
+    const CHAIN_NAMES: Record<number, string> = {
+      1: 'Ethereum Mainnet',
+      8453: 'Base',
+      42161: 'Arbitrum One',
+      10: 'Optimism',
+      137: 'Polygon',
+      84532: 'Base Sepolia',
+      11155111: 'Ethereum Sepolia',
+    };
+
+    if (!state.connected) {
+      return {
+        text: 'No wallet connected. Default chain: **Base (8453)**\n\nConnect a wallet to interact with a specific chain: /connect',
+      };
+    }
+
+    const chainId = state.chainId ?? 8453;
+    const name = CHAIN_NAMES[chainId] ?? `Chain ${chainId}`;
+
+    return {
+      text: `**Current chain:** ${name} (${chainId})\n\nTo switch chains, ask me: "Switch to Arbitrum" or use the clawnchconnect tool.`,
     };
   },
 };

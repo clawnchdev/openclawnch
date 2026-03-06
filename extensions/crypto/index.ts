@@ -63,17 +63,17 @@ import {
 import {
   safemodeCommand, dangermodeCommand, walletsignCommand, autosignCommand, modeCommand,
 } from './src/commands/mode-commands.js';
-import { connectCommand, walletConnectCommands, setConnectCommandApi, connectBankrCommand } from './src/commands/connect-command.js';
+import { connectCommand, walletConnectCommands, setConnectCommandApi, connectBankrCommand, disconnectCommand } from './src/commands/connect-command.js';
 import { modelCommand, llmShortcutCommands } from './src/commands/model-command.js';
 import { moltenCommand } from './src/commands/molten-command.js';
 import { creditsCommand, usageCommand, automationsCommand } from './src/commands/bankr-commands.js';
 import {
   providerCommand, providerAnthropicCommand, providerBankrCommand, providerOpenrouterCommand,
-  flykeysCommand, flystatusCommand, flyrestartCommand,
+  providerOpenaiCommand, flykeysCommand, flystatusCommand, flyrestartCommand,
 } from './src/commands/fly-commands.js';
 import { setupCommand } from './src/commands/setup-command.js';
 import { plansCommand, plansActiveCommand, plansCancelCommand, plansClearCommand } from './src/commands/plans-command.js';
-import { helpCommand, portfolioCommand } from './src/commands/help-command.js';
+import { helpCommand, portfolioCommand, balanceCommand, chainCommand } from './src/commands/help-command.js';
 import { getUserMode } from './src/services/mode-service.js';
 
 // Services
@@ -190,6 +190,9 @@ const plugin = {
       api.registerCommand(cmd);
     }
 
+    // Disconnect
+    api.registerCommand(disconnectCommand);
+
     // Model switching
     api.registerCommand(modelCommand);
     for (const cmd of llmShortcutCommands) {
@@ -210,6 +213,7 @@ const plugin = {
     api.registerCommand(providerAnthropicCommand);
     api.registerCommand(providerBankrCommand);
     api.registerCommand(providerOpenrouterCommand);
+    api.registerCommand(providerOpenaiCommand);
     api.registerCommand(flykeysCommand);
     api.registerCommand(flystatusCommand);
     api.registerCommand(flyrestartCommand);
@@ -223,9 +227,11 @@ const plugin = {
     api.registerCommand(plansCancelCommand);
     api.registerCommand(plansClearCommand);
 
-    // Help & portfolio
+    // Help, portfolio, balance, chain
     api.registerCommand(helpCommand);
     api.registerCommand(portfolioCommand);
+    api.registerCommand(balanceCommand);
+    api.registerCommand(chainCommand);
 
     // ─── Gateway Startup Hook ──────────────────────────────────────
     // Only init wallet at boot for private key mode (headless).
@@ -646,8 +652,15 @@ Flow: create (builds + validates the plan) → user confirms → execute (immedi
 Use /plans to see scheduled plans. Plans persist across bot restarts.`);
         }
 
-        // ── Bankr wallet context ──────────────────────────────────
+        // ── Wallet state context ───────────────────────────────────
         const walletState = getWalletStateFn();
+        if (!walletState.connected) {
+          parts.push('Wallet status: NOT CONNECTED. The user must connect a wallet before any on-chain operations (swaps, transfers, token launches, etc). Guide them to /connect or /connect_bankr.');
+        } else {
+          const addr = walletState.address ?? 'unknown';
+          const chainId = walletState.chainId ?? 8453;
+          parts.push(`Wallet status: CONNECTED. Address: ${addr}. Chain: ${chainId}. Mode: ${walletState.mode ?? 'walletconnect'}.`);
+        }
         if (walletState.mode === 'bankr') {
           parts.push(`Wallet mode: Bankr (custodial). Transactions execute via Bankr API (api.bankr.bot). No phone approval needed. Bankr's Sentinel security system screens all transactions.
 

@@ -98,12 +98,11 @@ describe('H7: /help command returns grouped commands', () => {
     // Key categories
     expect(text).toContain('**Wallet**');
     expect(text).toContain('**Safety & Signing**');
-    expect(text).toContain('**Spending**');
     expect(text).toContain('**LLM**');
     expect(text).toContain('**Persona**');
-    expect(text).toContain('**Scheduled Operations**');
+    expect(text).toContain('**Plans**');
     expect(text).toContain('**Bankr**');
-    expect(text).toContain('**Deploy Control**');
+    expect(text).toContain('**Deploy**');
     expect(text).toContain('**Other**');
   });
 
@@ -635,7 +634,7 @@ describe('fly.template.toml correctness', () => {
 // ── Plugin registers /help and /portfolio ───────────────────────────────
 
 describe('Plugin registers /help and /portfolio commands', () => {
-  it('/help and /portfolio are among the 67 registered commands', () => {
+  it('/help and /portfolio are among the 71 registered commands', () => {
     const registeredCommands: any[] = [];
     const mockApi = {
       registerTool: () => {},

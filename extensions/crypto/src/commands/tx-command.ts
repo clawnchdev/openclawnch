@@ -26,7 +26,7 @@ export const txCommand = {
     for (const tx of recent) {
       const status = {
         approved: 'Approved',
-        auto_approved: `Auto-approved (${tx.policyLabel})`,
+        auto_approved: `Auto-approved (${tx.policyLabel ?? 'policy'})`,
         rejected: 'Rejected',
         pending: 'Pending...',
       }[tx.status];

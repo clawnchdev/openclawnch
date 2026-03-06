@@ -18,6 +18,7 @@ import {
   waitForWalletSession,
   getWalletState,
   isBankrMode,
+  disconnectWallet,
 } from '../services/walletconnect-service.js';
 import { getBankrUserInfo, hasBankrApi } from '../services/bankr-api.js';
 import { createChannelSender, extractChannelId, type ChannelId } from '../services/channel-sender.js';
@@ -283,6 +284,36 @@ export const connectBankrCommand = {
       }
       return {
         text: `Bankr connection failed: ${msg}`,
+      };
+    }
+  },
+};
+
+// ── /disconnect ─────────────────────────────────────────────────────────────
+
+export const disconnectCommand = {
+  name: 'disconnect',
+  description: 'Disconnect the current wallet',
+  acceptsArgs: false,
+  requireAuth: true,
+  handler: async (_ctx: any) => {
+    const state = getWalletState();
+    if (!state.connected) {
+      return { text: 'No wallet connected.' };
+    }
+
+    const addr = state.address ?? 'unknown';
+    const short = `${addr.slice(0, 6)}...${addr.slice(-4)}`;
+    const mode = state.mode ?? 'unknown';
+
+    try {
+      await disconnectWallet();
+      return {
+        text: `Disconnected wallet ${short} (${mode}).\n\nUse /connect to pair a new wallet.`,
+      };
+    } catch (err) {
+      return {
+        text: `Failed to disconnect: ${err instanceof Error ? err.message : String(err)}`,
       };
     }
   },

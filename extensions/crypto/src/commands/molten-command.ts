@@ -38,7 +38,7 @@ export const moltenCommand = {
         headers: {
           'Authorization': `Bearer ${apiKey}`,
           'Accept': 'application/json',
-          'X-Client-Type': 'openclaw',
+          'X-Client-Type': 'openclawnch',
         },
         signal: AbortSignal.timeout(15000),
       });
