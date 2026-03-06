@@ -33,19 +33,26 @@ RUN --mount=type=cache,target=/root/.npm \
     npm install -g /tmp/openclawnch.tgz && rm /tmp/openclawnch.tgz
 
 # ── Layer 4: Dirs, config, entrypoint (tiny, always rebuilt) ─────────
-RUN mkdir -p /workspace /root/.openclaw \
-    /root/.openclaw/agents/main/sessions \
-    /root/.openclaw/credentials && \
-    chmod 700 /root/.openclaw
+# Create non-root user for security
+RUN groupadd -r openclawnch && useradd -r -g openclawnch -d /home/openclawnch -s /sbin/nologin openclawnch
 
-COPY openclaw.json /root/.openclaw/openclaw.json
+RUN mkdir -p /workspace /home/openclawnch/.openclaw \
+    /home/openclawnch/.openclaw/agents/main/sessions \
+    /home/openclawnch/.openclaw/credentials \
+    /home/openclawnch/.openclawnch && \
+    chmod 700 /home/openclawnch/.openclaw /home/openclawnch/.openclawnch && \
+    chown -R openclawnch:openclawnch /workspace /home/openclawnch
+
+COPY openclaw.json /home/openclawnch/.openclaw/openclaw.json
 COPY openclaw.json /tmp/openclaw-clean.json
+RUN chown openclawnch:openclawnch /home/openclawnch/.openclaw/openclaw.json
 
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 ENV NODE_OPTIONS="--max-old-space-size=1536"
 ENV NODE_ENV="production"
+ENV HOME="/home/openclawnch"
 
 HEALTHCHECK --interval=10s --timeout=5s --start-period=60s --retries=5 \
     CMD curl -f http://localhost:18789/healthz || exit 1
@@ -53,4 +60,5 @@ HEALTHCHECK --interval=10s --timeout=5s --start-period=60s --retries=5 \
 EXPOSE 18789
 WORKDIR /workspace
 
+USER openclawnch
 ENTRYPOINT ["/entrypoint.sh"]

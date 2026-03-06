@@ -38,7 +38,7 @@ fi
 # ── Restore clean config on each start ──────────────────────────────────
 # Prevents drift from doctor/configure writes during the previous session.
 # The baked config has absolute paths for plugin resolution.
-cp /tmp/openclaw-clean.json /root/.openclaw/openclaw.json
+cp /tmp/openclaw-clean.json "$HOME/.openclaw/openclaw.json"
 
 # ── Inject webhook secret into config ───────────────────────────────────
 # OPENCLAW_TG_WEBHOOK_SECRET is set as a machine env var by the deploy CLI.
@@ -47,20 +47,20 @@ if [ -n "$OPENCLAW_TG_WEBHOOK_SECRET" ]; then
   # Use node to safely merge JSON (no jq in slim image)
   node -e "
     const fs = require('fs');
-    const cfg = JSON.parse(fs.readFileSync('/root/.openclaw/openclaw.json', 'utf8'));
+    const cfg = JSON.parse(fs.readFileSync(process.env.HOME + '/.openclaw/openclaw.json', 'utf8'));
     cfg.channels = cfg.channels || {};
     cfg.channels.telegram = cfg.channels.telegram || {};
     cfg.channels.telegram.webhookSecret = process.env.OPENCLAW_TG_WEBHOOK_SECRET;
-    fs.writeFileSync('/root/.openclaw/openclaw.json', JSON.stringify(cfg, null, 2));
+    fs.writeFileSync(process.env.HOME + '/.openclaw/openclaw.json', JSON.stringify(cfg, null, 2));
   "
 fi
 
 # ── Create required directories ─────────────────────────────────────────
 # Doctor flags these as CRITICAL if missing; create them before gateway start.
-mkdir -p /root/.openclaw/agents/main/sessions \
-         /root/.openclaw/credentials
-chmod 700 /root/.openclaw
-chmod 600 /root/.openclaw/openclaw.json
+mkdir -p "$HOME/.openclaw/agents/main/sessions" \
+         "$HOME/.openclaw/credentials"
+chmod 700 "$HOME/.openclaw"
+chmod 600 "$HOME/.openclaw/openclaw.json"
 
 # ── Persist identity/devices across restarts ────────────────────────────
 # OpenClaw generates an identity (device ID, auth tokens) on first run.
@@ -68,22 +68,22 @@ chmod 600 /root/.openclaw/openclaw.json
 mkdir -p /workspace/.openclaw-state/identity \
          /workspace/.openclaw-state/devices
 
-rm -rf /root/.openclaw/identity /root/.openclaw/devices
-ln -sf /workspace/.openclaw-state/identity /root/.openclaw/identity
-ln -sf /workspace/.openclaw-state/devices /root/.openclaw/devices
+rm -rf "$HOME/.openclaw/identity" "$HOME/.openclaw/devices"
+ln -sf /workspace/.openclaw-state/identity "$HOME/.openclaw/identity"
+ln -sf /workspace/.openclaw-state/devices "$HOME/.openclaw/devices"
 
 # ── Persist sender approvals (pairing) across restarts ──────────────────
 # OpenClaw stores approved Telegram senders in /root/.openclaw/credentials/.
 # Without this symlink, every reboot wipes pairing and the user must re-pair.
 mkdir -p /workspace/.openclaw-state/credentials
-rm -rf /root/.openclaw/credentials
-ln -sf /workspace/.openclaw-state/credentials /root/.openclaw/credentials
+rm -rf "$HOME/.openclaw/credentials"
+ln -sf /workspace/.openclaw-state/credentials "$HOME/.openclaw/credentials"
 
 # ── Persist agent sessions across restarts ──────────────────────────────
 # Conversation history lives in sessions/. Symlink to volume for continuity.
 mkdir -p /workspace/.openclaw-state/sessions
-rm -rf /root/.openclaw/agents/main/sessions
-ln -sf /workspace/.openclaw-state/sessions /root/.openclaw/agents/main/sessions
+rm -rf "$HOME/.openclaw/agents/main/sessions"
+ln -sf /workspace/.openclaw-state/sessions "$HOME/.openclaw/agents/main/sessions"
 
 # ── Persist WalletConnect session ───────────────────────────────────────
 # The WC pairing is precious — losing it means the user has to re-approve
@@ -110,7 +110,7 @@ export OPENCLAW_GATEWAY_TOKEN="$GATEWAY_TOKEN"
 # Inject token and provider-specific model into config
 node -e "
   const fs = require('fs');
-  const cfg = JSON.parse(fs.readFileSync('/root/.openclaw/openclaw.json', 'utf8'));
+  const cfg = JSON.parse(fs.readFileSync(process.env.HOME + '/.openclaw/openclaw.json', 'utf8'));
 
   // Gateway auth token
   cfg.gateway = cfg.gateway || {};
@@ -144,7 +144,7 @@ node -e "
     }
   }
 
-  fs.writeFileSync('/root/.openclaw/openclaw.json', JSON.stringify(cfg, null, 2));
+  fs.writeFileSync(process.env.HOME + '/.openclaw/openclaw.json', JSON.stringify(cfg, null, 2));
   console.log('LLM provider: ' + provider + ' → model: ' + cfg.agents.defaults.model.primary);
 "
 
@@ -155,6 +155,6 @@ echo "Starting OpenClawnch (Telegram mode)..."
 
 # Debug: log what we're about to run
 echo "Gateway config:"
-node -e "const c=JSON.parse(require('fs').readFileSync('/root/.openclaw/openclaw.json','utf8')); console.log(JSON.stringify({gateway:c.gateway,channels:c.channels,plugins:c.plugins?{entries:Object.keys(c.plugins.entries||{})}:null},null,2))"
+node -e "const c=JSON.parse(require('fs').readFileSync(process.env.HOME + '/.openclaw/openclaw.json','utf8')); console.log(JSON.stringify({gateway:c.gateway,channels:c.channels,plugins:c.plugins?{entries:Object.keys(c.plugins.entries||{})}:null},null,2))"
 
 exec openclaw gateway --port 18789 --bind lan --allow-unconfigured 2>&1

@@ -60,7 +60,37 @@ export async function checkBalance(opts: {
       );
     }
 
-    // TODO: ERC-20 balance check when requiredTokenAddress is provided
+    // ERC-20 balance check when requiredTokenAddress is provided
+    if (opts.requiredTokenAddress && opts.requiredTokenAmount) {
+      try {
+        const tokenAddr = opts.requiredTokenAddress as `0x${string}`;
+        const erc20Abi = [
+          { name: 'balanceOf', type: 'function', stateMutability: 'view', inputs: [{ name: 'account', type: 'address' }], outputs: [{ name: '', type: 'uint256' }] },
+          { name: 'decimals', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ name: '', type: 'uint8' }] },
+          { name: 'symbol', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ name: '', type: 'string' }] },
+        ] as const;
+
+        const [rawBalance, decimals, symbol] = await Promise.all([
+          publicClient.readContract({ address: tokenAddr, abi: erc20Abi, functionName: 'balanceOf', args: [state.address as `0x${string}`] }),
+          publicClient.readContract({ address: tokenAddr, abi: erc20Abi, functionName: 'decimals' }).catch(() => 18),
+          publicClient.readContract({ address: tokenAddr, abi: erc20Abi, functionName: 'symbol' }).catch(() => 'TOKEN'),
+        ]);
+
+        const { formatUnits } = await import('viem');
+        const tokenBalance = parseFloat(formatUnits(rawBalance as bigint, Number(decimals)));
+        const requiredAmount = parseFloat(opts.requiredTokenAmount);
+        details.tokenBalance = tokenBalance;
+        details.tokenSymbol = symbol;
+
+        if (tokenBalance < requiredAmount) {
+          blockers.push(
+            `Insufficient ${symbol}. Have ${tokenBalance.toFixed(4)}, need ${requiredAmount.toFixed(4)}.`
+          );
+        }
+      } catch (tokenErr) {
+        warnings.push(`Token balance check failed: ${tokenErr instanceof Error ? tokenErr.message : String(tokenErr)}`);
+      }
+    }
   } catch (err) {
     warnings.push(`Balance check failed: ${err instanceof Error ? err.message : String(err)}`);
   }
