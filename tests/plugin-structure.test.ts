@@ -9,7 +9,7 @@ describe('crypto plugin structure', () => {
     expect(typeof plugin.register).toBe('function');
   });
 
-  it('registers all 27 tools', () => {
+  it('registers all 28 tools', () => {
     const registered: string[] = [];
     const mockApi = {
       registerTool: vi.fn((tool: any) => registered.push(tool.name)),
@@ -20,7 +20,7 @@ describe('crypto plugin structure', () => {
 
     plugin.register(mockApi);
 
-    expect(mockApi.registerTool).toHaveBeenCalledTimes(27);
+    expect(mockApi.registerTool).toHaveBeenCalledTimes(28);
     // Original 7
     expect(registered).toContain('clawnchconnect');
     expect(registered).toContain('defi_price');

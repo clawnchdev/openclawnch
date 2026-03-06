@@ -166,12 +166,12 @@ describe('tool-config-service', () => {
     expect(result!.content[0].text).toContain('BASESCAN_API_KEY');
   });
 
-  it('getAllToolStatus returns all 27 tool statuses', async () => {
+  it('getAllToolStatus returns all 28 tool statuses', async () => {
     const { getAllToolStatus } = await import(
       '../extensions/crypto/src/services/tool-config-service.js'
     );
     const statuses = getAllToolStatus();
-    expect(statuses.length).toBe(27);
+    expect(statuses.length).toBe(28);
     for (const s of statuses) {
       expect(s.tool).toBeDefined();
       expect(s.label).toBeDefined();

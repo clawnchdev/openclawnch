@@ -138,7 +138,7 @@ describe('bankr wallet mode in WalletState type', () => {
 // ─── Plugin Registration with Bankr Tools ────────────────────────────────
 
 describe('plugin registration with bankr', () => {
-  it('registers 27 tools including 4 bankr tools', { timeout: 15000 }, async () => {
+  it('registers 28 tools including 4 bankr tools', { timeout: 15000 }, async () => {
     const plugin = (await import('../extensions/crypto/index.js')).default;
     const registered: string[] = [];
     const mockApi = {
@@ -148,7 +148,7 @@ describe('plugin registration with bankr', () => {
       logger: { info: vi.fn(), warn: vi.fn() },
     };
     plugin.register(mockApi);
-    expect(registered).toHaveLength(27);
+    expect(registered).toHaveLength(28);
     expect(registered).toContain('bankr_launch');
     expect(registered).toContain('bankr_automate');
     expect(registered).toContain('bankr_polymarket');

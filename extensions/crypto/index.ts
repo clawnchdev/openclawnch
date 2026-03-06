@@ -48,6 +48,9 @@ import { createBankrAutomateTool } from './src/tools/bankr-automate.js';
 import { createBankrPolymarketTool } from './src/tools/bankr-polymarket.js';
 import { createBankrLeverageTool } from './src/tools/bankr-leverage.js';
 
+// Tools — Phase 7 (Compound Operations Engine)
+import { createCompoundActionTool } from './src/tools/compound-action.js';
+
 // Commands
 import { walletCommand } from './src/commands/wallet-command.js';
 import { policyCommand } from './src/commands/policy-command.js';
@@ -92,7 +95,7 @@ const plugin = {
   version: '0.1.0',
 
   register(api: any) {
-    // ─── Register Tools (27 total) ────────────────────────────────
+    // ─── Register Tools (28 total) ────────────────────────────────
     // Core tools (13)
     // Write-operation tools: ownerOnly = true (security: only bot owner can execute financial ops)
     // Read-only tools: ownerOnly = false (paired users can view prices, balances, etc.)
@@ -133,6 +136,9 @@ const plugin = {
     api.registerTool(createBankrAutomateTool());         // ownerOnly: true (financial write)
     api.registerTool(createBankrPolymarketTool());       // ownerOnly: true (financial write)
     api.registerTool(createBankrLeverageTool());         // ownerOnly: true (financial write)
+
+    // Phase 7 tools (1) — Compound operations engine
+    api.registerTool(createCompoundActionTool());        // ownerOnly: true (can trigger financial writes)
 
     // ─── Register Chat Commands ────────────────────────────────────
     api.registerCommand(walletCommand);
@@ -264,6 +270,32 @@ const plugin = {
             `[crypto] Bankr wallet init failed: ${err instanceof Error ? err.message : String(err)}`
           );
         }
+      }
+
+      // Start the plan scheduler (restores persisted plans from volume)
+      try {
+        const { getScheduler } = await import('./src/services/plan-scheduler.js');
+        const { getPrice, getEthPrice } = await import('./src/services/price-service.js');
+        const scheduler = getScheduler({
+          resolver: {
+            price: async (token: string) => {
+              try {
+                const data = await getPrice(token);
+                return data?.priceUsd ?? 0;
+              } catch { return 0; }
+            },
+            balance: async () => 0, // TODO: wire up defi_balance
+            gasPrice: async () => 0, // TODO: wire up gas estimator
+            timestamp: () => Math.floor(Date.now() / 1000),
+            blockNumber: async () => 0,
+          },
+        });
+        scheduler.start();
+        api.logger?.info?.(`[crypto] Plan scheduler started (${scheduler.activeCount} active plans)`);
+      } catch (err) {
+        api.logger?.warn?.(
+          `[crypto] Plan scheduler failed to start: ${err instanceof Error ? err.message : String(err)}`
+        );
       }
     });
 

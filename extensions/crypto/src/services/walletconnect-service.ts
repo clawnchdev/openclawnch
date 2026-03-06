@@ -19,6 +19,7 @@ import type {
   QueuedTransaction,
 } from '@clawnch/sdk';
 import type { TransactionRecord, WalletState } from '../lib/types.js';
+import { wrapWithBuilderCode } from './builder-code.js';
 
 // ─── Singleton State ─────────────────────────────────────────────────────
 // Using `any` for client types to avoid viem version conflicts between
@@ -92,6 +93,9 @@ export async function initWalletService(config: WalletServiceConfig): Promise<{
       transport: http(rpcUrl),
     });
 
+    // Wrap with ERC-8021 builder code attribution for Base transactions
+    _walletClient = wrapWithBuilderCode(_walletClient, chain.id);
+
     _connectedAddress = account.address;
     _mode = 'private_key';
 
@@ -160,6 +164,7 @@ export async function initWalletService(config: WalletServiceConfig): Promise<{
     if (restored) {
       // Session restored from disk — create wallet client immediately
       _walletClient = await _wcSigner.toWalletClient(_publicClient);
+      _walletClient = wrapWithBuilderCode(_walletClient, chain.id);
       _connectedAddress = _wcSigner.address;
       _mode = 'walletconnect';
       return { mode: 'walletconnect', address: _connectedAddress ?? undefined };
@@ -227,6 +232,7 @@ export async function waitForWalletSession(timeoutMs = 300_000): Promise<{
 
   const result = await _wcSigner.waitForSession(timeoutMs);
   _walletClient = await _wcSigner.toWalletClient(_publicClient!);
+  _walletClient = wrapWithBuilderCode(_walletClient, _publicClient?.chain?.id);
   _connectedAddress = result.address;
 
   return result;

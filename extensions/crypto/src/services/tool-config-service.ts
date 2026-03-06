@@ -255,6 +255,16 @@ export const TOOL_REQUIREMENTS: ToolRequirement[] = [
     keySource: 'https://bankr.bot',
     setupHint: '`/flykeys set BANKR_API_KEY bk_your_key`',
   },
+
+  // ── Phase 7: Compound operations ───────────────────────────────────
+  {
+    tool: 'compound_action',
+    label: 'Compound Actions',
+    description: 'Multi-step DeFi operations with scheduling, conditions, and sequencing',
+    requiredKeys: [],
+    walletRequired: true,
+    worksWithoutKeys: true,
+  },
 ];
 
 // ─── Lookup Helpers ──────────────────────────────────────────────────────
