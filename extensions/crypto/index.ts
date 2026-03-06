@@ -305,8 +305,9 @@ const plugin = {
             price: async (token: string) => {
               try {
                 const data = await getPrice(token);
-                return data?.priceUsd ?? 0;
-              } catch { return 0; }
+                if (!data?.priceUsd) return NaN; // NaN signals "unknown" — conditions won't fire
+                return data.priceUsd;
+              } catch { return NaN; }
             },
             balance: async (token: string, chainId?: number) => {
               try {
@@ -674,7 +675,7 @@ When the user asks about leveraged trading, use the bankr_leverage tool.`);
     // Advances the tutorial when read/write tools complete successfully.
     // Sends progression messages directly via Telegram API.
     // Also auto-records swaps to cost basis tracker.
-    api.on('after_tool_call', (event: any, ctx: any) => {
+    api.on('after_tool_call', async (event: any, ctx: any) => {
       try {
         // ── Onboarding progression ─────────────────────────────────
         // Extract user ID and channel from context (channel-agnostic)
@@ -691,7 +692,8 @@ When the user asks about leveraged trading, use the bankr_leverage tool.`);
             const response = flow.processToolResult(String(toolName), success);
             if (response) {
               // Send progression message directly and suppress next LLM response
-              sendOnboardingMessage(channel, userId, response);
+              await sendOnboardingMessage(channel, userId, response).catch((err: any) =>
+                api.logger?.warn?.(`[crypto] Failed to send onboarding msg: ${err}`));
               onboardingHandledConversations.add(userId);
               api.logger?.info?.(
                 `[crypto] Onboarding advanced for user ${userId}: ${flow.currentStep}`
@@ -744,9 +746,10 @@ When the user asks about leveraged trading, use the bankr_leverage tool.`);
           if (configHint && !process.env[configHint.envVar]) {
             const chatId = ctx?.conversationId ?? userId;
             if (chatId) {
-              sendOnboardingMessage(channel, String(chatId), {
+              await sendOnboardingMessage(channel, String(chatId), {
                 text: `This feature requires ${configHint.envVar} to be configured.\n\n${configHint.hint}`,
-              });
+              }).catch((err: any) =>
+                api.logger?.warn?.(`[crypto] Failed to send config hint: ${err}`));
             }
           }
         }

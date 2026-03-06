@@ -426,7 +426,32 @@ async function handleExecute(params: Record<string, unknown>) {
       apiBaseUrl: process.env.CLAWNCHER_API_URL || 'https://clawn.ch',
     });
 
-    const { parseEther } = await import('viem');
+    const { parseEther, parseUnits, erc20Abi } = await import('viem');
+
+    // Detect actual decimals for input token (critical: USDC=6, not 18)
+    const isEthIn = tokenIn.toLowerCase() === BASE_TOKENS.ETH!.toLowerCase()
+      || tokenIn.toLowerCase() === BASE_TOKENS.WETH!.toLowerCase();
+    let sellDecimals = 18;
+    if (!isEthIn) {
+      const knownIn = Object.entries(BASE_TOKENS).find(
+        ([, addr]) => addr.toLowerCase() === tokenIn.toLowerCase(),
+      );
+      if (knownIn && ['USDC', 'USDT'].includes(knownIn[0])) {
+        sellDecimals = 6;
+      } else if (!knownIn) {
+        try {
+          const dec = await publicClient.readContract({
+            address: tokenIn as `0x${string}`,
+            abi: erc20Abi,
+            functionName: 'decimals',
+          }) as number;
+          sellDecimals = dec;
+        } catch { /* fallback to 18 */ }
+      }
+    }
+    const sellAmountWei = isEthIn
+      ? parseEther(amount)
+      : parseUnits(amount, sellDecimals);
 
     // Wrap swap in a timeout to prevent hanging when WC/wallet doesn't respond.
     // The WC signer has a 180s timeout internally, but we add our own 120s timeout
@@ -436,7 +461,7 @@ async function handleExecute(params: Record<string, unknown>) {
     const swapPromise = swapper.swap({
       sellToken: tokenIn as `0x${string}`,
       buyToken: tokenOut as `0x${string}`,
-      sellAmount: parseEther(amount),
+      sellAmount: sellAmountWei,
       slippageBps: Math.round(slippage * 100),
     });
 

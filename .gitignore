@@ -35,3 +35,9 @@ deploy/openclawnch.tgz
 # yarn.lock
 # pnpm-lock.yaml
 *.textClipping
+
+# Internal planning docs (not for public release)
+PLAN.md
+BANKR.md
+TELEOST.md
+TESTING.md

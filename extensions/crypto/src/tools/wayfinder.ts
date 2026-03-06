@@ -92,7 +92,7 @@ export function createWayfinderTool() {
   return {
     name: 'wayfinder',
     label: 'Wayfinder',
-    ownerOnly: false,
+    ownerOnly: true, // execute_swap and strategy are write operations
     description:
       'Cross-chain DeFi via Wayfinder Paths. ' +
       'Get multi-chain balances, search DeFi yields, quote cross-chain swaps, ' +

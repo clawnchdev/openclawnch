@@ -13,7 +13,19 @@
  * users audit and manage their exposure.
  */
 
+import { formatUnits } from 'viem';
 import { getRpcManager } from './rpc-provider.js';
+
+// Well-known token decimals (lowercase address → decimals)
+const KNOWN_TOKEN_DECIMALS: Record<string, number> = {
+  // Base
+  '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913': 6,  // USDC
+  '0xfde4c96c8593536e31f229ea8f37b2ada2699bb2': 6,  // USDT
+  // Ethereum
+  '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48': 6,  // USDC
+  '0xdac17f958d2ee523a2206206994597c13d831ec7': 6,  // USDT
+  '0x2260fac5e5542a773aa44fbcfedf7c193bc2c599': 8,  // WBTC
+};
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -207,7 +219,7 @@ export class AllowanceManager {
             }),
             token.symbol === '???'
               ? client.readContract({ address: token.address as `0x${string}`, abi: ERC20_ABI, functionName: 'decimals' })
-              : Promise.resolve(18),
+              : Promise.resolve(KNOWN_TOKEN_DECIMALS[token.address.toLowerCase()] ?? 18),
             token.symbol === '???'
               ? client.readContract({ address: token.address as `0x${string}`, abi: ERC20_ABI, functionName: 'symbol' }).catch(() => '???')
               : Promise.resolve(token.symbol),
@@ -217,7 +229,9 @@ export class AllowanceManager {
           if (raw === '0') return null; // Skip zero allowances
 
           const dec = Number(decimals);
-          const human = Number(allowance as bigint) / 10 ** dec;
+          // Use formatUnits to avoid Number(bigint) overflow for large allowances
+          const humanStr = formatUnits(allowance as bigint, dec);
+          const human = parseFloat(humanStr);
           const isUnlimited = human > this.config.unlimitedThreshold;
           const riskLevel = this.assessRisk(human, spenderName, isUnlimited);
 
@@ -301,7 +315,8 @@ export class AllowanceManager {
     ]);
 
     const dec = Number(decimals);
-    const human = Number(allowance as bigint) / 10 ** dec;
+    const humanStr = formatUnits(allowance as bigint, dec);
+    const human = parseFloat(humanStr);
 
     return {
       allowance: (allowance as bigint).toString(),

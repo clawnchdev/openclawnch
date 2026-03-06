@@ -135,6 +135,28 @@ async function fetchQuote0x(
   };
 }
 
+/** Well-known token decimals by address (lowercase) to avoid RPC calls in aggregator. */
+const TOKEN_DECIMALS: Record<string, number> = {
+  // Base
+  '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913': 6,  // USDC (Base)
+  '0xfde4c96c8593536e31f229ea8f37b2ada2699bb2': 6,  // USDT (Base)
+  // Ethereum
+  '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48': 6,  // USDC (ETH)
+  '0xdac17f958d2ee523a2206206994597c13d831ec7': 6,  // USDT (ETH)
+  // Polygon
+  '0x2791bca1f2de4661ed88a30c99a7a9449aa84174': 6,  // USDC (Polygon)
+  '0xc2132d05d31c914a87c6611c10748aeb04b58e8f': 6,  // USDT (Polygon)
+  // Arbitrum
+  '0xaf88d065e77c8cc2239327c5edb3a432268e5831': 6,  // USDC (Arbitrum)
+  '0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9': 6,  // USDT (Arbitrum)
+  // Native ETH sentinel
+  '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee': 18,
+};
+
+function getKnownDecimals(token: string): number {
+  return TOKEN_DECIMALS[token.toLowerCase()] ?? 18;
+}
+
 async function fetchQuoteParaSwap(
   sellToken: string,
   buyToken: string,
@@ -147,8 +169,8 @@ async function fetchQuoteParaSwap(
     srcToken: sellToken,
     destToken: buyToken,
     amount: sellAmount,
-    srcDecimals: '18',
-    destDecimals: '18',
+    srcDecimals: String(getKnownDecimals(sellToken)),
+    destDecimals: String(getKnownDecimals(buyToken)),
     side: 'SELL',
     network: String(chainId),
   });

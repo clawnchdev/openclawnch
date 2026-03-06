@@ -155,7 +155,7 @@ describe('wayfinder tool', () => {
   it('has correct metadata', () => {
     expect(tool.name).toBe('wayfinder');
     expect(tool.label).toBe('Wayfinder');
-    expect(tool.ownerOnly).toBe(false);
+    expect(tool.ownerOnly).toBe(true);
     expect(tool.parameters.type).toBe('object');
     expect(typeof tool.execute).toBe('function');
   });
@@ -211,7 +211,7 @@ describe('clawnch_info tool', () => {
   it('has correct metadata', () => {
     expect(tool.name).toBe('clawnch_info');
     expect(tool.label).toBe('Clawnch Info');
-    expect(tool.ownerOnly).toBe(false); // Read operations
+    expect(tool.ownerOnly).toBe(true); // vault_claim/agent_register are write ops
     expect(tool.parameters.type).toBe('object');
     expect(typeof tool.execute).toBe('function');
   });

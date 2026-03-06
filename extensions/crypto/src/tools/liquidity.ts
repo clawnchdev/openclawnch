@@ -211,6 +211,40 @@ async function handleV4Pool(liquidity: any, params: Record<string, unknown>) {
   });
 }
 
+// ─── Helpers ──────────────────────────────────────────────────────────────
+
+/** Read on-chain decimals for a token, with well-known fallbacks. */
+async function getTokenDecimals(tokenAddress: string): Promise<number> {
+  // Well-known tokens on Base
+  const KNOWN_DECIMALS: Record<string, number> = {
+    '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913': 6,  // USDC
+    '0xfde4c96c8593536e31f229ea8f37b2ada2699bb2': 6,  // USDT
+  };
+  const known = KNOWN_DECIMALS[tokenAddress.toLowerCase()];
+  if (known !== undefined) return known;
+  // Native ETH sentinel
+  if (tokenAddress.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee') return 18;
+  try {
+    const publicClient = requirePublicClient();
+    const { erc20Abi } = await import('viem');
+    const dec = await publicClient.readContract({
+      address: tokenAddress as `0x${string}`,
+      abi: erc20Abi,
+      functionName: 'decimals',
+    }) as number;
+    return dec;
+  } catch {
+    return 18; // fallback
+  }
+}
+
+/** Convert a human-readable amount string to BigInt wei using actual token decimals. */
+async function toTokenWei(amount: string, tokenAddress: string): Promise<bigint> {
+  const decimals = await getTokenDecimals(tokenAddress);
+  const { parseUnits } = await import('viem');
+  return parseUnits(amount, decimals);
+}
+
 // ─── Write Operations ─────────────────────────────────────────────────────
 
 async function handleV3Mint(liquidity: any, params: Record<string, unknown>) {
@@ -228,8 +262,8 @@ async function handleV3Mint(liquidity: any, params: Record<string, unknown>) {
     return errorResult(`Insufficient gas: ${safety.blockers.join('; ')}`);
   }
 
-  const amount0Wei = BigInt(Math.floor(parseFloat(amount0) * 1e18));
-  const amount1Wei = BigInt(Math.floor(parseFloat(amount1) * 1e18));
+  const amount0Wei = await toTokenWei(amount0, token0);
+  const amount1Wei = await toTokenWei(amount1, token1);
 
   const result = await liquidity.v3MintPosition({
     token0: token0 as `0x${string}`,
@@ -271,8 +305,8 @@ async function handleV4Mint(liquidity: any, params: Record<string, unknown>) {
     return errorResult(`Insufficient gas: ${safety.blockers.join('; ')}`);
   }
 
-  const amount0Wei = BigInt(Math.floor(parseFloat(amount0) * 1e18));
-  const amount1Wei = BigInt(Math.floor(parseFloat(amount1) * 1e18));
+  const amount0Wei = await toTokenWei(amount0, token0);
+  const amount1Wei = await toTokenWei(amount1, token1);
 
   const result = await liquidity.v4MintPosition({
     token0: token0 as `0x${string}`,
@@ -303,14 +337,17 @@ async function handleV3Add(liquidity: any, params: Record<string, unknown>) {
   const tokenId = readStringParam(params, 'token_id', { required: true })!;
   const amount0 = readStringParam(params, 'amount0', { required: true })!;
   const amount1 = readStringParam(params, 'amount1', { required: true })!;
+  const token0 = readStringParam(params, 'token0');
+  const token1 = readStringParam(params, 'token1');
 
   const safety = await checkBalance({ requiredEth: 0 });
   if (!safety.safe) {
     return errorResult(`Insufficient gas: ${safety.blockers.join('; ')}`);
   }
 
-  const amount0Wei = BigInt(Math.floor(parseFloat(amount0) * 1e18));
-  const amount1Wei = BigInt(Math.floor(parseFloat(amount1) * 1e18));
+  // Use actual token decimals when addresses are provided, otherwise fall back to 18
+  const amount0Wei = token0 ? await toTokenWei(amount0, token0) : BigInt(Math.round(parseFloat(amount0) * 1e18));
+  const amount1Wei = token1 ? await toTokenWei(amount1, token1) : BigInt(Math.round(parseFloat(amount1) * 1e18));
 
   const result = await liquidity.v3AddLiquidity(BigInt(tokenId), {
     amount0Desired: amount0Wei,

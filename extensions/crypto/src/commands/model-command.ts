@@ -42,37 +42,38 @@ interface ModelIds {
   anthropic: string;
   openrouter: string;
   bankr: string;
+  openai: string;
 }
 
 const MODEL_MAP: Record<string, ModelIds> = {
   // Claude
-  'opus':           { anthropic: 'anthropic/claude-opus-4-6',              openrouter: 'openrouter/anthropic/claude-opus-4-6',              bankr: 'bankr/claude-opus-4.6' },
-  'opus4.6':        { anthropic: 'anthropic/claude-opus-4-6',              openrouter: 'openrouter/anthropic/claude-opus-4-6',              bankr: 'bankr/claude-opus-4.6' },
-  'opus4.5':        { anthropic: 'anthropic/claude-opus-4-5',              openrouter: 'openrouter/anthropic/claude-opus-4-5',              bankr: 'bankr/claude-opus-4.5' },
-  'sonnet':         { anthropic: 'anthropic/claude-sonnet-4-20250514',     openrouter: 'openrouter/anthropic/claude-sonnet-4-20250514',     bankr: 'bankr/claude-sonnet-4.6' },
-  'sonnet4.6':      { anthropic: 'anthropic/claude-sonnet-4-20250514',     openrouter: 'openrouter/anthropic/claude-sonnet-4-20250514',     bankr: 'bankr/claude-sonnet-4.6' },
-  'sonnet4.5':      { anthropic: 'anthropic/claude-sonnet-4-5-20250514',   openrouter: 'openrouter/anthropic/claude-sonnet-4-5-20250514',   bankr: 'bankr/claude-sonnet-4.5' },
-  'haiku':          { anthropic: 'anthropic/claude-haiku-3-20250514',      openrouter: 'openrouter/anthropic/claude-haiku-3-20250514',      bankr: 'bankr/claude-haiku-4.5' },
+  'opus':           { anthropic: 'anthropic/claude-opus-4-6',              openrouter: 'openrouter/anthropic/claude-opus-4-6',              bankr: 'bankr/claude-opus-4.6',     openai: 'anthropic/claude-opus-4-6' },
+  'opus4.6':        { anthropic: 'anthropic/claude-opus-4-6',              openrouter: 'openrouter/anthropic/claude-opus-4-6',              bankr: 'bankr/claude-opus-4.6',     openai: 'anthropic/claude-opus-4-6' },
+  'opus4.5':        { anthropic: 'anthropic/claude-opus-4-5',              openrouter: 'openrouter/anthropic/claude-opus-4-5',              bankr: 'bankr/claude-opus-4.5',     openai: 'anthropic/claude-opus-4-5' },
+  'sonnet':         { anthropic: 'anthropic/claude-sonnet-4-20250514',     openrouter: 'openrouter/anthropic/claude-sonnet-4-20250514',     bankr: 'bankr/claude-sonnet-4.6',   openai: 'anthropic/claude-sonnet-4-20250514' },
+  'sonnet4.6':      { anthropic: 'anthropic/claude-sonnet-4-20250514',     openrouter: 'openrouter/anthropic/claude-sonnet-4-20250514',     bankr: 'bankr/claude-sonnet-4.6',   openai: 'anthropic/claude-sonnet-4-20250514' },
+  'sonnet4.5':      { anthropic: 'anthropic/claude-sonnet-4-5-20250514',   openrouter: 'openrouter/anthropic/claude-sonnet-4-5-20250514',   bankr: 'bankr/claude-sonnet-4.5',   openai: 'anthropic/claude-sonnet-4-5-20250514' },
+  'haiku':          { anthropic: 'anthropic/claude-haiku-3-20250514',      openrouter: 'openrouter/anthropic/claude-haiku-3-20250514',      bankr: 'bankr/claude-haiku-4.5',    openai: 'anthropic/claude-haiku-3-20250514' },
 
-  // Gemini (Bankr-only, but still resolve for other providers via OpenRouter)
-  'gemini':         { anthropic: 'bankr/gemini-3-pro',    openrouter: 'openrouter/google/gemini-3-pro',    bankr: 'bankr/gemini-3-pro' },
-  'gemini-pro':     { anthropic: 'bankr/gemini-3-pro',    openrouter: 'openrouter/google/gemini-3-pro',    bankr: 'bankr/gemini-3-pro' },
-  'gemini-flash':   { anthropic: 'bankr/gemini-3-flash',  openrouter: 'openrouter/google/gemini-3-flash',  bankr: 'bankr/gemini-3-flash' },
-  'gemini3':        { anthropic: 'bankr/gemini-3-pro',    openrouter: 'openrouter/google/gemini-3-pro',    bankr: 'bankr/gemini-3-pro' },
-  'gemini2.5':      { anthropic: 'bankr/gemini-2.5-pro',  openrouter: 'openrouter/google/gemini-2.5-pro',  bankr: 'bankr/gemini-2.5-pro' },
-  'gemini2.5-flash':{ anthropic: 'bankr/gemini-2.5-flash',openrouter: 'openrouter/google/gemini-2.5-flash',bankr: 'bankr/gemini-2.5-flash' },
+  // Gemini
+  'gemini':         { anthropic: 'bankr/gemini-3-pro',    openrouter: 'openrouter/google/gemini-3-pro',    bankr: 'bankr/gemini-3-pro',    openai: 'openai/gpt-5.2' },
+  'gemini-pro':     { anthropic: 'bankr/gemini-3-pro',    openrouter: 'openrouter/google/gemini-3-pro',    bankr: 'bankr/gemini-3-pro',    openai: 'openai/gpt-5.2' },
+  'gemini-flash':   { anthropic: 'bankr/gemini-3-flash',  openrouter: 'openrouter/google/gemini-3-flash',  bankr: 'bankr/gemini-3-flash',  openai: 'openai/gpt-5-mini' },
+  'gemini3':        { anthropic: 'bankr/gemini-3-pro',    openrouter: 'openrouter/google/gemini-3-pro',    bankr: 'bankr/gemini-3-pro',    openai: 'openai/gpt-5.2' },
+  'gemini2.5':      { anthropic: 'bankr/gemini-2.5-pro',  openrouter: 'openrouter/google/gemini-2.5-pro',  bankr: 'bankr/gemini-2.5-pro',  openai: 'openai/gpt-5.2' },
+  'gemini2.5-flash':{ anthropic: 'bankr/gemini-2.5-flash',openrouter: 'openrouter/google/gemini-2.5-flash',bankr: 'bankr/gemini-2.5-flash',openai: 'openai/gpt-5-mini' },
 
-  // GPT (Bankr-only)
-  'gpt':            { anthropic: 'bankr/gpt-5.2',         openrouter: 'openrouter/openai/gpt-5.2',         bankr: 'bankr/gpt-5.2' },
-  'gpt5':           { anthropic: 'bankr/gpt-5.2',         openrouter: 'openrouter/openai/gpt-5.2',         bankr: 'bankr/gpt-5.2' },
-  'gpt5.2':         { anthropic: 'bankr/gpt-5.2',         openrouter: 'openrouter/openai/gpt-5.2',         bankr: 'bankr/gpt-5.2' },
-  'codex':          { anthropic: 'bankr/gpt-5.2-codex',   openrouter: 'openrouter/openai/gpt-5.2-codex',   bankr: 'bankr/gpt-5.2-codex' },
-  'gpt-mini':       { anthropic: 'bankr/gpt-5-mini',      openrouter: 'openrouter/openai/gpt-5-mini',      bankr: 'bankr/gpt-5-mini' },
-  'gpt-nano':       { anthropic: 'bankr/gpt-5-nano',      openrouter: 'openrouter/openai/gpt-5-nano',      bankr: 'bankr/gpt-5-nano' },
+  // GPT
+  'gpt':            { anthropic: 'bankr/gpt-5.2',         openrouter: 'openrouter/openai/gpt-5.2',         bankr: 'bankr/gpt-5.2',        openai: 'openai/gpt-5.2' },
+  'gpt5':           { anthropic: 'bankr/gpt-5.2',         openrouter: 'openrouter/openai/gpt-5.2',         bankr: 'bankr/gpt-5.2',        openai: 'openai/gpt-5.2' },
+  'gpt5.2':         { anthropic: 'bankr/gpt-5.2',         openrouter: 'openrouter/openai/gpt-5.2',         bankr: 'bankr/gpt-5.2',        openai: 'openai/gpt-5.2' },
+  'codex':          { anthropic: 'bankr/gpt-5.2-codex',   openrouter: 'openrouter/openai/gpt-5.2-codex',   bankr: 'bankr/gpt-5.2-codex',  openai: 'openai/gpt-5.2-codex' },
+  'gpt-mini':       { anthropic: 'bankr/gpt-5-mini',      openrouter: 'openrouter/openai/gpt-5-mini',      bankr: 'bankr/gpt-5-mini',     openai: 'openai/gpt-5-mini' },
+  'gpt-nano':       { anthropic: 'bankr/gpt-5-nano',      openrouter: 'openrouter/openai/gpt-5-nano',      bankr: 'bankr/gpt-5-nano',     openai: 'openai/gpt-5-nano' },
 
-  // Other (Bankr-only)
-  'kimi':           { anthropic: 'bankr/kimi-k2.5',       openrouter: 'openrouter/moonshotai/kimi-k2.5',   bankr: 'bankr/kimi-k2.5' },
-  'qwen':           { anthropic: 'bankr/qwen3-coder',     openrouter: 'openrouter/qwen/qwen3-coder',       bankr: 'bankr/qwen3-coder' },
+  // Other
+  'kimi':           { anthropic: 'bankr/kimi-k2.5',       openrouter: 'openrouter/moonshotai/kimi-k2.5',   bankr: 'bankr/kimi-k2.5',      openai: 'openai/gpt-5.2' },
+  'qwen':           { anthropic: 'bankr/qwen3-coder',     openrouter: 'openrouter/qwen/qwen3-coder',       bankr: 'bankr/qwen3-coder',    openai: 'openai/gpt-5.2' },
 };
 
 function getCurrentModel(): string {
@@ -85,12 +86,25 @@ function getCurrentModel(): string {
 }
 
 function setModel(modelId: string): void {
-  const cfg = JSON.parse(readFileSync(CONFIG_PATH, 'utf8'));
+  let cfg: any;
+  try {
+    cfg = JSON.parse(readFileSync(CONFIG_PATH, 'utf8'));
+  } catch {
+    // Config doesn't exist or is malformed — create minimal structure
+    cfg = {};
+  }
   cfg.agents = cfg.agents ?? {};
   cfg.agents.defaults = cfg.agents.defaults ?? {};
   cfg.agents.defaults.model = cfg.agents.defaults.model ?? {};
   cfg.agents.defaults.model.primary = modelId;
-  writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2), 'utf8');
+  try {
+    const { mkdirSync } = require('node:fs');
+    const { dirname } = require('node:path');
+    mkdirSync(dirname(CONFIG_PATH), { recursive: true });
+    writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2), 'utf8');
+  } catch (err) {
+    throw new Error(`Cannot write config: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 // H7: Validate model IDs to prevent injection via config file writes

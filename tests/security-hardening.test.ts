@@ -29,12 +29,12 @@ describe('C2: ownerOnly enforcement', () => {
     'hummingbot', 'manage_orders', 'clawnx', 'transfer', 'liquidity',
     'permit2', 'bridge', 'molten', 'bankr_launch', 'bankr_automate',
     'bankr_polymarket', 'bankr_leverage',
+    'crypto_workflow', 'wayfinder', 'clawnch_info', 'cost_basis',
   ];
 
   const READ_TOOLS = [
     'defi_price', 'defi_balance', 'market_intel', 'watch_activity',
-    'herd_intelligence', 'crypto_workflow', 'wayfinder', 'clawnch_info',
-    'cost_basis', 'analytics', 'block_explorer',
+    'herd_intelligence', 'analytics', 'block_explorer',
   ];
 
   let tools: any[];

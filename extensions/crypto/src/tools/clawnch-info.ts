@@ -59,7 +59,7 @@ export function createClawnchInfoTool() {
   return {
     name: 'clawnch_info',
     label: 'Clawnch Info',
-    ownerOnly: false, // Read operations don't need owner restriction
+    ownerOnly: true, // vault_claim and agent_register are write operations
     description:
       'On-chain token information, portfolio discovery, vault claims, and Clawnch platform data. ' +
       'Most actions are read-only (no gas cost). ' +

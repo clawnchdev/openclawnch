@@ -13,16 +13,22 @@ import { resetModes } from '../services/mode-service.js';
 /** Track pending confirmations by sender (expire after 60s). */
 const pendingConfirmations = new Map<string, number>();
 
-/** Resolve persistent state dir (volume mount). */
+/** Resolve persistent state dir (volume mount). Checks both old and new names. */
 function getStateRoot(): string {
   return '/workspace/.openclaw-state';
 }
 
-/** Resolve OpenClaw home state dir. */
+/** Resolve OpenClaw/OpenClawnch home state dir. */
 function getOpenClawHome(): string {
-  return process.env.HOME
-    ? join(process.env.HOME, '.openclaw')
-    : '/root/.openclaw';
+  const base = process.env.HOME ?? '/root';
+  // Check both old (.openclaw) and new (.openclawnch) directory names
+  const newPath = join(base, '.openclawnch');
+  const oldPath = join(base, '.openclaw');
+  try {
+    const { existsSync } = require('node:fs');
+    if (existsSync(newPath)) return newPath;
+  } catch {}
+  return oldPath; // fallback to legacy path
 }
 
 export const resetCommand = {
