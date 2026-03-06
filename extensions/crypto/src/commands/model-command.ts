@@ -174,9 +174,9 @@ export const modelCommand = {
     // Normalize underscores to hyphens for tappable slash commands
     // e.g. /llm gemini_flash → gemini-flash
     const normalized = modelArg.replace(/_/g, '-');
-    const finalModel = resolveModel(normalized);
 
     try {
+      const finalModel = resolveModel(normalized);
       const previousModel = getCurrentModel();
       setModel(finalModel);
       return {
