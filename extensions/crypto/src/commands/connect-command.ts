@@ -20,6 +20,8 @@ import {
   isBankrMode,
 } from '../services/walletconnect-service.js';
 import { getBankrUserInfo, hasBankrApi } from '../services/bankr-api.js';
+import { createChannelSender, extractChannelId, type ChannelId } from '../services/channel-sender.js';
+import { getOnboardingFlow } from '../services/onboarding-flow.js';
 
 // ── Wallet Deep Link Configuration ──────────────────────────────────────────
 
@@ -62,7 +64,7 @@ async function doConnect(wallet: WalletOption, ctx: any): Promise<{ text: string
 
   if (!projectId && !privateKey) {
     return {
-      text: `WalletConnect is not configured.\n\nTo enable wallet connection, set the project ID:\n  fly secrets set WALLETCONNECT_PROJECT_ID="your-project-id" -a <your-app>\n\nGet a project ID at https://cloud.reown.com`,
+      text: `WalletConnect is not configured.\n\nTo enable wallet connection, set the WALLETCONNECT_PROJECT_ID environment variable.\n\nOn Fly.io: \`fly secrets set WALLETCONNECT_PROJECT_ID="your-project-id" -a <your-app>\`\nOn Docker: add to your \`.env\` file or \`docker-compose.yml\`\n\nGet a project ID at https://cloud.reown.com`,
     };
   }
 
@@ -89,19 +91,37 @@ async function doConnect(wallet: WalletOption, ctx: any): Promise<{ text: string
     }
 
     if (result.pairingUri) {
-      // Get the sender's chat ID for the callback
+      // Get the sender's chat ID and channel for the callback
       const chatId = ctx?.conversationId ?? ctx?.senderId ?? ctx?.from;
+      const channel: ChannelId = extractChannelId(ctx) ?? 'telegram';
 
-      // Start background session wait — when approved, send confirmation
+      // Start background session wait — when approved, send confirmation + advance onboarding
+      const connectUserId = ctx?.senderId ?? ctx?.from ?? chatId;
       waitForWalletSession(300_000)
         .then((session) => {
           console.log(`[/connect] Session established: ${session.address} (chain ${session.chainId})`);
-          if (_api && chatId) {
-            const sendFn = _api.runtime?.channel?.telegram?.sendMessageTelegram;
-            if (sendFn) {
-              sendFn(String(chatId), `Wallet connected!\n\nAddress: ${session.address.slice(0, 6)}...${session.address.slice(-4)}\nChain: ${session.chainId}\n\nYou're ready to trade. Try: "What's the price of ETH?" or "Show my balance"`, { accountId: 'default' })
-                .catch((err: any) => console.log(`[/connect] Failed to send confirmation: ${err}`));
+
+          // Advance onboarding if user was on connect_wallet step
+          if (connectUserId) {
+            const flow = getOnboardingFlow(String(connectUserId));
+            const onboardingMsg = flow.onWalletConnected(
+              session.address,
+              `chain ${session.chainId}`,
+            );
+            if (onboardingMsg && _api) {
+              // Send the onboarding progression message instead of the generic confirmation
+              const sender = createChannelSender(_api);
+              sender.send(channel, String(chatId), onboardingMsg.text)
+                .catch((err: any) => console.log(`[/connect] Failed to send onboarding msg: ${err}`));
+              return; // Don't send the generic confirmation too
             }
+          }
+
+          // Generic confirmation (user not in onboarding)
+          if (_api && chatId) {
+            const sender = createChannelSender(_api);
+            sender.send(channel, String(chatId), `Wallet connected!\n\nAddress: ${session.address.slice(0, 6)}...${session.address.slice(-4)}\nChain: ${session.chainId}\n\nYou're ready to trade. Try: "What's the price of ETH?" or "Show my balance"`)
+              .catch((err: any) => console.log(`[/connect] Failed to send confirmation: ${err}`));
           }
         })
         .catch((err) => {
@@ -213,8 +233,9 @@ export const connectBankrCommand = {
           'To use Bankr as your wallet:',
           '1. Create an account at https://bankr.bot',
           '2. Get an API key with Agent API enabled: https://bankr.bot/api',
-          '3. Add it as a Fly secret:',
-          '   fly secrets set BANKR_API_KEY="bk_your_key" -a <your-app>',
+          '3. Set the environment variable:',
+          '   Fly.io: `fly secrets set BANKR_API_KEY="bk_your_key" -a <your-app>`',
+          '   Docker: add `BANKR_API_KEY=bk_your_key` to your `.env` file',
         ].join('\n'),
       };
     }

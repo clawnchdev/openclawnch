@@ -100,8 +100,9 @@ export const autosignCommand = {
 
 A private key (CLAWNCHER_PRIVATE_KEY) must be configured at deploy time to enable auto-signing. This instance uses WalletConnect only.
 
-To enable auto-sign, redeploy with:
-  fly secrets set CLAWNCHER_PRIVATE_KEY="0x..." -a <your-app>
+To enable auto-sign, set the CLAWNCHER_PRIVATE_KEY environment variable:
+  Fly.io: \`fly secrets set CLAWNCHER_PRIVATE_KEY="0x..." -a <your-app>\`
+  Docker: add to your \`.env\` file
 
 WARNING: Auto-sign means the agent can execute transactions without your approval. Only use with a dedicated hot wallet containing limited funds.`,
       };

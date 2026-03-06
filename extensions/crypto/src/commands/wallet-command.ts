@@ -24,7 +24,7 @@ export const walletCommand = {
       `**Wallet Connected**`,
       `Address: \`${state.address}\``,
       `Chain ID: ${state.chainId}`,
-      `Mode: ${state.mode === 'private_key' ? 'Private key (headless)' : 'WalletConnect'}`,
+      `Mode: ${state.mode === 'private_key' ? 'Private key (headless)' : state.mode === 'bankr' ? 'Bankr (custodial)' : 'WalletConnect'}`,
     ];
 
     if (state.policies.length > 0) {

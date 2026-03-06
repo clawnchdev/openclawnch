@@ -75,7 +75,7 @@ export interface OnboardingState {
 
 export interface OnboardingMessage {
   text: string;
-  /** Telegram parse mode */
+  /** Markdown format hint (channels that support it will render accordingly) */
   parseMode?: 'HTML' | 'Markdown';
   /** If true, include WalletConnect deep link */
   showConnectLink?: boolean;
@@ -192,7 +192,7 @@ export const CAPABILITIES: CapabilityCategory[] = [
     name: 'Market Making (Hummingbot)',
     description: 'Automated market making and trading bot management.',
     tools: ['hummingbot'],
-    deployRequirement: 'HUMMINGBOT_URL',
+    deployRequirement: 'HUMMINGBOT_API_URL',
     needsWallet: false,
   },
 ];
@@ -356,7 +356,7 @@ function buildCapabilitiesConfirmation(selectedIds: string[]): string {
 
   if (notConfigured.length > 0) {
     msg += `\n\nNeeds deploy-time configuration:\n${notConfigured.map(c =>
-      `  - ${c.name} — requires ${c.deployRequirement}\n    (set via: fly secrets set ${c.deployRequirement}="..." -a <your-app>)`
+      `  - ${c.name} — requires ${c.deployRequirement}\n    Set this environment variable in your deploy config.`
     ).join('\n')}`;
   }
 
@@ -698,7 +698,7 @@ const flows = new Map<string, OnboardingFlow>();
 
 /**
  * Get (or create) the onboarding flow for a user.
- * The userId should be the Telegram user ID.
+ * The userId should be the sender ID from any channel (Telegram, Discord, etc.).
  */
 export function getOnboardingFlow(userId: string): OnboardingFlow {
   let flow = flows.get(userId);

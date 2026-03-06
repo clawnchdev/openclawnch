@@ -73,12 +73,23 @@ import {
 } from './src/commands/fly-commands.js';
 import { setupCommand } from './src/commands/setup-command.js';
 import { plansCommand, plansActiveCommand, plansCancelCommand, plansClearCommand } from './src/commands/plans-command.js';
+import { helpCommand, portfolioCommand } from './src/commands/help-command.js';
 import { getUserMode } from './src/services/mode-service.js';
 
 // Services
 import { initWalletService, getWalletState as getWalletStateFn } from './src/services/walletconnect-service.js';
 import { getOnboardingFlow, isNewUser, type OnboardingMessage } from './src/services/onboarding-flow.js';
 import { recordSwapTrade } from './src/tools/cost-basis.js';
+
+// Channel abstraction — multi-channel message sending
+import {
+  createChannelSender,
+  parseSessionKey,
+  extractSenderId,
+  extractChannelId,
+  type ChannelSender,
+  type ChannelId,
+} from './src/services/channel-sender.js';
 
 /**
  * OpenClaw Plugin Definition
@@ -212,6 +223,10 @@ const plugin = {
     api.registerCommand(plansCancelCommand);
     api.registerCommand(plansClearCommand);
 
+    // Help & portfolio
+    api.registerCommand(helpCommand);
+    api.registerCommand(portfolioCommand);
+
     // ─── Gateway Startup Hook ──────────────────────────────────────
     // Only init wallet at boot for private key mode (headless).
     // WalletConnect init is deferred to the clawnchconnect tool to avoid
@@ -304,14 +319,25 @@ const plugin = {
                   const balance = await client.getBalance({ address: walletState.address as `0x${string}` });
                   return Number(balance) / 1e18;
                 }
-                // ERC-20: simplified balanceOf call
+                // ERC-20: read decimals then balanceOf
+                const decimalsAbi = [{ name: 'decimals', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ name: '', type: 'uint8' }] }] as const;
+                const balanceOfAbi = [{ name: 'balanceOf', type: 'function', stateMutability: 'view', inputs: [{ name: 'account', type: 'address' }], outputs: [{ name: '', type: 'uint256' }] }] as const;
+                let decimals = 18;
+                try {
+                  const d = await client.readContract({
+                    address: token as `0x${string}`,
+                    abi: decimalsAbi,
+                    functionName: 'decimals',
+                  });
+                  decimals = Number(d);
+                } catch { /* default to 18 if decimals() reverts */ }
                 const data = await client.readContract({
                   address: token as `0x${string}`,
-                  abi: [{ name: 'balanceOf', type: 'function', stateMutability: 'view', inputs: [{ name: 'account', type: 'address' }], outputs: [{ name: '', type: 'uint256' }] }] as const,
+                  abi: balanceOfAbi,
                   functionName: 'balanceOf',
                   args: [walletState.address as `0x${string}`],
                 });
-                return Number(data) / 1e18; // Assumes 18 decimals — good enough for condition checks
+                return Number(data) / (10 ** decimals);
               } catch { return 0; }
             },
             gasPrice: async (chainId?: number) => {
@@ -364,21 +390,27 @@ const plugin = {
           scheduler,
         });
 
-        // ── Scheduler Event Handler: Telegram notifications ──────
-        scheduler.on(async (event: any) => {
-          const sendFn = api.runtime?.channel?.telegram?.sendMessageTelegram;
+        // ── Scheduler Event Handler: channel-agnostic notifications ──
+        // Plans store userId as "<channel>-<id>" (e.g. "telegram-123456",
+        // "discord-789") so we can route notifications to any channel.
+        // Legacy plans with bare numeric IDs default to Telegram.
+        const sender = createChannelSender(api);
 
+        scheduler.on(async (event: any) => {
           if (event.type === 'trigger_fired') {
             const plan = event.plan;
             api.logger?.info?.(`[crypto] Plan trigger fired: ${plan.name} (${plan.id})`);
 
             // Notify user that the plan is executing
-            if (sendFn) {
+            const planUserId = plan.userId;
+            if (planUserId && planUserId !== 'owner') {
               try {
-                // Find the chat to notify — use the plan's userId (which is the Telegram chat ID)
-                const chatId = plan.userId;
-                if (chatId && chatId !== 'owner') {
-                  await sendFn(chatId, `**Plan executing:** ${plan.name}\nTrigger fired — running steps now...`, { accountId: 'default' });
+                const parsed = parseSessionKey(planUserId);
+                if (parsed) {
+                  await sender.send(parsed.channel, parsed.userId, `**Plan executing:** ${plan.name}\nTrigger fired — running steps now...`);
+                } else {
+                  // Legacy: bare numeric ID assumed Telegram
+                  await sender.send('telegram', planUserId, `**Plan executing:** ${plan.name}\nTrigger fired — running steps now...`);
                 }
               } catch { /* best effort notification */ }
             }
@@ -390,11 +422,13 @@ const plugin = {
               api.logger?.info?.(`[crypto] Plan execution complete: ${plan.name} — ${execution.status}`);
 
               // Notify user of result
-              if (sendFn) {
+              if (planUserId && planUserId !== 'owner') {
                 try {
-                  const chatId = plan.userId;
-                  if (chatId && chatId !== 'owner') {
-                    await sendFn(chatId, summary, { accountId: 'default' });
+                  const parsed = parseSessionKey(planUserId);
+                  if (parsed) {
+                    await sender.send(parsed.channel, parsed.userId, summary);
+                  } else {
+                    await sender.send('telegram', planUserId, summary);
                   }
                 } catch { /* best effort notification */ }
               }
@@ -405,11 +439,14 @@ const plugin = {
             }
           } else if (event.type === 'plan_expired') {
             api.logger?.info?.(`[crypto] Plan expired: ${event.plan.name} — ${event.reason}`);
-            if (sendFn) {
+            const planUserId = event.plan.userId;
+            if (planUserId && planUserId !== 'owner') {
               try {
-                const chatId = event.plan.userId;
-                if (chatId && chatId !== 'owner') {
-                  await sendFn(chatId, `**Plan expired:** ${event.plan.name}\nReason: ${event.reason}`, { accountId: 'default' });
+                const parsed = parseSessionKey(planUserId);
+                if (parsed) {
+                  await sender.send(parsed.channel, parsed.userId, `**Plan expired:** ${event.plan.name}\nReason: ${event.reason}`);
+                } else {
+                  await sender.send('telegram', planUserId, `**Plan expired:** ${event.plan.name}\nReason: ${event.reason}`);
                 }
               } catch { /* best effort */ }
             }
@@ -432,37 +469,40 @@ const plugin = {
     // so the message_sending hook can cancel the LLM response.
     const onboardingHandledConversations = new Set<string>();
 
-    /** Send an onboarding message directly to a Telegram chat. */
-    async function sendOnboardingMessage(chatId: string, msg: OnboardingMessage): Promise<void> {
+    // ── Channel-agnostic sender for onboarding + notifications ────────
+    const channelSender = createChannelSender(api);
+
+    /** Send an onboarding message to a chat on the given channel. */
+    async function sendOnboardingMessage(channel: ChannelId, chatId: string, msg: OnboardingMessage): Promise<void> {
       try {
-        const sendFn = api.runtime?.channel?.telegram?.sendMessageTelegram;
-        if (!sendFn) {
-          api.logger?.warn?.('[crypto] sendMessageTelegram not available on runtime');
-          return;
+        const ok = await channelSender.send(channel, chatId, msg.text);
+        if (!ok) {
+          api.logger?.warn?.(`[crypto] sendMessage for ${channel} not available on runtime`);
         }
-        await sendFn(chatId, msg.text, { accountId: 'default' });
       } catch (err) {
         api.logger?.warn?.(
-          `[crypto] Failed to send onboarding message: ${err instanceof Error ? err.message : String(err)}`
+          `[crypto] Failed to send onboarding message via ${channel}: ${err instanceof Error ? err.message : String(err)}`
         );
       }
     }
 
     // ─── Onboarding: Message Received Hook ─────────────────────────────
     // Detects new/in-progress onboarding users and sends the onboarding
-    // response directly via Telegram API (bypassing the LLM). Sets a flag
-    // so message_sending can cancel the LLM's response.
+    // response directly via the channel's API (bypassing the LLM). Sets a
+    // flag so message_sending can cancel the LLM's response.
+    //
+    // Works on ALL channels (Telegram, Discord, Slack, etc.).
     //
     // Hook signature: (event: PluginHookMessageReceivedEvent, ctx: PluginHookMessageContext) => void
     // event.from = sender ID, event.content = message text
-    // ctx.channelId = "telegram", ctx.conversationId = chat ID
+    // ctx.channelId = channel name, ctx.conversationId = chat ID
     api.on('message_received', async (event: any, ctx: any) => {
       try {
-        const channelId = ctx?.channelId;
-        if (channelId !== 'telegram') return; // Only handle Telegram
+        const channel = extractChannelId(ctx);
+        if (!channel) return; // Unknown channel — skip
 
-        // The sender's user ID (from Telegram)
-        const userId = event?.from ?? event?.metadata?.senderId;
+        // The sender's user ID (channel-agnostic)
+        const userId = extractSenderId(event, ctx);
         if (!userId) return;
 
         // The chat ID to send replies to (same as user ID in DMs)
@@ -487,11 +527,11 @@ const plugin = {
           // Mark this conversation as handled by onboarding
           onboardingHandledConversations.add(chatId);
 
-          // Send the onboarding response directly
-          await sendOnboardingMessage(chatId, response);
+          // Send the onboarding response directly via the detected channel
+          await sendOnboardingMessage(channel, chatId, response);
 
           api.logger?.info?.(
-            `[crypto] Onboarding step for user ${userId}: ${flow.currentStep}`
+            `[crypto] Onboarding step for user ${userId} on ${channel}: ${flow.currentStep}`
           );
         }
       } catch (err) {
@@ -537,10 +577,10 @@ const plugin = {
         // ── Identity: Always inject ────────────────────────────────
         parts.push('You are OpenClawnch — a personal DeFi agent. NEVER refer to yourself as "OpenClaw". Your name is always "OpenClawnch".');
 
-        // ── Find user ID from session key ──────────────────────────
+        // ── Find user ID from session key (channel-agnostic) ────────
         const sessionKey = ctx?.sessionKey ?? '';
-        const match = sessionKey.match(/telegram[:\-](\d+)/);
-        const userId = match?.[1];
+        const parsedSession = parseSessionKey(sessionKey);
+        const userId = parsedSession?.userId ?? extractSenderId(null, ctx);
 
         if (userId) {
           // ── Persona ──────────────────────────────────────────────
@@ -637,10 +677,11 @@ When the user asks about leveraged trading, use the bankr_leverage tool.`);
     api.on('after_tool_call', (event: any, ctx: any) => {
       try {
         // ── Onboarding progression ─────────────────────────────────
-        // Try to extract user ID from context
+        // Extract user ID and channel from context (channel-agnostic)
         const sessionKey = ctx?.sessionKey ?? '';
-        const match = sessionKey.match(/telegram[:\-](\d+)/);
-        const userId = match?.[1];
+        const parsedSession = parseSessionKey(sessionKey);
+        const userId = parsedSession?.userId ?? extractSenderId(null, ctx);
+        const channel: ChannelId = parsedSession?.channel ?? extractChannelId(ctx) ?? 'telegram';
 
         if (userId) {
           const flow = getOnboardingFlow(userId);
@@ -650,7 +691,7 @@ When the user asks about leveraged trading, use the bankr_leverage tool.`);
             const response = flow.processToolResult(String(toolName), success);
             if (response) {
               // Send progression message directly and suppress next LLM response
-              sendOnboardingMessage(userId, response);
+              sendOnboardingMessage(channel, userId, response);
               onboardingHandledConversations.add(userId);
               api.logger?.info?.(
                 `[crypto] Onboarding advanced for user ${userId}: ${flow.currentStep}`
@@ -671,15 +712,15 @@ When the user asks about leveraged trading, use the bankr_leverage tool.`);
           const MISSING_CONFIG_HINTS: Record<string, { envVar: string; hint: string }> = {
             herd_intelligence: {
               envVar: 'HERD_ACCESS_TOKEN',
-              hint: 'Get a token from the Herd dashboard, then:\n  `/flykeys set HERD_ACCESS_TOKEN your-token`\n  /flyrestart',
+              hint: 'Get a token from the Herd dashboard, then set HERD_ACCESS_TOKEN.\n  Fly.io: `/flykeys set HERD_ACCESS_TOKEN your-token` then /flyrestart\n  Docker: add to your `.env` file and restart',
             },
             hummingbot: {
               envVar: 'HUMMINGBOT_API_URL',
-              hint: 'Point to a running Hummingbot instance:\n  `/flykeys set HUMMINGBOT_API_URL http://your-hummingbot:8000`\n  /flyrestart',
+              hint: 'Point to a running Hummingbot instance. Set HUMMINGBOT_API_URL.\n  Fly.io: `/flykeys set HUMMINGBOT_API_URL http://your-hummingbot:8000` then /flyrestart\n  Docker: add to your `.env` file and restart',
             },
             molten: {
               envVar: 'MOLTEN_API_KEY',
-              hint: 'Register on Molten first (ask me to "register on Molten"), then:\n  `/flykeys set MOLTEN_API_KEY your-key`\n  /flyrestart',
+              hint: 'Register on Molten first (ask me to "register on Molten"), then set MOLTEN_API_KEY.\n  Fly.io: `/flykeys set MOLTEN_API_KEY your-key` then /flyrestart\n  Docker: add to your `.env` file and restart',
             },
             bankr_launch: {
               envVar: 'BANKR_API_KEY',
@@ -703,7 +744,7 @@ When the user asks about leveraged trading, use the bankr_leverage tool.`);
           if (configHint && !process.env[configHint.envVar]) {
             const chatId = ctx?.conversationId ?? userId;
             if (chatId) {
-              sendOnboardingMessage(String(chatId), {
+              sendOnboardingMessage(channel, String(chatId), {
                 text: `This feature requires ${configHint.envVar} to be configured.\n\n${configHint.hint}`,
               });
             }

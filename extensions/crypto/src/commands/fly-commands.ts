@@ -189,20 +189,36 @@ const PROTECTED_SECRETS = new Set([
   'TELEGRAM_BOT_TOKEN',    // Breaking this kills the bot
 ]);
 
-// Secrets that are safe to display are set from Telegram
+// Secrets that are safe to display and set from Telegram
 const KNOWN_SECRETS: Record<string, string> = {
+  // LLM providers
   ANTHROPIC_API_KEY: 'Anthropic direct key',
   BANKR_LLM_KEY: 'Bankr LLM Gateway key',
   BANKR_API_KEY: 'Bankr Agent API key',
   OPENROUTER_API_KEY: 'OpenRouter key',
   OPENAI_API_KEY: 'OpenAI direct key',
   OPENCLAWNCH_LLM_PROVIDER: 'LLM provider (anthropic/bankr/openrouter)',
+  // Wallet
   WALLETCONNECT_PROJECT_ID: 'WalletConnect project ID',
   CLAWNCHER_PRIVATE_KEY: 'Private key (autosign)',
   CLAWNCHER_RPC_URL: 'Custom RPC URL',
+  ALLOW_PRIVATE_KEY_MODE: 'Enable private key mode (true/false)',
+  // Block explorer & analytics
+  BASESCAN_API_KEY: 'Basescan API key',
+  ETHERSCAN_API_KEY: 'Etherscan API key',
+  ALCHEMY_API_KEY: 'Alchemy API key',
+  COINGECKO_API_KEY: 'CoinGecko API key',
+  // Integration services
   HERD_ACCESS_TOKEN: 'Herd Intelligence token',
   HUMMINGBOT_API_URL: 'Hummingbot API URL',
   MOLTEN_API_KEY: 'Molten API key',
+  LIFI_API_KEY: 'LI.FI bridge API key',
+  // X/Twitter (ClawnX)
+  X_API_KEY: 'X/Twitter API key',
+  X_API_SECRET: 'X/Twitter API secret',
+  X_ACCESS_TOKEN: 'X/Twitter access token',
+  X_ACCESS_TOKEN_SECRET: 'X/Twitter access token secret',
+  X_BEARER_TOKEN: 'X/Twitter bearer token (optional)',
 };
 
 export const flykeysCommand = {
@@ -286,7 +302,7 @@ export const flykeysCommand = {
           ? '\n\nRun /flyrestart to pick up the new value.'
           : '\n\nUse /provider to switch (it auto-restarts).';
 
-        return { text: `Secret \`${key}\` set successfully.${hint}` };
+        return { text: `Secret \`${key}\` set successfully.${hint}\n\n**Security:** Delete your message above — it contains the secret value in plaintext.` };
       } catch (err) {
         return { text: `Failed to set secret: ${formatError(err)}` };
       }

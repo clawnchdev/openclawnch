@@ -1,10 +1,14 @@
 # OpenClawnch
 
-Your personal crypto agent on Telegram. AI assistant with direct access to blockchain protocols, market data, and transaction execution.
+Your personal crypto agent. AI assistant with direct access to blockchain protocols, market data, and transaction execution.
+
+Works on **Telegram, Discord, Slack, Signal, WhatsApp, iMessage, and LINE**. Deploy on **Fly.io** or **self-host with Docker**.
 
 Built on [OpenClaw](https://github.com/openclaw/openclaw) — not a fork, a plugin.
 
 ## Setup
+
+### Option A: Fly.io (Telegram)
 
 Paste the following into your AI coding agent (OpenCode, Claude Code, Cursor, etc.):
 
@@ -46,10 +50,11 @@ Here's what I need you to do:
    cd deploy
    cp fly.template.toml fly.toml
 
-   # Edit fly.toml: pick a unique app name (replace "openclawnch-tg")
-   # Then:
+   # Edit fly.toml:
+   #   - Replace YOUR_APP_NAME with a unique name (e.g. "myname-clawnch")
+   #   - Replace YOUR_REGION with nearest region (ewr, lax, lhr, nrt, etc.)
    fly apps create <your-app-name>
-   fly volumes create workspace --region ewr --size 1 -a <your-app-name>
+   fly volumes create workspace --region <your-region> --size 1 -a <your-app-name>
 
    # Set secrets (paste the values from steps 3-5):
    fly secrets set TELEGRAM_BOT_TOKEN="<your-bot-token>" -a <your-app-name>
@@ -62,21 +67,65 @@ Here's what I need you to do:
    # Optional:
    fly secrets set WALLETCONNECT_PROJECT_ID="<your-project-id>" -a <your-app-name>
 
-   # Deploy:
+   # Deploy (builds locally with Docker, pushes image to Fly):
    fly deploy --local-only
 
-   # Wait ~60s for the gateway to boot, then message your bot on Telegram.
-   # You'll get a pairing code. Approve it:
-   fly ssh console -a <your-app-name> -C "openclaw pairing approve telegram <PAIRING_CODE>"
+7. PAIR YOUR ACCOUNT:
+   # Message your bot on Telegram. It will reply with a pairing code.
+   # The code looks like: ABC-1234
+   # Approve it:
+   fly ssh console -a <your-app-name> -C "openclaw pairing approve telegram <CODE>"
 
-7. DONE — message your bot. It will walk you through the rest.
+   # If the bot doesn't reply:
+   #   - Check logs: fly logs -a <your-app-name>
+   #   - The gateway takes ~60s to boot. Wait and try again.
+   #   - If you see "webhook not set", the bot token may be wrong.
+   #   - If you see "listening" but no response, message /start to the bot.
 
-Cost: ~$12/month on Fly.io for a 24/7 instance. You pay your own LLM and Fly bills.
+8. DONE — the bot will walk you through onboarding (persona, capabilities, wallet).
+
+Cost: ~$5/month with auto-suspend, ~$12/month always-on. You pay your own LLM and Fly bills.
 ```
+
+### Option B: Docker (self-hosted, any channel)
+
+```bash
+git clone https://github.com/clawnch/openclawnch.git
+cd openclawnch
+pnpm install && pnpm build
+npm run deploy:pack
+
+cd deploy
+cp .env.example .env
+# Edit .env — fill in your API keys and channel tokens
+
+docker compose up -d
+```
+
+Enable channels by setting the corresponding token in `.env`:
+- **Telegram**: `TELEGRAM_BOT_TOKEN` + set webhook to `https://your-domain/telegram-webhook`
+- **Discord**: `DISCORD_TOKEN` + enable in `openclaw.json` (`channels.discord.enabled: true`)
+- **Slack**: `SLACK_BOT_TOKEN` + enable in `openclaw.json` (`channels.slack.enabled: true`)
+
+The crypto extension works identically on all channels. Onboarding, notifications, and plan alerts automatically route to whichever channel the user is on.
+
+### Channel support
+
+| Channel | Status | Notes |
+|---------|--------|-------|
+| Telegram | Production | Webhooks, deep links, tappable commands |
+| Discord | Ready | Enable in config, set `DISCORD_TOKEN` |
+| Slack | Ready | Enable in config, set `SLACK_BOT_TOKEN` |
+| Signal | Ready | Requires signal-cli bridge |
+| WhatsApp | Ready | Requires WhatsApp Web bridge |
+| iMessage | Ready | macOS only |
+| LINE | Ready | Requires LINE Messaging API |
+
+All 28 tools and 65 commands work on every channel. The channel abstraction layer (`channel-sender.ts`) routes messages to the correct OpenClaw send function automatically.
 
 ## What It Does
 
-28 tools across 7 categories. 65 slash commands. 25 services. Guided onboarding on first message.
+28 tools across 7 categories. 67 slash commands. 26 services. Guided onboarding on first message. Works on any channel OpenClaw supports.
 
 ### Tools
 
@@ -128,7 +177,9 @@ Cost: ~$12/month on Fly.io for a 24/7 instance. You pay your own LLM and Fly bil
 
 | Command | Description |
 |---------|-------------|
+| `/help` | Show all available commands |
 | `/wallet` | Wallet status and balance |
+| `/portfolio` | Token holdings and wallet info |
 | `/connect` | Connect mobile wallet (MetaMask, Coinbase, Rainbow, etc.) |
 | `/connect_bankr` | Connect Bankr custodial wallet |
 | `/tx` | Transaction history |
@@ -163,7 +214,7 @@ Cost: ~$12/month on Fly.io for a 24/7 instance. You pay your own LLM and Fly bil
 | `/flyrestart` | Restart bot |
 | `/factoryreset` | Wipe all data and start over |
 
-All commands are tappable in Telegram (no typing needed).
+All commands are tappable in Telegram (no typing needed). On other channels, type them as usual.
 
 ### Security
 
@@ -194,9 +245,9 @@ Plans persist to disk and survive restarts. Scheduler runs a 15-second tick loop
 Two npm packages, one repo:
 
 - `openclawnch` — CLI wrapper + deploy tooling
-- `@clawnch/openclaw-crypto` — Standalone OpenClaw plugin (28 tools, 65 commands, 25 services)
+- `@clawnch/openclaw-crypto` — Standalone OpenClaw plugin (28 tools, 67 commands, 26 services)
 
-Each user runs their own Fly.io instance with their own API keys. No shared infrastructure.
+Each user runs their own instance (Fly.io or Docker) with their own API keys. No shared infrastructure.
 
 **Extension structure:**
 ```
@@ -204,8 +255,9 @@ extensions/crypto/
 ├── index.ts                    # Plugin entry (register tools, commands, hooks)
 ├── src/
 │   ├── tools/                  # 28 tool files
-│   ├── commands/               # 12 command files
-│   └── services/               # 25 service files
+│   ├── commands/               # 14 command files
+│   └── services/               # 26 service files
+│       ├── channel-sender.ts           # Channel-agnostic message routing (7 channels)
 │       ├── walletconnect-service.ts    # WalletConnect lifecycle + builder code wrapping
 │       ├── plan-types.ts               # Compound ops IR (6 node types, 4 triggers)
 │       ├── plan-compiler.ts            # Intent → Plan IR compiler
@@ -217,7 +269,14 @@ extensions/crypto/
 │       ├── price-oracle.ts             # Multi-source price feeds with divergence detection
 │       ├── rpc-provider.ts             # Multi-RPC with failover + circuit breaker
 │       └── ...                         # 14 more services
-└── package.json
+deploy/
+├── Dockerfile                  # Container image
+├── docker-compose.yml          # Self-hosted deploy
+├── .env.example                # Environment variable reference
+├── entrypoint.sh               # Startup script
+├── fly.toml                    # Fly.io config
+├── fly.template.toml           # Fly.io template
+└── openclaw.json               # OpenClaw config (channels, plugins, models)
 ```
 
 **SDK dependencies:**
@@ -230,7 +289,7 @@ extensions/crypto/
 ```bash
 pnpm install
 pnpm build
-pnpm test        # 632 tests across 21 files (632 pass, 11 skip)
+pnpm test        # 667 tests across 22 files (667 pass, 11 skip)
 ```
 
 ## License

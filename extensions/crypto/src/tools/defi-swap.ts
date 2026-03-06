@@ -313,8 +313,31 @@ async function handleQuote(params: Record<string, unknown>) {
     }
 
     // Build comparison table from all aggregator quotes
-    // L2: Use detected tokenDecimals for output formatting
-    const outDecimals = 18; // output token decimals — TODO: detect from tokenOut too
+    // Detect output token decimals for correct display
+    let outDecimals = 18;
+    {
+      const isOutEth = tokenOut.toLowerCase() === BASE_TOKENS.ETH!.toLowerCase()
+        || tokenOut.toLowerCase() === BASE_TOKENS.WETH!.toLowerCase();
+      if (!isOutEth) {
+        const knownOut = Object.entries(BASE_TOKENS).find(
+          ([, addr]) => addr.toLowerCase() === tokenOut.toLowerCase()
+        );
+        if (knownOut && ['USDC', 'USDT'].includes(knownOut[0])) {
+          outDecimals = 6;
+        } else if (!knownOut) {
+          try {
+            const { erc20Abi } = await import('viem');
+            const publicClient = requirePublicClient();
+            const dec = await publicClient.readContract({
+              address: tokenOut as `0x${string}`,
+              abi: erc20Abi,
+              functionName: 'decimals',
+            }) as number;
+            outDecimals = dec;
+          } catch { /* fallback to 18 */ }
+        }
+      }
+    }
     const comparison = allQuotes
       .filter((q) => !q.error)
       .map((q) => ({
@@ -336,7 +359,7 @@ async function handleQuote(params: Record<string, unknown>) {
       tokenOut: {
         address: tokenOut,
         estimatedAmount: bestQuote.buyAmount
-          ? formatUnits(BigInt(bestQuote.buyAmount), 18)
+          ? formatUnits(BigInt(bestQuote.buyAmount), outDecimals)
           : 'unknown',
       },
       price: bestQuote.price,

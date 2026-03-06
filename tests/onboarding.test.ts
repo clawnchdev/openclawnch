@@ -203,11 +203,11 @@ describe('OnboardingFlow', () => {
     flow.getWelcomeMessage();
     flow.onPersonaSelected('1');
 
-    // Hummingbot needs HUMMINGBOT_URL which is not set in test env
+    // Hummingbot needs HUMMINGBOT_API_URL which is not set in test env
     const msg = flow.onCapabilitiesSelected('10');
     expect(msg).not.toBeNull();
-    expect(msg!.text).toContain('fly secrets set');
-    expect(msg!.text).toContain('HUMMINGBOT_URL');
+    expect(msg!.text).toContain('environment variable');
+    expect(msg!.text).toContain('HUMMINGBOT_API_URL');
   });
 
   // ── Wallet Connection ─────────────────────────────────────────────────

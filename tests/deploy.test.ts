@@ -309,12 +309,12 @@ describe('deploy artifacts', () => {
     expect(flyToml).toContain('min_machines_running = 0');
   });
 
-  it('fly.template.toml uses correct image', () => {
+  it('fly.template.toml uses local Dockerfile build', () => {
     const flyToml = readFileSync(
       join(deployDir, 'fly.template.toml'),
       'utf8',
     );
-    expect(flyToml).toContain('ghcr.io/openclawnch/telegram:latest');
+    expect(flyToml).toContain('dockerfile = "Dockerfile"');
   });
 
   it('fly.template.toml mounts workspace volume', () => {
