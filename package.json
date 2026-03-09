@@ -63,16 +63,13 @@
     "@clawnch/clawnx": "^1.0.0",
     "@clawnch/sdk": "^2.2.1",
     "@sinclair/typebox": "^0.34.0",
+    "openclaw": "2026.3.8",
     "viem": "^2.0.0"
   },
   "peerDependencies": {
-    "@walletconnect/sign-client": "^2.23.6",
-    "openclaw": ">=2026.2.0"
+    "@walletconnect/sign-client": "^2.23.6"
   },
   "peerDependenciesMeta": {
-    "openclaw": {
-      "optional": false
-    },
     "@walletconnect/sign-client": {
       "optional": true
     }

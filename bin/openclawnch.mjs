@@ -90,11 +90,11 @@ function ensureSoul() {
 
 // ─── Resolve openclaw binary ──────────────────────────────────────────────
 function resolveOpenClaw() {
-  // Try local node_modules first (when installed as dependency)
-  const localBin = join(ROOT, 'node_modules', '.bin', 'openclaw');
-  if (existsSync(localBin)) return localBin;
+  // 1. Bundled openclaw (installed as a dependency of openclawnch)
+  const bundledBin = join(ROOT, 'node_modules', '.bin', 'openclaw');
+  if (existsSync(bundledBin)) return bundledBin;
 
-  // Try global
+  // 2. Sibling install (both globally installed via npm)
   try {
     const globalPath = execFileSync('which', ['openclaw'], { encoding: 'utf8' }).trim();
     if (globalPath) return globalPath;
@@ -105,6 +105,17 @@ function resolveOpenClaw() {
   return null;
 }
 
+// ─── Report bundled openclaw version ──────────────────────────────────────
+function getOpenClawVersion() {
+  try {
+    const ocPkg = join(ROOT, 'node_modules', 'openclaw', 'package.json');
+    if (existsSync(ocPkg)) {
+      return JSON.parse(readFileSync(ocPkg, 'utf8')).version;
+    }
+  } catch {}
+  return null;
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────
 async function main() {
   const args = process.argv.slice(2);
@@ -112,7 +123,9 @@ async function main() {
   // Handle openclawnch-specific commands
   if (args[0] === 'version' || args[0] === '--version' || args[0] === '-v') {
     const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
+    const ocVersion = getOpenClawVersion();
     console.log(`OpenClawnch v${pkg.version}`);
+    if (ocVersion) console.log(`OpenClaw    v${ocVersion} (bundled)`);
     console.log('OpenClaw for crypto. Same assistant. Now it handles real money.');
     process.exit(0);
   }
@@ -128,12 +141,12 @@ async function main() {
   ensureCryptoExtension();
   ensureSoul();
 
-  // Find openclaw
+  // Find openclaw (bundled as a dependency — should always resolve)
   const openclawBin = resolveOpenClaw();
   if (!openclawBin) {
-    console.error('Error: openclaw not found.');
-    console.error('Install it: npm install -g openclaw');
-    console.error('Or add it as a dependency: npm install openclaw');
+    console.error('Error: openclaw binary not found.');
+    console.error('This usually means node_modules is missing or corrupted.');
+    console.error('Try: npm install   (or pnpm install)');
     process.exit(1);
   }
 
