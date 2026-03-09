@@ -17,6 +17,7 @@ import {
 import { validateSwap, type SafetyCheckResult } from '../services/safety-service.js';
 import { getPrice } from '../services/price-service.js';
 import { hasBankrApi } from '../services/bankr-api.js';
+import { guardedFetch } from '../services/endpoint-allowlist.js';
 
 const ACTIONS = ['quote', 'execute'] as const;
 
@@ -275,7 +276,7 @@ async function handleQuote(params: Record<string, unknown>) {
         takerAddress: state.address!,
       });
 
-      const response = await fetch(`${apiUrl}/api/swap/quote?${quoteParams}`, {
+      const response = await guardedFetch(`${apiUrl}/api/swap/quote?${quoteParams}`, {
         headers: { Accept: 'application/json' },
       });
 

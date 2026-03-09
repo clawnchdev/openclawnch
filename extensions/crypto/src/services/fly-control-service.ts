@@ -13,12 +13,15 @@
  * Secret values are write-only — Fly's API never returns plaintext values.
  */
 
+import { guardedFetch } from './endpoint-allowlist.js';
+import { getCredentialVault } from './credential-vault.js';
+
 // ─── Configuration ───────────────────────────────────────────────────────
 
 const FLY_API_BASE = 'https://api.machines.dev/v1';
 
 function getFlyToken(): string | null {
-  return process.env.FLY_API_TOKEN ?? null;
+  return getCredentialVault().getSecret('deploy.fly.apiToken', 'fly-control');
 }
 
 function getFlyAppName(): string | null {
@@ -72,7 +75,7 @@ async function flyRequest(
   };
 
   // H10: Add request timeout to prevent hanging
-  const res = await fetch(url, {
+  const res = await guardedFetch(url, {
     method,
     headers,
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),

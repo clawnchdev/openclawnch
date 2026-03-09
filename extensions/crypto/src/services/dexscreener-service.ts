@@ -5,6 +5,9 @@
  * defi-price.ts, defi-balance.ts, and market-intel.ts.
  */
 
+import { guardedFetch } from './endpoint-allowlist.js';
+import { getMarketCache, type CacheCategory } from './market-cache.js';
+
 const BASE_URL = 'https://api.dexscreener.com';
 
 const CHAIN_ALIASES: Record<string, string> = {
@@ -23,16 +26,33 @@ export function resolveChain(input: string): string {
   return CHAIN_ALIASES[input.toLowerCase()] || input;
 }
 
+/**
+ * Infer the cache category from the DexScreener API path.
+ */
+function inferCacheCategory(path: string): CacheCategory {
+  if (path.includes('/token-boosts/') || path.includes('/trending')) return 'trending';
+  if (path.includes('/latest/dex/pairs/')) return 'new_pairs';
+  if (path.includes('/tokens/') || path.includes('/simple/price')) return 'token_price';
+  if (path.includes('/search')) return 'token_search';
+  if (path.includes('/profiles')) return 'token_profile';
+  return 'token_price'; // default
+}
+
 export async function fetchDexScreener(path: string): Promise<any> {
-  // H10: Add request timeout to prevent hanging
-  const response = await fetch(`${BASE_URL}${path}`, {
-    headers: { Accept: 'application/json' },
-    signal: AbortSignal.timeout(15_000),
+  const cache = getMarketCache();
+  const category = inferCacheCategory(path);
+
+  return cache.getOrFetch(category, `dexscreener:${path}`, async () => {
+    // H10: Add request timeout to prevent hanging
+    const response = await guardedFetch(`${BASE_URL}${path}`, {
+      headers: { Accept: 'application/json' },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) {
+      throw new Error(`DexScreener API error: ${response.status} ${response.statusText}`);
+    }
+    return response.json();
   });
-  if (!response.ok) {
-    throw new Error(`DexScreener API error: ${response.status} ${response.statusText}`);
-  }
-  return response.json();
 }
 
 // ─── Common Queries ──────────────────────────────────────────────────────

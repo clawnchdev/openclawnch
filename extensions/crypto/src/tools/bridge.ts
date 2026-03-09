@@ -24,6 +24,8 @@ import {
   requireWalletClient,
   requirePublicClient,
 } from '../services/walletconnect-service.js';
+import { guardedFetch } from '../services/endpoint-allowlist.js';
+import { getCredentialVault } from '../services/credential-vault.js';
 
 const ACTIONS = ['quote', 'routes', 'execute', 'status', 'chains', 'tokens'] as const;
 
@@ -79,11 +81,11 @@ async function lifiFetch(path: string, params?: Record<string, string>): Promise
   }
 
   const headers: Record<string, string> = { Accept: 'application/json' };
-  const apiKey = process.env.LIFI_API_KEY;
+  const apiKey = getCredentialVault().getSecret('bridge.lifi.apiKey', 'bridge');
   if (apiKey) headers['x-lifi-api-key'] = apiKey;
 
   // H10: Add request timeout to prevent hanging
-  const response = await fetch(url.toString(), { headers, signal: AbortSignal.timeout(30_000) });
+  const response = await guardedFetch(url.toString(), { headers, signal: AbortSignal.timeout(30_000) });
   if (!response.ok) {
     const body = await response.text().catch(() => '');
     throw new Error(`LI.FI API error: ${response.status} ${response.statusText}${body ? ` — ${body.slice(0, 200)}` : ''}`);
@@ -97,11 +99,11 @@ async function lifiPost(path: string, body: unknown): Promise<any> {
     Accept: 'application/json',
     'Content-Type': 'application/json',
   };
-  const apiKey = process.env.LIFI_API_KEY;
+  const apiKey = getCredentialVault().getSecret('bridge.lifi.apiKey', 'bridge');
   if (apiKey) headers['x-lifi-api-key'] = apiKey;
 
   // H10: Add request timeout to prevent hanging
-  const response = await fetch(`${LIFI_BASE_URL}${path}`, {
+  const response = await guardedFetch(`${LIFI_BASE_URL}${path}`, {
     method: 'POST',
     headers,
     body: JSON.stringify(body),

@@ -19,6 +19,7 @@
 import { Type } from '@sinclair/typebox';
 import { stringEnum, jsonResult, errorResult, readStringParam, readNumberParam } from '../lib/tool-helpers.js';
 import { getWalletState } from '../services/walletconnect-service.js';
+import { getCredentialVault } from '../services/credential-vault.js';
 
 const ACTIONS = [
   'pools', 'balances', 'quote', 'resolve_token',
@@ -104,7 +105,7 @@ export function createWayfinderTool() {
       const action = readStringParam(params, 'action', { required: true })!;
 
       // Check API key
-      const apiKey = process.env.WAYFINDER_API_KEY;
+      const apiKey = getCredentialVault().getSecret('bot.wayfinder.apiKey', 'wayfinder');
       if (!apiKey) {
         return errorResult(
           'Wayfinder not configured. Set WAYFINDER_API_KEY environment variable. ' +

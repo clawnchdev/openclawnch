@@ -9,6 +9,7 @@ import { Type } from '@sinclair/typebox';
 import { jsonResult, errorResult, readStringParam } from '../lib/tool-helpers.js';
 import { requireWalletClient, requirePublicClient, getWalletState } from '../services/walletconnect-service.js';
 import { validateLaunch } from '../services/safety-service.js';
+import { getCredentialVault } from '../services/credential-vault.js';
 
 const ClawnchLaunchSchema = Type.Object({
   name: Type.String({
@@ -54,7 +55,7 @@ export function createClawnchLaunchTool() {
         return errorResult('No wallet connected. Use clawnchconnect tool to connect first.');
       }
 
-      const apiKey = process.env.CLAWNCHER_API_KEY;
+      const apiKey = getCredentialVault().getSecret('clawnch.launcherApiKey', 'clawnch-launch');
       if (!apiKey) {
         return errorResult(
           'Clawnch API key required for token launches. Set CLAWNCHER_API_KEY env var. ' +

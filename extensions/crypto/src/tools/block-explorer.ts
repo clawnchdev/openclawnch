@@ -18,6 +18,8 @@
 import { Type } from '@sinclair/typebox';
 import { stringEnum, jsonResult, errorResult, readStringParam, readNumberParam } from '../lib/tool-helpers.js';
 import { checkToolConfig } from '../services/tool-config-service.js';
+import { guardedFetch } from '../services/endpoint-allowlist.js';
+import { getCredentialVault } from '../services/credential-vault.js';
 
 const ACTIONS = ['tx_lookup', 'contract_source', 'gas_tracker', 'token_holders', 'internal_txs'] as const;
 const CHAINS = ['base', 'ethereum'] as const;
@@ -34,13 +36,13 @@ function getExplorerConfig(chain: string): ExplorerConfig {
     case 'ethereum':
     case 'eth':
     case 'mainnet': {
-      const apiKey = process.env.ETHERSCAN_API_KEY;
+      const apiKey = getCredentialVault().getSecret('explorer.etherscan.apiKey', 'block-explorer');
       if (!apiKey) throw new Error('ETHERSCAN_API_KEY environment variable is required for Ethereum lookups.');
       return { apiUrl: 'https://api.etherscan.io/api', apiKey, name: 'Etherscan', chainId: 1 };
     }
     case 'base':
     default: {
-      const apiKey = process.env.BASESCAN_API_KEY;
+      const apiKey = getCredentialVault().getSecret('explorer.basescan.apiKey', 'block-explorer');
       if (!apiKey) throw new Error('BASESCAN_API_KEY environment variable is required for Base lookups.');
       return { apiUrl: 'https://api.basescan.org/api', apiKey, name: 'Basescan', chainId: 8453 };
     }
@@ -55,7 +57,7 @@ async function explorerFetch(config: ExplorerConfig, params: Record<string, stri
   }
 
   // H10: Add request timeout to prevent hanging
-  const response = await fetch(url.toString(), {
+  const response = await guardedFetch(url.toString(), {
     headers: { Accept: 'application/json' },
     signal: AbortSignal.timeout(15_000),
   });

@@ -19,6 +19,8 @@ import { Type } from '@sinclair/typebox';
 import { stringEnum, jsonResult, errorResult, readStringParam } from '../lib/tool-helpers.js';
 import { getWalletState } from '../services/walletconnect-service.js';
 import { checkToolConfig } from '../services/tool-config-service.js';
+import { guardedFetch } from '../services/endpoint-allowlist.js';
+import { getCredentialVault } from '../services/credential-vault.js';
 
 // ─── API Client ──────────────────────────────────────────────────────────
 
@@ -29,7 +31,7 @@ function getBaseUrl(): string {
 }
 
 function getMoltenApiKey(): string | undefined {
-  return process.env.MOLTEN_API_KEY || _inMemoryApiKey;
+  return getCredentialVault().getSecret('bot.molten.apiKey', 'molten') ?? _inMemoryApiKey ?? undefined;
 }
 
 let _inMemoryApiKey: string | undefined;
@@ -58,7 +60,7 @@ async function moltenFetch(
     headers['Authorization'] = `Bearer ${apiKey}`;
   }
 
-  const response = await fetch(url, {
+  const response = await guardedFetch(url, {
     method,
     headers,
     ...(body ? { body: JSON.stringify(body) } : {}),

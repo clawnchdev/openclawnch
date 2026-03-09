@@ -2,7 +2,7 @@
  * Mode service — tracks per-user safety mode and signing mode.
  *
  * Two independent toggles:
- * 1. Intent confirmation: safe (confirm before acting) / danger (act immediately)
+ * 1. Intent confirmation: safe (confirm before acting) / danger (act immediately) / readonly (view only, no writes)
  * 2. Signing method: wallet (WalletConnect, phone approval) / autosign (private key)
  *
  * State persists on volume alongside onboarding state.
@@ -11,7 +11,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
-export type SafetyMode = 'safe' | 'danger';
+export type SafetyMode = 'safe' | 'danger' | 'readonly';
 export type SigningMode = 'wallet' | 'autosign';
 
 export interface UserMode {
@@ -96,6 +96,13 @@ export function setSigningMode(userId: string, signingMode: SigningMode): UserMo
   cache.set(userId, mode);
   saveMode(mode);
   return mode;
+}
+
+/**
+ * Check if a user is in readonly mode (no on-chain writes allowed).
+ */
+export function isReadonly(userId: string): boolean {
+  return getUserMode(userId).safetyMode === 'readonly';
 }
 
 export function resetModes(): void {

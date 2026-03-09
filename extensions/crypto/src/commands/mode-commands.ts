@@ -8,7 +8,8 @@
  * /mode        — Show current mode status
  */
 
-import { getUserMode, setSafetyMode, setSigningMode } from '../services/mode-service.js';
+import { getUserMode, setSafetyMode, setSigningMode, isReadonly } from '../services/mode-service.js';
+import { getCredentialVault } from '../services/credential-vault.js';
 
 function getSenderId(ctx: any): string {
   return ctx?.senderId ?? ctx?.from ?? ctx?.metadata?.senderId ?? 'unknown';
@@ -94,7 +95,7 @@ export const autosignCommand = {
     const userId = getSenderId(ctx);
 
     // Check if private key is configured
-    if (!process.env.CLAWNCHER_PRIVATE_KEY) {
+    if (!getCredentialVault().getSecret('wallet.privateKey', 'mode-commands')) {
       return {
         text: `Auto-sign is not available.
 
@@ -125,6 +126,34 @@ Use /walletsign to switch back to phone approval.`,
   },
 };
 
+export const readonlyCommand = {
+  name: 'readonly',
+  description: 'Enable read-only mode — no on-chain writes allowed (view portfolio, prices, analytics only)',
+  acceptsArgs: false,
+  requireAuth: true,
+  handler: async (ctx: any) => {
+    const userId = getSenderId(ctx);
+    const mode = setSafetyMode(userId, 'readonly');
+    return {
+      text: `Read-only mode enabled.
+
+All on-chain write operations are BLOCKED: swaps, transfers, token launches, approvals, bridging, etc.
+
+You can still:
+  - Check prices (/portfolio, defi_price)
+  - View balances (defi_balance)
+  - Run analytics (analytics, market_intel)
+  - View cost basis and trade history
+
+Use /safemode or /dangermode to re-enable write operations.
+
+Current settings:
+  Mode: READ-ONLY
+  Signing: ${mode.signingMode === 'wallet' ? 'WalletConnect (phone approval)' : 'Auto-sign (private key)'}`,
+    };
+  },
+};
+
 export const modeCommand = {
   name: 'mode',
   description: 'Show current safety and signing mode',
@@ -133,18 +162,25 @@ export const modeCommand = {
   handler: async (ctx: any) => {
     const userId = getSenderId(ctx);
     const mode = getUserMode(userId);
-    const hasPrivateKey = !!process.env.CLAWNCHER_PRIVATE_KEY;
+    const hasPrivateKey = !!getCredentialVault().getSecret('wallet.privateKey', 'mode-commands');
+
+    const safetyLabel = mode.safetyMode === 'readonly'
+      ? 'READ-ONLY (/readonly)'
+      : mode.safetyMode === 'safe'
+        ? 'ON (/safemode)'
+        : 'OFF (/dangermode)';
 
     return {
       text: `Current mode:
 
-  Intent confirmation: ${mode.safetyMode === 'safe' ? 'ON (/safemode)' : 'OFF (/dangermode)'}
+  Intent confirmation: ${safetyLabel}
   Signing: ${mode.signingMode === 'wallet' ? 'WalletConnect (/walletsign)' : 'Auto-sign (/autosign)'}
   Private key available: ${hasPrivateKey ? 'Yes' : 'No'}
 
 Commands:
   /safemode    — Confirm before acting
   /dangermode  — Act immediately
+  /readonly    — View only, no on-chain writes
   /walletsign  — Phone approval for transactions
   /autosign    — Auto-sign (requires private key)`,
     };

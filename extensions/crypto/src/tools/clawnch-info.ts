@@ -22,6 +22,8 @@ import {
   requirePublicClient,
 } from '../services/walletconnect-service.js';
 import { checkBalance } from '../services/safety-service.js';
+import { guardedFetch } from '../services/endpoint-allowlist.js';
+import { getCredentialVault } from '../services/credential-vault.js';
 
 const ACTIONS = [
   'token_info', 'portfolio', 'vault_claim',
@@ -311,7 +313,7 @@ async function handleAgentRegister(params: Record<string, unknown>) {
   const agentName = readStringParam(params, 'agent_name', { required: true })!;
   const agentDescription = readStringParam(params, 'agent_description') ?? '';
 
-  const apiKey = process.env.CLAWNCH_API_KEY;
+  const apiKey = getCredentialVault().getSecret('clawnch.apiKey', 'clawnch-info');
   if (!apiKey) {
     return errorResult('CLAWNCH_API_KEY not set. Required for agent registration.');
   }
@@ -353,7 +355,7 @@ async function handleAgentStatus(params: Record<string, unknown>) {
     return errorResult('No address provided and no wallet connected.');
   }
 
-  const apiKey = process.env.CLAWNCH_API_KEY;
+  const apiKey = getCredentialVault().getSecret('clawnch.apiKey', 'clawnch-info');
   if (!apiKey) {
     return errorResult('CLAWNCH_API_KEY not set. Required for agent status queries.');
   }
@@ -363,7 +365,7 @@ async function handleAgentStatus(params: Record<string, unknown>) {
   const apiBaseUrl = process.env.CLAWNCHER_API_URL || 'https://clawn.ch';
 
   try {
-    const response = await fetch(
+    const response = await guardedFetch(
       `${apiBaseUrl}/api/agents/${address}`,
       {
         headers: {
@@ -413,7 +415,7 @@ async function handlePlatformStats() {
   const apiUrl = process.env.CLAWNCHER_API_URL || 'https://clawn.ch';
 
   try {
-    const response = await fetch(`${apiUrl}/api/stats`, {
+    const response = await guardedFetch(`${apiUrl}/api/stats`, {
       headers: { Accept: 'application/json' },
       signal: AbortSignal.timeout(15_000),
     });
@@ -452,7 +454,7 @@ async function handleListTokens(params: Record<string, unknown>) {
       pageSize: pageSize.toString(),
     });
 
-    const response = await fetch(`${apiUrl}/api/tokens?${queryParams}`, {
+    const response = await guardedFetch(`${apiUrl}/api/tokens?${queryParams}`, {
       headers: { Accept: 'application/json' },
       signal: AbortSignal.timeout(15_000),
     });

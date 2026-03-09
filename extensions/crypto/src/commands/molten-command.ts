@@ -7,6 +7,8 @@
  * Uses the real Molten API at api.molten.gg/api/v1.
  */
 
+import { getCredentialVault } from '../services/credential-vault.js';
+
 const MOLTEN_BASE_URL = 'https://api.molten.gg/api/v1';
 
 export const moltenCommand = {
@@ -15,7 +17,7 @@ export const moltenCommand = {
   acceptsArgs: false,
   requireAuth: true,
   handler: async (_ctx: any) => {
-    const apiKey = process.env.MOLTEN_API_KEY;
+    const apiKey = getCredentialVault().getSecret('bot.molten.apiKey', 'molten-command');
 
     if (!apiKey) {
       return {

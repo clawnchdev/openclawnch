@@ -23,6 +23,7 @@ import {
 import { getBankrUserInfo, hasBankrApi } from '../services/bankr-api.js';
 import { createChannelSender, extractChannelId, type ChannelId } from '../services/channel-sender.js';
 import { getOnboardingFlow } from '../services/onboarding-flow.js';
+import { getCredentialVault } from '../services/credential-vault.js';
 
 // ── Wallet Deep Link Configuration ──────────────────────────────────────────
 
@@ -62,8 +63,8 @@ async function doConnect(wallet: WalletOption, ctx: any): Promise<{ text: string
     };
   }
 
-  const projectId = process.env.WALLETCONNECT_PROJECT_ID;
-  const privateKey = process.env.CLAWNCHER_PRIVATE_KEY;
+  const projectId = getCredentialVault().getSecret('walletconnect.projectId', 'connect-command') ?? undefined;
+  const privateKey = getCredentialVault().getSecret('wallet.privateKey', 'connect-command') ?? undefined;
 
   if (!projectId && !privateKey) {
     return {
@@ -234,7 +235,7 @@ export const connectBankrCommand = {
     }
 
     // Check for API key
-    const apiKey = process.env.BANKR_API_KEY;
+    const apiKey = getCredentialVault().getSecret('bankr.apiKey', 'connect-command');
     if (!apiKey) {
       return {
         text: [

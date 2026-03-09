@@ -10,6 +10,7 @@
 import { Type } from '@sinclair/typebox';
 import { stringEnum, jsonResult, errorResult, readStringParam, readNumberParam } from '../lib/tool-helpers.js';
 import { checkToolConfig } from '../services/tool-config-service.js';
+import { getCredentialVault } from '../services/credential-vault.js';
 
 const ACTIONS = [
   'status', 'portfolio', 'order', 'cancel_order', 'active_orders',
@@ -70,8 +71,8 @@ async function getClient(): Promise<any> {
   const { HummingbotClient } = await import('@clawnch/clawncher-sdk');
   // H3 FIX: Require explicit credentials — no default admin/admin
   const apiUrl = process.env.HUMMINGBOT_API_URL;
-  const username = process.env.HUMMINGBOT_USERNAME;
-  const password = process.env.HUMMINGBOT_PASSWORD;
+  const username = getCredentialVault().getSecret('bot.hummingbot.username', 'hummingbot');
+  const password = getCredentialVault().getSecret('bot.hummingbot.password', 'hummingbot');
   if (!apiUrl || !username || !password) {
     throw new Error(
       'Hummingbot not configured. Set HUMMINGBOT_API_URL, HUMMINGBOT_USERNAME, and HUMMINGBOT_PASSWORD.'

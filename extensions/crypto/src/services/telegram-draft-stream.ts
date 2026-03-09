@@ -12,6 +12,9 @@
  * Phase C: grammy native support (future).
  */
 
+import { guardedFetch } from './endpoint-allowlist.js';
+import { getCredentialVault } from './credential-vault.js';
+
 // ── Types ───────────────────────────────────────────────────────────────────
 
 export interface DraftStreamConfig {
@@ -66,7 +69,7 @@ export class TelegramDraftStreamService {
   /** Call a Telegram Bot API method via raw fetch. */
   private async callApi(method: string, params: Record<string, unknown>): Promise<any> {
     const url = `${this.config.apiBaseUrl}/bot${this.config.botToken}/${method}`;
-    const resp = await fetch(url, {
+    const resp = await guardedFetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(params),
@@ -275,7 +278,7 @@ let _instance: TelegramDraftStreamService | null = null;
 
 export function getDraftStreamService(config?: DraftStreamConfig): TelegramDraftStreamService {
   if (!_instance) {
-    const token = config?.botToken ?? process.env.TELEGRAM_BOT_TOKEN;
+    const token = config?.botToken ?? getCredentialVault().getSecret('bot.telegram.botToken', 'telegram-draft-stream');
     if (!token) throw new Error('TELEGRAM_BOT_TOKEN required for draft streaming');
     _instance = new TelegramDraftStreamService({ ...config, botToken: token });
   }

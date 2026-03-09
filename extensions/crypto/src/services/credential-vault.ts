@@ -1,0 +1,368 @@
+/**
+ * Credential Vault — centralized secret access with leak scanning.
+ *
+ * Inspired by IronClaw's credential boundary injection pattern.
+ * Instead of tools reading process.env directly, they request secrets
+ * through this vault. The vault:
+ * 1. Provides secrets on demand (single point of access)
+ * 2. Tracks which tools accessed which secrets (audit log)
+ * 3. Scans outbound strings for leaked credentials before they reach the LLM
+ *
+ * This does NOT encrypt secrets at rest (they're still in env vars / Fly secrets).
+ * What it does is:
+ * - Prevent accidental secret exposure in tool output
+ * - Create an audit trail of secret access
+ * - Provide a single place to rotate/revoke secrets
+ * - Scan LLM-bound text for credential leaks
+ */
+
+// ─── Types ───────────────────────────────────────────────────────────────
+
+export interface SecretAccess {
+  key: string;
+  tool: string;
+  timestamp: number;
+}
+
+export interface LeakScanResult {
+  clean: boolean;
+  leaks: Array<{
+    type: string;
+    pattern: string;
+    position: number;
+  }>;
+  redactedText: string;
+}
+
+// ─── Secret Registry ─────────────────────────────────────────────────────
+// Maps logical secret names to env var names.
+// Tools should use logical names, never raw env vars.
+
+const SECRET_REGISTRY: Record<string, {
+  envVar: string;
+  description: string;
+  sensitive: 'critical' | 'high' | 'medium';
+}> = {
+  // ── Critical: private keys and auth tokens that control funds ─────
+  'wallet.privateKey': {
+    envVar: 'CLAWNCHER_PRIVATE_KEY',
+    description: 'Wallet private key for auto-signing',
+    sensitive: 'critical',
+  },
+  'walletconnect.projectId': {
+    envVar: 'WALLETCONNECT_PROJECT_ID',
+    description: 'WalletConnect cloud project ID',
+    sensitive: 'high',
+  },
+  'bankr.apiKey': {
+    envVar: 'BANKR_API_KEY',
+    description: 'Bankr Agent API key',
+    sensitive: 'high',
+  },
+
+  // ── High: API keys for financial services ─────────────────────────
+  'dex.0x.apiKey': {
+    envVar: 'ZEROX_API_KEY',
+    description: '0x DEX aggregator API key',
+    sensitive: 'high',
+  },
+  'dex.1inch.apiKey': {
+    envVar: 'ONEINCH_API_KEY',
+    description: '1inch DEX aggregator API key',
+    sensitive: 'high',
+  },
+  'bridge.lifi.apiKey': {
+    envVar: 'LIFI_API_KEY',
+    description: 'LI.FI bridge aggregator API key',
+    sensitive: 'high',
+  },
+
+  // ── Medium: read-only API keys ────────────────────────────────────
+  'rpc.alchemy.apiKey': {
+    envVar: 'ALCHEMY_API_KEY',
+    description: 'Alchemy RPC provider API key',
+    sensitive: 'medium',
+  },
+  'price.coingecko.apiKey': {
+    envVar: 'COINGECKO_API_KEY',
+    description: 'CoinGecko price feed API key',
+    sensitive: 'medium',
+  },
+  'price.cmc.apiKey': {
+    envVar: 'CMC_API_KEY',
+    description: 'CoinMarketCap price feed API key',
+    sensitive: 'medium',
+  },
+  'price.birdeye.apiKey': {
+    envVar: 'BIRDEYE_API_KEY',
+    description: 'Birdeye price feed API key',
+    sensitive: 'medium',
+  },
+  'explorer.basescan.apiKey': {
+    envVar: 'BASESCAN_API_KEY',
+    description: 'Basescan block explorer API key',
+    sensitive: 'medium',
+  },
+  'explorer.etherscan.apiKey': {
+    envVar: 'ETHERSCAN_API_KEY',
+    description: 'Etherscan block explorer API key',
+    sensitive: 'medium',
+  },
+  'intel.herd.accessToken': {
+    envVar: 'HERD_ACCESS_TOKEN',
+    description: 'Herd Intelligence access token',
+    sensitive: 'medium',
+  },
+  'social.x.apiKey': {
+    envVar: 'X_API_KEY',
+    description: 'X/Twitter API key',
+    sensitive: 'high',
+  },
+  'social.x.apiSecret': {
+    envVar: 'X_API_SECRET',
+    description: 'X/Twitter API secret',
+    sensitive: 'high',
+  },
+  'social.x.accessToken': {
+    envVar: 'X_ACCESS_TOKEN',
+    description: 'X/Twitter access token',
+    sensitive: 'high',
+  },
+  'social.x.accessTokenSecret': {
+    envVar: 'X_ACCESS_TOKEN_SECRET',
+    description: 'X/Twitter access token secret',
+    sensitive: 'high',
+  },
+  'llm.anthropic.apiKey': {
+    envVar: 'ANTHROPIC_API_KEY',
+    description: 'Anthropic LLM API key',
+    sensitive: 'high',
+  },
+  'llm.bankr.key': {
+    envVar: 'BANKR_LLM_KEY',
+    description: 'Bankr LLM gateway key',
+    sensitive: 'high',
+  },
+  'llm.openrouter.apiKey': {
+    envVar: 'OPENROUTER_API_KEY',
+    description: 'OpenRouter LLM API key',
+    sensitive: 'high',
+  },
+  'llm.openai.apiKey': {
+    envVar: 'OPENAI_API_KEY',
+    description: 'OpenAI LLM API key',
+    sensitive: 'high',
+  },
+  'deploy.fly.apiToken': {
+    envVar: 'FLY_API_TOKEN',
+    description: 'Fly.io deployment API token',
+    sensitive: 'high',
+  },
+  'bot.molten.apiKey': {
+    envVar: 'MOLTEN_API_KEY',
+    description: 'Molten agent matching API key',
+    sensitive: 'medium',
+  },
+  'bot.wayfinder.apiKey': {
+    envVar: 'WAYFINDER_API_KEY',
+    description: 'Wayfinder routing API key',
+    sensitive: 'medium',
+  },
+  'clawnch.apiKey': {
+    envVar: 'CLAWNCH_API_KEY',
+    description: 'Clawnch platform API key',
+    sensitive: 'high',
+  },
+  'clawnch.launcherApiKey': {
+    envVar: 'CLAWNCHER_API_KEY',
+    description: 'Clawnch token launcher API key',
+    sensitive: 'high',
+  },
+  'bot.hummingbot.username': {
+    envVar: 'HUMMINGBOT_USERNAME',
+    description: 'Hummingbot gateway username',
+    sensitive: 'high',
+  },
+  'bot.hummingbot.password': {
+    envVar: 'HUMMINGBOT_PASSWORD',
+    description: 'Hummingbot gateway password',
+    sensitive: 'critical',
+  },
+  'bot.telegram.botToken': {
+    envVar: 'TELEGRAM_BOT_TOKEN',
+    description: 'Telegram bot API token',
+    sensitive: 'high',
+  },
+};
+
+// ─── Credential Vault ────────────────────────────────────────────────────
+
+class CredentialVault {
+  private accessLog: SecretAccess[] = [];
+  private readonly MAX_LOG_SIZE = 1000;
+
+  /**
+   * Get a secret value by its logical name.
+   * Returns null if not configured.
+   */
+  getSecret(name: string, tool: string): string | null {
+    const entry = SECRET_REGISTRY[name];
+    if (!entry) return null;
+
+    const value = process.env[entry.envVar] ?? null;
+
+    // Log access (even if value is null — tracks attempts)
+    this.logAccess(name, tool);
+
+    return value;
+  }
+
+  /**
+   * Check if a secret is configured (without revealing its value).
+   */
+  hasSecret(name: string): boolean {
+    const entry = SECRET_REGISTRY[name];
+    if (!entry) return false;
+    return !!process.env[entry.envVar];
+  }
+
+  /**
+   * Get the raw env var for a logical secret name.
+   * Use this only when you need to pass the env var name (not value) to something.
+   */
+  getEnvVarName(name: string): string | null {
+    return SECRET_REGISTRY[name]?.envVar ?? null;
+  }
+
+  /**
+   * Scan text for credential leaks.
+   * Returns a result with any detected leaks and a redacted version of the text.
+   */
+  scanForLeaks(text: string): LeakScanResult {
+    const leaks: LeakScanResult['leaks'] = [];
+    let redacted = text;
+
+    // 1. Check for actual secret values appearing in text
+    for (const [name, entry] of Object.entries(SECRET_REGISTRY)) {
+      const value = process.env[entry.envVar];
+      if (!value || value.length < 8) continue; // Skip short/missing values
+
+      const idx = text.indexOf(value);
+      if (idx !== -1) {
+        leaks.push({
+          type: `secret:${name}`,
+          pattern: `${entry.envVar} value`,
+          position: idx,
+        });
+        // Redact the value
+        redacted = redacted.replaceAll(value, `[REDACTED:${entry.envVar}]`);
+      }
+    }
+
+    // 2. Pattern-based detection (catches secrets not in our registry)
+    const LEAK_PATTERNS: Array<{ type: string; regex: RegExp }> = [
+      // Private keys (Ethereum)
+      { type: 'private_key', regex: /\b(0x)?[0-9a-fA-F]{64}\b/g },
+      // WalletConnect secrets
+      { type: 'wc_secret', regex: /wc:[0-9a-f]{32}@/gi },
+      // Generic API keys (long alphanumeric strings that look like keys)
+      { type: 'api_key_pattern', regex: /\b(sk-|bk_|xai-|pk_|sk_live_|rk_live_)[a-zA-Z0-9_\-]{20,}\b/g },
+    ];
+
+    // Collect all pattern matches first, then apply redactions in reverse
+    // order to preserve string offsets.
+    const patternMatches: Array<{ type: string; matchStr: string; index: number }> = [];
+
+    for (const { type, regex } of LEAK_PATTERNS) {
+      let match: RegExpExecArray | null;
+      regex.lastIndex = 0;
+      while ((match = regex.exec(text)) !== null) {
+        // Don't flag if already caught as a known secret value
+        if (leaks.some(l => l.position === match!.index)) continue;
+
+        // For private key pattern: only flag if it looks like an actual key
+        // (not a tx hash, block hash, calldata, or ABI-encoded data)
+        if (type === 'private_key') {
+          const surrounding = text.slice(Math.max(0, match.index - 30), match.index + match[0].length + 30);
+          if (/\b(tx|transaction|hash|block|receipt|data|calldata|input|encoded|abi|selector|topics)\b/i.test(surrounding)) continue;
+        }
+
+        patternMatches.push({
+          type,
+          matchStr: match[0],
+          index: match.index,
+        });
+      }
+    }
+
+    // Sort by position descending so we can apply redactions from the end
+    // of the string backward, preserving earlier offsets.
+    patternMatches.sort((a, b) => b.index - a.index);
+
+    for (const pm of patternMatches) {
+      leaks.push({
+        type: pm.type,
+        pattern: pm.matchStr.slice(0, 20) + '...',
+        position: pm.index,
+      });
+      redacted = redacted.slice(0, pm.index) + `[REDACTED:${pm.type}]` + redacted.slice(pm.index + pm.matchStr.length);
+    }
+
+    return {
+      clean: leaks.length === 0,
+      leaks,
+      redactedText: redacted,
+    };
+  }
+
+  /**
+   * Get recent access log entries (for diagnostics).
+   */
+  getAccessLog(limit = 50): SecretAccess[] {
+    return this.accessLog.slice(-limit);
+  }
+
+  /**
+   * Get a summary of configured vs unconfigured secrets.
+   */
+  getConfigurationSummary(): Array<{
+    name: string;
+    envVar: string;
+    description: string;
+    configured: boolean;
+    sensitive: string;
+  }> {
+    return Object.entries(SECRET_REGISTRY).map(([name, entry]) => ({
+      name,
+      envVar: entry.envVar,
+      description: entry.description,
+      configured: !!process.env[entry.envVar],
+      sensitive: entry.sensitive,
+    }));
+  }
+
+  // ── Internal ──────────────────────────────────────────────────────────
+
+  private logAccess(key: string, tool: string): void {
+    this.accessLog.push({ key, tool, timestamp: Date.now() });
+    // Trim log
+    if (this.accessLog.length > this.MAX_LOG_SIZE) {
+      this.accessLog = this.accessLog.slice(-this.MAX_LOG_SIZE / 2);
+    }
+  }
+}
+
+// ─── Singleton ───────────────────────────────────────────────────────────
+
+let _instance: CredentialVault | null = null;
+
+export function getCredentialVault(): CredentialVault {
+  if (!_instance) {
+    _instance = new CredentialVault();
+  }
+  return _instance;
+}
+
+export function resetCredentialVault(): void {
+  _instance = null;
+}

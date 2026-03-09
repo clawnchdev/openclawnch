@@ -9,6 +9,7 @@
 import { getWalletState, requirePublicClient, isBankrMode } from './walletconnect-service.js';
 import { getPrice, getEthPrice } from './price-service.js';
 import { getUserMode } from './mode-service.js';
+import { getCredentialVault } from './credential-vault.js';
 
 // ─── Types ───────────────────────────────────────────────────────────────
 
@@ -109,7 +110,7 @@ export async function auditToken(tokenAddress: string): Promise<SafetyCheckResul
   const blockers: string[] = [];
   const details: Record<string, unknown> = {};
 
-  const accessToken = process.env.HERD_ACCESS_TOKEN;
+  const accessToken = getCredentialVault().getSecret('intel.herd.accessToken', 'safety-service');
   if (!accessToken) {
     warnings.push('Herd Intelligence not configured (no HERD_ACCESS_TOKEN). Token audit skipped.');
     return { safe: true, warnings, blockers, details };

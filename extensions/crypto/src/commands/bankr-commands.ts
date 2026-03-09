@@ -8,6 +8,9 @@
  * LLM commands call llm.bankr.bot. Agent commands call api.bankr.bot.
  */
 
+import { guardedFetch } from '../services/endpoint-allowlist.js';
+import { getCredentialVault } from '../services/credential-vault.js';
+
 const BANKR_BASE = 'https://llm.bankr.bot';
 
 function getBankrKey(): string | null {
@@ -67,7 +70,7 @@ export const creditsCommand = {
 
     // Try to fetch usage data
     try {
-      const res = await fetch(`${BANKR_BASE}/v1/usage?days=30`, {
+      const res = await guardedFetch(`${BANKR_BASE}/v1/usage?days=30`, {
         headers: { 'X-API-Key': key, 'Content-Type': 'application/json' },
         signal: AbortSignal.timeout(15_000),
       });
@@ -175,7 +178,7 @@ export const usageCommand = {
     const days = Math.min(90, Math.max(1, parseInt(daysArg, 10) || 30));
 
     try {
-      const res = await fetch(`${BANKR_BASE}/v1/usage?days=${days}`, {
+      const res = await guardedFetch(`${BANKR_BASE}/v1/usage?days=${days}`, {
         headers: { 'X-API-Key': key, 'Content-Type': 'application/json' },
         signal: AbortSignal.timeout(15_000),
       });
@@ -231,7 +234,7 @@ export const automationsCommand = {
   acceptsArgs: false,
   requireAuth: true,
   handler: async (_ctx: any) => {
-    const apiKey = process.env.BANKR_API_KEY;
+    const apiKey = getCredentialVault().getSecret('bankr.apiKey', 'bankr-commands');
     if (!apiKey) {
       return {
         text: [

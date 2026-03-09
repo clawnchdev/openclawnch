@@ -8,6 +8,7 @@
  * Auth: X-API-Key header with bk_... key
  */
 
+import { getCredentialVault } from './credential-vault.js';
 import type {
   BankrUserInfo,
   BankrBalancesResponse,
@@ -32,6 +33,8 @@ import {
   BankrRateLimitError,
   BankrServerError,
 } from './bankr-types.js';
+
+import { guardedFetch } from './endpoint-allowlist.js';
 
 // ─── Configuration ───────────────────────────────────────────────────────
 
@@ -61,7 +64,7 @@ export function getBankrThreadId(userId: string): string | undefined {
 // ─── Key Management ─────────────────────────────────────────────────────
 
 export function getBankrApiKey(): string | null {
-  return process.env.BANKR_API_KEY ?? null;
+  return getCredentialVault().getSecret('bankr.apiKey', 'bankr-api');
 }
 
 export function hasBankrApi(): boolean {
@@ -135,7 +138,7 @@ const BANKR_REQUEST_TIMEOUT_MS = 30_000;
 
 export async function bankrGet(path: string): Promise<any> {
   const key = requireBankrApiKey();
-  const res = await fetch(`${BANKR_API}${path}`, {
+  const res = await guardedFetch(`${BANKR_API}${path}`, {
     method: 'GET',
     headers: {
       'X-API-Key': key,
@@ -148,7 +151,7 @@ export async function bankrGet(path: string): Promise<any> {
 
 export async function bankrPost(path: string, body: unknown): Promise<any> {
   const key = requireBankrApiKey();
-  const res = await fetch(`${BANKR_API}${path}`, {
+  const res = await guardedFetch(`${BANKR_API}${path}`, {
     method: 'POST',
     headers: {
       'X-API-Key': key,

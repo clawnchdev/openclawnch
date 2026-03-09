@@ -15,6 +15,9 @@
  * - OpenOcean
  */
 
+import { guardedFetch } from './endpoint-allowlist.js';
+import { getCredentialVault } from './credential-vault.js';
+
 // ── Types ───────────────────────────────────────────────────────────────────
 
 export interface SwapQuote {
@@ -99,7 +102,7 @@ async function fetchQuote0x(
   slippageBps: number,
   timeoutMs: number,
 ): Promise<SwapQuote> {
-  const apiKey = process.env.ZEROX_API_KEY;
+  const apiKey = getCredentialVault().getSecret('dex.0x.apiKey', 'dex-aggregator');
   const chain = CHAIN_SLUG[chainId]?.['0x'] ?? 'base';
 
   const params = new URLSearchParams({
@@ -112,7 +115,7 @@ async function fetchQuote0x(
   const headers: Record<string, string> = { Accept: 'application/json' };
   if (apiKey) headers['0x-api-key'] = apiKey;
 
-  const resp = await fetch(
+  const resp = await guardedFetch(
     `https://api.0x.org/swap/v1/quote?${params}`,
     { headers, signal: AbortSignal.timeout(timeoutMs) },
   );
@@ -175,7 +178,7 @@ async function fetchQuoteParaSwap(
     network: String(chainId),
   });
 
-  const resp = await fetch(
+  const resp = await guardedFetch(
     `https://apiv5.paraswap.io/prices?${params}`,
     { signal: AbortSignal.timeout(timeoutMs) },
   );
@@ -205,7 +208,7 @@ async function fetchQuoteOdos(
   slippageBps: number,
   timeoutMs: number,
 ): Promise<SwapQuote> {
-  const resp = await fetch('https://api.odos.xyz/sor/quote/v2', {
+  const resp = await guardedFetch('https://api.odos.xyz/sor/quote/v2', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -253,7 +256,7 @@ async function fetchQuoteKyber(
     gasInclude: '1',
   });
 
-  const resp = await fetch(
+  const resp = await guardedFetch(
     `https://aggregator-api.kyberswap.com/${chain}/api/v1/routes?${params}`,
     { signal: AbortSignal.timeout(timeoutMs) },
   );
@@ -284,7 +287,7 @@ async function fetchQuote1inch(
   slippageBps: number,
   timeoutMs: number,
 ): Promise<SwapQuote> {
-  const apiKey = process.env.ONEINCH_API_KEY;
+  const apiKey = getCredentialVault().getSecret('dex.1inch.apiKey', 'dex-aggregator');
   if (!apiKey) throw new Error('1inch: ONEINCH_API_KEY not set');
 
   const params = new URLSearchParams({
@@ -295,7 +298,7 @@ async function fetchQuote1inch(
     includeGas: 'true',
   });
 
-  const resp = await fetch(
+  const resp = await guardedFetch(
     `https://api.1inch.dev/swap/v6.0/${chainId}/quote?${params}`,
     {
       headers: {
@@ -341,7 +344,7 @@ async function fetchQuoteOpenOcean(
     account: '0x0000000000000000000000000000000000000000',
   });
 
-  const resp = await fetch(
+  const resp = await guardedFetch(
     `https://open-api.openocean.finance/v4/${chain}/quote?${params}`,
     { signal: AbortSignal.timeout(timeoutMs) },
   );

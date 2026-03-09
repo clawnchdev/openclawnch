@@ -12,6 +12,8 @@
  */
 
 import { getTokenPriceUsd, getEthPriceUsd, type DexPairData } from './dexscreener-service.js';
+import { guardedFetch } from './endpoint-allowlist.js';
+import { getCredentialVault } from './credential-vault.js';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -94,7 +96,7 @@ async function fetchCoinGecko(
     const headers: Record<string, string> = {};
     if (apiKey) headers['x-cg-pro-api-key'] = apiKey;
 
-    const resp = await fetch(
+    const resp = await guardedFetch(
       `${baseUrl}/simple/price?ids=${cgId}&vs_currencies=usd`,
       { headers, signal: AbortSignal.timeout(timeoutMs) },
     );
@@ -130,7 +132,7 @@ async function fetchDeFiLlama(
       query = `coingecko:${cgId}`;
     }
 
-    const resp = await fetch(
+    const resp = await guardedFetch(
       `https://coins.llama.fi/prices/current/${query}`,
       { signal: AbortSignal.timeout(timeoutMs) },
     );
@@ -159,7 +161,7 @@ async function fetchCoinMarketCap(
   }
 
   try {
-    const resp = await fetch(
+    const resp = await guardedFetch(
       `https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest?symbol=${token.toUpperCase()}`,
       {
         headers: {
@@ -200,7 +202,7 @@ async function fetchBirdeye(
     }
 
     const birdeyeChain = BIRDEYE_CHAIN_MAP[chain] ?? 'base';
-    const resp = await fetch(
+    const resp = await guardedFetch(
       `https://public-api.birdeye.so/defi/price?address=${address}`,
       {
         headers: {
@@ -245,9 +247,9 @@ export class PriceOracle {
       sources: userConfig.sources ?? ['DexScreener', 'CoinGecko', 'DeFiLlama', 'CoinMarketCap', 'Birdeye'],
       divergenceThreshold: userConfig.divergenceThreshold ?? 2,
       timeoutMs: userConfig.timeoutMs ?? 3000,
-      coingeckoApiKey: userConfig.coingeckoApiKey ?? process.env.COINGECKO_API_KEY ?? '',
-      cmcApiKey: userConfig.cmcApiKey ?? process.env.CMC_API_KEY ?? '',
-      birdeyeApiKey: userConfig.birdeyeApiKey ?? process.env.BIRDEYE_API_KEY ?? '',
+      coingeckoApiKey: userConfig.coingeckoApiKey ?? getCredentialVault().getSecret('price.coingecko.apiKey', 'price-oracle') ?? '',
+      cmcApiKey: userConfig.cmcApiKey ?? getCredentialVault().getSecret('price.cmc.apiKey', 'price-oracle') ?? '',
+      birdeyeApiKey: userConfig.birdeyeApiKey ?? getCredentialVault().getSecret('price.birdeye.apiKey', 'price-oracle') ?? '',
     };
   }
 

@@ -12,6 +12,7 @@
 import { Type } from '@sinclair/typebox';
 import { stringEnum, jsonResult, errorResult, readStringParam } from '../lib/tool-helpers.js';
 import { checkToolConfig } from '../services/tool-config-service.js';
+import { getCredentialVault } from '../services/credential-vault.js';
 
 const ACTIONS = [
   'investigate', 'audit_token', 'validate_swap', 'validate_claim',
@@ -70,7 +71,7 @@ async function getHerd(): Promise<any> {
   if (_herd) return _herd;
   const { HerdIntelligence } = await import('@clawnch/clawncher-sdk');
   _herd = new HerdIntelligence({
-    accessToken: process.env.HERD_ACCESS_TOKEN,
+    accessToken: getCredentialVault().getSecret('intel.herd.accessToken', 'herd-intelligence') ?? undefined,
     blockchain: 'base',
   });
   return _herd;

@@ -20,6 +20,7 @@ import {
   clearPolicies,
   isBankrMode,
 } from '../services/walletconnect-service.js';
+import { getCredentialVault } from '../services/credential-vault.js';
 
 const ACTIONS = [
   'connect',
@@ -151,7 +152,7 @@ async function handleConnect(params: Record<string, unknown>, api?: any) {
   // Bankr wallet — simplified connect (no pairing URI)
   const wallet = readStringParam(params, 'wallet') || 'other';
   if (wallet === 'bankr') {
-    const bankrApiKey = process.env.BANKR_API_KEY;
+    const bankrApiKey = getCredentialVault().getSecret('bankr.apiKey', 'clawnchconnect');
     if (!bankrApiKey) {
       return errorResult(
         'BANKR_API_KEY not set. Get a key at bankr.bot/api with Agent API enabled, ' +
@@ -176,8 +177,8 @@ async function handleConnect(params: Record<string, unknown>, api?: any) {
   }
 
   const projectId = readStringParam(params, 'project_id')
-    || process.env.WALLETCONNECT_PROJECT_ID;
-  const privateKey = process.env.CLAWNCHER_PRIVATE_KEY;
+    || (getCredentialVault().getSecret('walletconnect.projectId', 'clawnchconnect') ?? undefined);
+  const privateKey = getCredentialVault().getSecret('wallet.privateKey', 'clawnchconnect') ?? undefined;
 
   if (!projectId && !privateKey) {
     return errorResult(
