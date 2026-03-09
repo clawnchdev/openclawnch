@@ -61,8 +61,9 @@ import {
   capAllCommand, capCommands, skipCommand,
 } from './src/commands/onboarding-commands.js';
 import {
-  safemodeCommand, dangermodeCommand, walletsignCommand, autosignCommand, modeCommand,
+  safemodeCommand, dangermodeCommand, walletsignCommand, autosignCommand, modeCommand, readonlyCommand,
 } from './src/commands/mode-commands.js';
+import { doctorCommand } from './src/commands/doctor-command.js';
 import { connectCommand, walletConnectCommands, setConnectCommandApi, connectBankrCommand, disconnectCommand } from './src/commands/connect-command.js';
 import { modelCommand, llmShortcutCommands } from './src/commands/model-command.js';
 import { moltenCommand } from './src/commands/molten-command.js';
@@ -74,12 +75,16 @@ import {
 import { setupCommand } from './src/commands/setup-command.js';
 import { plansCommand, plansActiveCommand, plansCancelCommand, plansClearCommand } from './src/commands/plans-command.js';
 import { helpCommand, portfolioCommand, balanceCommand, chainCommand } from './src/commands/help-command.js';
-import { getUserMode } from './src/services/mode-service.js';
+import { getUserMode, isReadonly } from './src/services/mode-service.js';
 
 // Services
 import { initWalletService, getWalletState as getWalletStateFn } from './src/services/walletconnect-service.js';
 import { getOnboardingFlow, isNewUser, type OnboardingMessage } from './src/services/onboarding-flow.js';
 import { recordSwapTrade } from './src/tools/cost-basis.js';
+import { getCredentialVault } from './src/services/credential-vault.js';
+import { getTxLedger, toolToEventType, chainIdToName } from './src/services/tx-ledger.js';
+import { getHeartbeatMonitor } from './src/services/heartbeat-monitor.js';
+import { getBudgetService } from './src/services/budget-service.js';
 
 // Channel abstraction — multi-channel message sending
 import {
@@ -107,50 +112,81 @@ const plugin = {
   version: '0.1.0',
 
   register(api: any) {
+    // ─── Write Tool Names (for readonly enforcement) ───────────────
+    const WRITE_TOOL_NAMES = new Set([
+      'defi_swap', 'transfer', 'bridge', 'permit2', 'clawnch_launch',
+      'clawnch_fees', 'liquidity', 'compound_action', 'manage_orders',
+      'bankr_launch', 'bankr_automate', 'bankr_polymarket', 'bankr_leverage',
+      'clawnchconnect', 'molten', 'hummingbot', 'clawnx',
+    ]);
+
+    /**
+     * Wrap a tool with a hard readonly gate. If any user is in readonly mode,
+     * write tools return an error instead of executing. This is defense-in-depth
+     * beyond the LLM prompt — the LLM can't bypass this by ignoring instructions.
+     */
+    function registerToolWithReadonlyGate(tool: any): void {
+      if (WRITE_TOOL_NAMES.has(tool.name)) {
+        const originalExecute = tool.execute;
+        tool.execute = async (toolCallId: string, args: unknown, ctx?: any) => {
+          // Check if the requesting user is in readonly mode
+          const userId = ctx?.senderId ?? ctx?.from ?? ctx?.metadata?.senderId;
+          if (userId && isReadonly(userId)) {
+            return {
+              text: `BLOCKED: Read-only mode is active. The tool "${tool.name}" writes to the blockchain and cannot be used in readonly mode. Use /safemode or /dangermode to re-enable write operations.`,
+              isError: true,
+            };
+          }
+          return originalExecute.call(tool, toolCallId, args, ctx);
+        };
+      }
+      api.registerTool(tool);
+    }
+
     // ─── Register Tools (28 total) ────────────────────────────────
     // Core tools (13)
     // Write-operation tools: ownerOnly = true (security: only bot owner can execute financial ops)
     // Read-only tools: ownerOnly = false (paired users can view prices, balances, etc.)
-    api.registerTool(createClawnchConnectTool(api));   // ownerOnly: true (wallet management)
-    api.registerTool(createDefiPriceTool());            // ownerOnly: false (read-only)
-    api.registerTool(createDefiBalanceTool());           // ownerOnly: false (read-only)
-    api.registerTool(createDefiSwapTool());              // ownerOnly: true (financial write)
-    api.registerTool(createClawnchLaunchTool());         // ownerOnly: true (financial write)
-    api.registerTool(createClawnchFeesTool());            // ownerOnly: true (financial write)
-    api.registerTool(createMarketIntelTool());           // ownerOnly: false (read-only)
-    api.registerTool(createHummingbotTool());             // ownerOnly: true (trading bot control)
-    api.registerTool(createManageOrdersTool());           // ownerOnly: true (order management)
-    api.registerTool(createWatchActivityTool());          // ownerOnly: false (read-only)
-    api.registerTool(createClawnXTool());                 // ownerOnly: true (social actions)
-    api.registerTool(createHerdIntelligenceTool());       // ownerOnly: false (read-only)
-    api.registerTool(createCryptoWorkflowTool());         // ownerOnly: false (read-only)
+    registerToolWithReadonlyGate(createClawnchConnectTool(api));   // ownerOnly: true (wallet management)
+    registerToolWithReadonlyGate(createDefiPriceTool());            // ownerOnly: false (read-only)
+    registerToolWithReadonlyGate(createDefiBalanceTool());           // ownerOnly: false (read-only)
+    registerToolWithReadonlyGate(createDefiSwapTool());              // ownerOnly: true (financial write)
+    registerToolWithReadonlyGate(createClawnchLaunchTool());         // ownerOnly: true (financial write)
+    registerToolWithReadonlyGate(createClawnchFeesTool());            // ownerOnly: true (financial write)
+    registerToolWithReadonlyGate(createMarketIntelTool());           // ownerOnly: false (read-only)
+    registerToolWithReadonlyGate(createHummingbotTool());             // ownerOnly: true (trading bot control)
+    registerToolWithReadonlyGate(createManageOrdersTool());           // ownerOnly: true (order management)
+    registerToolWithReadonlyGate(createWatchActivityTool());          // ownerOnly: false (read-only)
+    registerToolWithReadonlyGate(createClawnXTool());                 // ownerOnly: true (social actions)
+    registerToolWithReadonlyGate(createHerdIntelligenceTool());       // ownerOnly: false (read-only)
+    registerToolWithReadonlyGate(createCryptoWorkflowTool());         // ownerOnly: false (read-only)
 
     // Phase 2 tools (4) — critical gap coverage
-    api.registerTool(createTransferTool());              // ownerOnly: true (financial write)
-    api.registerTool(createLiquidityTool());             // ownerOnly: true (financial write)
-    api.registerTool(createWayfinderTool());             // ownerOnly: false (read-only discovery)
-    api.registerTool(createClawnchInfoTool());           // ownerOnly: false (read-only)
+    registerToolWithReadonlyGate(createTransferTool());              // ownerOnly: true (financial write)
+    registerToolWithReadonlyGate(createLiquidityTool());             // ownerOnly: true (financial write)
+    registerToolWithReadonlyGate(createWayfinderTool());             // ownerOnly: false (read-only discovery)
+    registerToolWithReadonlyGate(createClawnchInfoTool());           // ownerOnly: false (read-only)
 
     // Phase 3 tools (4) — Permit2, cost basis, analytics, block explorer
-    api.registerTool(createPermit2Tool());               // ownerOnly: true (token approvals)
-    api.registerTool(createCostBasisTool());             // ownerOnly: false (read-only)
-    api.registerTool(createAnalyticsTool());             // ownerOnly: false (read-only)
-    api.registerTool(createBlockExplorerTool());         // ownerOnly: false (read-only)
+    registerToolWithReadonlyGate(createPermit2Tool());               // ownerOnly: true (token approvals)
+    registerToolWithReadonlyGate(createCostBasisTool());             // ownerOnly: false (read-only)
+    registerToolWithReadonlyGate(createAnalyticsTool());             // ownerOnly: false (read-only)
+    registerToolWithReadonlyGate(createBlockExplorerTool());         // ownerOnly: false (read-only)
 
     // Phase 4 tools (1) — cross-chain bridge
-    api.registerTool(createBridgeTool());                // ownerOnly: true (financial write)
+    registerToolWithReadonlyGate(createBridgeTool());                // ownerOnly: true (financial write)
 
     // Phase 5 tools (1) — Molten agent-to-agent matching
-    api.registerTool(createMoltenTool());                // ownerOnly: true (agent registration)
+    registerToolWithReadonlyGate(createMoltenTool());                // ownerOnly: true (agent registration)
 
     // Phase 6 tools (4) — Bankr Agent API (launch, automate, polymarket, leverage)
-    api.registerTool(createBankrLaunchTool());           // ownerOnly: true (financial write)
-    api.registerTool(createBankrAutomateTool());         // ownerOnly: true (financial write)
-    api.registerTool(createBankrPolymarketTool());       // ownerOnly: true (financial write)
-    api.registerTool(createBankrLeverageTool());         // ownerOnly: true (financial write)
+    registerToolWithReadonlyGate(createBankrLaunchTool());           // ownerOnly: true (financial write)
+    registerToolWithReadonlyGate(createBankrAutomateTool());         // ownerOnly: true (financial write)
+    registerToolWithReadonlyGate(createBankrPolymarketTool());       // ownerOnly: true (financial write)
+    registerToolWithReadonlyGate(createBankrLeverageTool());         // ownerOnly: true (financial write)
 
     // Phase 7 tools (1) — Compound operations engine
-    api.registerTool(createCompoundActionTool());        // ownerOnly: true (can trigger financial writes)
+    registerToolWithReadonlyGate(createCompoundActionTool());        // ownerOnly: true (can trigger financial writes)
 
     // ─── Register Chat Commands ────────────────────────────────────
     api.registerCommand(walletCommand);
@@ -178,6 +214,7 @@ const plugin = {
     // Mode: safety and signing
     api.registerCommand(safemodeCommand);
     api.registerCommand(dangermodeCommand);
+    api.registerCommand(readonlyCommand);
     api.registerCommand(walletsignCommand);
     api.registerCommand(autosignCommand);
     api.registerCommand(modeCommand);
@@ -227,11 +264,12 @@ const plugin = {
     api.registerCommand(plansCancelCommand);
     api.registerCommand(plansClearCommand);
 
-    // Help, portfolio, balance, chain
+    // Help, portfolio, balance, chain, diagnostics
     api.registerCommand(helpCommand);
     api.registerCommand(portfolioCommand);
     api.registerCommand(balanceCommand);
     api.registerCommand(chainCommand);
+    api.registerCommand(doctorCommand);
 
     // ─── Gateway Startup Hook ──────────────────────────────────────
     // Only init wallet at boot for private key mode (headless).
@@ -469,6 +507,43 @@ const plugin = {
           `[crypto] Plan scheduler failed to start: ${err instanceof Error ? err.message : String(err)}`
         );
       }
+
+      // ─── Start Heartbeat Position Monitor ──────────────────────────
+      try {
+        const heartbeat = getHeartbeatMonitor({
+          intervalMs: parseInt(process.env.OPENCLAWNCH_HEARTBEAT_INTERVAL_MS ?? '300000', 10),
+          priceDropAlertPercent: parseFloat(process.env.OPENCLAWNCH_HEARTBEAT_DROP_PCT ?? '10'),
+          priceGainAlertPercent: parseFloat(process.env.OPENCLAWNCH_HEARTBEAT_GAIN_PCT ?? '20'),
+          portfolioDropAlertUsd: parseFloat(process.env.OPENCLAWNCH_HEARTBEAT_DROP_USD ?? '100'),
+          enabled: process.env.OPENCLAWNCH_HEARTBEAT_ENABLED !== 'false',
+        });
+
+        const hbSender = createChannelSender(api);
+        heartbeat.onAlert(async (alert) => {
+          // Send alert to all configured channels
+          const channels = [
+            { name: 'telegram' as const, envVar: 'TELEGRAM_BOT_TOKEN' },
+            { name: 'discord' as const, envVar: 'DISCORD_TOKEN' },
+          ];
+          const severity = alert.severity === 'critical' ? '**CRITICAL**' : alert.severity === 'warning' ? '**WARNING**' : 'INFO';
+          const message = `${severity} [Heartbeat] ${alert.message}`;
+
+          for (const ch of channels) {
+            if (process.env[ch.envVar]) {
+              try {
+                await hbSender.send(ch.name, 'owner', message);
+              } catch { /* best effort */ }
+            }
+          }
+        });
+
+        heartbeat.start();
+        api.logger?.info?.('[crypto] Heartbeat position monitor started');
+      } catch (err) {
+        api.logger?.warn?.(
+          `[crypto] Heartbeat monitor failed to start: ${err instanceof Error ? err.message : String(err)}`
+        );
+      }
     });
 
     // ─── Onboarding State Tracking ──────────────────────────────────────
@@ -564,6 +639,23 @@ const plugin = {
           api.logger?.info?.(`[crypto] Suppressing LLM response for onboarding chat ${chatId}`);
           return { cancel: true };
         }
+
+        // ── Credential leak scanning ─────────────────────────────────
+        // Scan outbound messages for accidentally leaked secrets before
+        // they reach the user (and potentially logs, channel histories, etc.)
+        const content = event?.content ?? event?.text ?? '';
+        if (typeof content === 'string' && content.length > 0) {
+          const vault = getCredentialVault();
+          const scan = vault.scanForLeaks(content);
+          if (!scan.clean) {
+            api.logger?.warn?.(
+              `[crypto] Credential leak detected in outbound message! ` +
+              `${scan.leaks.length} leak(s): ${scan.leaks.map(l => l.type).join(', ')}. Redacting.`
+            );
+            // Return the redacted version
+            return { content: scan.redactedText };
+          }
+        }
       } catch (err) {
         api.logger?.warn?.(
           `[crypto] message_sending hook error: ${err instanceof Error ? err.message : String(err)}`
@@ -616,7 +708,11 @@ const plugin = {
           // ── Mode: intent confirmation + signing ──────────────────
           const mode = getUserMode(userId);
 
-          if (mode.safetyMode === 'safe') {
+          if (mode.safetyMode === 'readonly') {
+            parts.push(`CRITICAL — READ-ONLY MODE is active. You MUST NOT call any tool that writes to the blockchain. This means NO: defi_swap, transfer, clawnch_launch, clawnch_fees (claim), liquidity, bridge, permit2, compound_action, manage_orders, bankr_launch, bankr_automate, bankr_polymarket, bankr_leverage, clawnchconnect, molten.
+You CAN use: defi_price, defi_balance, analytics, market_intel, cost_basis, clawnch_info, block_explorer, herd_intelligence, watch_activity, wayfinder, crypto_workflow.
+If the user asks to execute a transaction, explain that read-only mode is active and they should use /safemode or /dangermode to enable writes.`);
+          } else if (mode.safetyMode === 'safe') {
             parts.push(`IMPORTANT — Intent confirmation is ON (safe mode). Before executing ANY action (tool call, transaction, swap, transfer, etc.), you MUST first:
 1. State what you understood the user wants
 2. List the specific actions you will take (tool names, parameters, amounts, addresses)
@@ -818,6 +914,82 @@ When the user asks about leveraged trading, use the bankr_leverage tool.`);
           } catch (swapErr) {
             api.logger?.warn?.(
               `[crypto] Failed to auto-record swap: ${swapErr instanceof Error ? swapErr.message : String(swapErr)}`
+            );
+          }
+        }
+
+        // ── Auto-record to Transaction Ledger ─────────────────────────
+        // Record any write-tool result that contains a txHash to the
+        // event-sourced transaction ledger for full audit trail.
+        const WRITE_TOOLS = new Set([
+          'defi_swap', 'transfer', 'bridge', 'permit2', 'clawnch_launch',
+          'clawnch_fees', 'liquidity', 'compound_action',
+          'bankr_launch', 'bankr_automate', 'bankr_polymarket', 'bankr_leverage',
+        ]);
+
+        if (tool && WRITE_TOOLS.has(String(tool))) {
+          // Parse tool result once for both ledger and budget recording
+          const writeData = typeof result === 'string' ? (() => { try { return JSON.parse(result); } catch { return {}; } })() : (result ?? {});
+          const details = (writeData as any)?.details ?? writeData;
+          const walletState = getWalletStateFn();
+
+          try {
+            const ledger = getTxLedger();
+
+            ledger.append({
+              type: toolToEventType(String(tool)),
+              userId: userId ?? 'unknown',
+              txHash: details?.txHash ?? details?.tx_hash ?? null,
+              chainId: details?.chainId ?? walletState.chainId ?? 8453,
+              chain: chainIdToName(details?.chainId ?? walletState.chainId ?? 8453),
+              from: walletState.address ?? 'unknown',
+              to: details?.to ?? details?.contract ?? null,
+              status: event?.error ? 'failed' : (details?.status === 'success' ? 'confirmed' : 'pending'),
+              summary: details?.summary ?? `${String(tool)} call`,
+              data: typeof details === 'object' ? details : {},
+              gasCostUsd: details?.gasCostUsd ?? details?.gas_cost_usd,
+              tool: String(tool),
+              error: event?.error ? String(event.error) : undefined,
+            });
+          } catch (ledgerErr) {
+            api.logger?.warn?.(
+              `[crypto] Failed to record to tx ledger: ${ledgerErr instanceof Error ? ledgerErr.message : String(ledgerErr)}`
+            );
+          }
+
+          // ── Auto-record costs to Budget Service ─────────────────────
+          // If the user has an active budget session, record the gas/fee
+          // costs from this write operation to track cumulative spend.
+          try {
+            const budgetSvc = getBudgetService();
+            const budgetUserId = userId ?? 'unknown';
+            const activeSession = budgetSvc.getActiveSession(budgetUserId);
+            if (activeSession) {
+              const gasCostUsd = parseFloat(details?.gasCostUsd ?? details?.gas_cost_usd ?? '0') || 0;
+              const feesUsd = parseFloat(details?.feesUsd ?? details?.fees_usd ?? '0') || 0;
+              const slippageUsd = parseFloat(details?.slippageUsd ?? details?.slippage_usd ?? '0') || 0;
+              const tradeValueUsd = parseFloat(details?.sellValueUsd ?? details?.sell_value_usd ?? details?.valueUsd ?? '0') || 0;
+
+              budgetSvc.recordCost(activeSession.id, {
+                stepLabel: `${String(tool)}: ${details?.summary ?? 'operation'}`,
+                gasUsd: Math.max(0, gasCostUsd),
+                slippageUsd: Math.max(0, slippageUsd),
+                feesUsd: Math.max(0, feesUsd),
+                tradeValueUsd: Math.max(0, tradeValueUsd),
+                txHash: details?.txHash ?? details?.tx_hash,
+              });
+
+              // Check budget after recording — log warning if exceeded
+              const check = budgetSvc.checkBudget(activeSession.id);
+              if (!check.ok) {
+                api.logger?.warn?.(
+                  `[crypto] Budget exceeded for user ${budgetUserId}: ${check.blockers.join('; ')}`
+                );
+              }
+            }
+          } catch (budgetErr) {
+            api.logger?.warn?.(
+              `[crypto] Failed to record to budget service: ${budgetErr instanceof Error ? budgetErr.message : String(budgetErr)}`
             );
           }
         }
