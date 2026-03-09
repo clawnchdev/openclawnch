@@ -165,7 +165,7 @@ describe('plugin registration with bankr', () => {
       logger: { info: vi.fn(), warn: vi.fn() },
     };
     plugin.register(mockApi);
-    expect(commands).toHaveLength(71);
+    expect(commands).toHaveLength(73);
     expect(commands).toContain('connect_bankr');
     expect(commands).toContain('automations');
     expect(commands).toContain('provider');
