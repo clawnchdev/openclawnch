@@ -1,0 +1,210 @@
+# OpenClawnch Improvements over Vanilla OpenClaw
+
+OpenClawnch is a crypto-native extension layer for OpenClaw. Everything below is **additive** — no upstream files are modified, so future OpenClaw versions merge cleanly.
+
+---
+
+## Security & Safety (sprints 1 + 3)
+
+### Budget Enforcement Service
+Per-operation cost tracking with session-scoped limits. Every swap, bridge, or transfer records its gas + slippage cost against a running budget. Sessions can set a hard cap; operations that would exceed it are blocked before signing.
+- `startSession(userId, budgetUsd)` / `recordCost()` / `checkBudget()` / `endSession()`
+- Disk-persisted audit trail under `~/.openclawnch/budgets/`
+- **Sprint 3**: Wired into `after_tool_call` hook — gas/fee costs from write operations are automatically recorded to the active session
+- **Sprint 3**: Fixed `checkBudget()` side-effect — it was mutating session status to `'exceeded'` as a side-effect of a read call, which prevented subsequent `recordCost()` calls. Status transition now happens inside `recordCost()` where it belongs
+- Inspired by Lemon's parent-child budget inheritance model
+
+### Endpoint Allowlist
+Outbound HTTP is restricted to a curated set of hosts — DEX aggregators, price feeds, RPC endpoints, block explorers, Bankr, WalletConnect, and known oracles. Anything not on the list is blocked (or warned, depending on mode).
+- Three modes via `OPENCLAWNCH_ALLOWLIST_MODE`: `enforce` (default), `warn`, `off`
+- Extend at runtime via `OPENCLAWNCH_ALLOWED_HOSTS` (comma-separated)
+- Drop-in `guardedFetch()` replacement for `fetch()`
+- **Sprint 3**: Wired into **12 files** — all services and tools that previously used raw `fetch()` now go through `guardedFetch()`
+- **Sprint 3**: Fixed redirect bypass — `redirect: 'manual'` + recursive allowlist check on redirect targets
+- **Sprint 3**: Fixed localhost subdomain bypass — `localhost`/`127.0.0.1` in `EXACT_ONLY_HOSTS` set (no subdomain matching)
+- **Sprint 3**: Allowlist mode locked at module init to prevent runtime env injection bypass
+- **Sprint 3**: Added `api.telegram.org` to the allowlist (needed by `telegram-draft-stream.ts`)
+- Inspired by IronClaw's WASM boundary enforcement
+
+### Credential Vault
+Centralized secret access with logical names (`bridge.lifi.apiKey`, `wallet.privateKey`, `bankr.apiKey`, etc.) mapped to environment variables. All access is audit-logged with the requesting tool name.
+- `getSecret(name, requestingTool)` — returns the value only if configured
+- `scanForLeaks(text)` — detects actual secret values, private key patterns (`0x[a-fA-F0-9]{64}`), seed phrase patterns (12/24 BIP-39 words), and API key prefixes in arbitrary text
+- Integrated into the `message_sending` hook: every outbound LLM message is scanned, and any leaked secret is redacted before it leaves the process
+- `getConfigurationSummary()` — used by `/doctor` to report which secrets are present vs. missing
+- **Sprint 3**: Fixed multi-match redaction offset bug — redactions now applied in reverse order to preserve string positions
+- **Sprint 3**: Expanded private key false-positive heuristic — calldata, ABI, selector, and topics context no longer triggers false private key detection
+- **Sprint 3**: Wired into **19 files** — all tools and services that previously read `process.env.SECRET` directly now go through `getCredentialVault().getSecret()`. Registry expanded from 22 to 29 secrets (added `WAYFINDER_API_KEY`, `CLAWNCH_API_KEY`, `CLAWNCHER_API_KEY`, `HUMMINGBOT_USERNAME`, `HUMMINGBOT_PASSWORD`, `TELEGRAM_BOT_TOKEN`, `HUMMINGBOT_PASSWORD`)
+- Inspired by IronClaw's credential injection at host boundary
+
+### Readonly Mode
+A third safety mode alongside `safe` and `danger`. In readonly mode, the agent can query balances, prices, and portfolio data but **cannot** execute any write operation (swaps, transfers, approvals, bridge, launch, etc.).
+- `/readonly` slash command to toggle
+- Enforced via `before_prompt_build` hook — injects a system prompt that blocks all write tools
+- **Sprint 3**: Hard enforcement added — `registerToolWithReadonlyGate()` wraps all 28 tools at registration time, blocking write tool `execute()` calls regardless of LLM behavior
+- `isReadonly()` helper available to any service that needs to check
+- Inspired by ZeroClaw's autonomy levels (readonly/supervised/full)
+
+### `/doctor` Diagnostic Command
+One-command health check that validates the entire stack (13 checks):
+- Wallet connectivity (WalletConnect session or private key)
+- RPC endpoint health (latency + block number)
+- Provider circuit breaker status
+- Critical and high-priority secrets (via Credential Vault)
+- Tool configuration completeness
+- Current safety mode
+- Endpoint allowlist mode and host count
+- Budget tracker session status
+- Plan scheduler state
+- Transaction ledger stats
+- Heartbeat monitor status
+- Market cache hit rates
+- Channel (Telegram/Discord) connectivity
+- Inspired by ZeroClaw's `zeroclaw doctor`
+
+### Outbound Message Leak Scanning
+The `message_sending` hook scans every message the LLM is about to send for leaked secrets (private keys, seed phrases, API tokens). Detected values are redacted to `[REDACTED:secret-name]` before the message leaves the process. This is a defense-in-depth layer on top of the Credential Vault.
+
+---
+
+## Observability & Monitoring (new in sprint 2)
+
+### Event-Sourced Transaction Ledger
+Append-only log of every on-chain action the agent takes. Each event gets a monotonically increasing sequence number and is persisted as JSONL to disk. Supports:
+- 16 event types covering all write tools (swap, transfer, bridge, approve, launch, etc.)
+- Query API with filters by user, event type, chain, status, time range, and pagination
+- Status updates as new events (preserves append-only invariant, references original via `_refSeq`)
+- Aggregate statistics (by type, status, chain)
+- Lookup by sequence number or transaction hash
+- Automatic recording via the `after_tool_call` hook for all write tools
+- Foundation for heartbeat monitoring and cross-session continuity
+
+### Heartbeat Position Monitor
+Periodic background checks on all open positions. Configurable via environment variables:
+- `OPENCLAWNCH_HEARTBEAT_INTERVAL_MS` — check frequency (default: 5 minutes)
+- `OPENCLAWNCH_HEARTBEAT_DROP_PCT` — price drop alert threshold (default: 10%)
+- `OPENCLAWNCH_HEARTBEAT_GAIN_PCT` — price gain alert threshold (default: 20%)
+- `OPENCLAWNCH_HEARTBEAT_DROP_USD` — portfolio value drop alert (default: $100)
+- `OPENCLAWNCH_HEARTBEAT_ENABLED` — enable/disable (default: true)
+
+Detects and alerts on:
+- **Price drops** exceeding threshold (warning at 10%, critical at 25%)
+- **Price gains** exceeding threshold (informational)
+- **Portfolio value drops** exceeding USD threshold
+- **New tokens** appearing in the wallet unexpectedly
+- **Positions disappearing** (potential rug or unauthorized transfer)
+- Alerts routed to all configured channels (Telegram, Discord) via channel sender
+- Starts automatically on `gateway_start`
+- **Sprint 3**: Added tick overlap guard with proper `try/finally` cleanup — prevents concurrent ticks from piling up when RPC/portfolio calls are slow
+- Inspired by ZeroClaw's heartbeat system
+
+### MarketIntel Cache Layer
+TTL-based caching for all market data API calls. Wraps DexScreener, CoinGecko, and other price feeds:
+- Per-category default TTLs: token prices (15s), trending (1m), new pairs (30s), leaderboard (5m), gas prices (10s)
+- Configurable via `CacheConfig` with per-category TTL overrides
+- **Stale-on-error** mode: serves expired cached data when upstream API is down (rather than failing)
+- LRU-style eviction when cache capacity is reached
+- Full statistics: hit rate, cache size, stale serves, evictions, per-category breakdown
+- Entry metadata API for diagnostics (age, TTL remaining, hit count)
+- Integrated into `/doctor` diagnostic output
+- **Sprint 3**: Wired into `dexscreener-service.ts` with automatic category inference
+
+---
+
+## Upstream Compatibility Tracking
+
+### FEATURE_PARITY.md
+Documents every OpenClaw plugin API surface OpenClawnch depends on: `registerTool()`, `registerCommand()`, `on()` hooks, event shapes, return contracts. Includes a version compatibility testing checklist so upstream upgrades can be validated systematically.
+- Inspired by IronClaw's `FEATURE_PARITY.md` practice
+
+---
+
+## DeFi Trading Infrastructure (pre-existing)
+
+### 28 Specialized Tools
+| Category | Tools |
+|----------|-------|
+| Trading | `defi-swap`, `defi-price`, `defi-balance`, `manage-orders`, `permit2` |
+| Analytics | `analytics`, `cost-basis`, `market-intel`, `herd-intelligence` |
+| Cross-chain | `bridge`, `transfer` |
+| Exploration | `block-explorer`, `watch-activity` |
+| Liquidity | `liquidity`, `compound-action` |
+| Token Launch | `clawnch-launch`, `clawnch-fees`, `clawnch-info`, `clawnchconnect`, `clawnx` |
+| Bankr | `bankr-launch`, `bankr-leverage`, `bankr-polymarket`, `bankr-automate` |
+| Advanced | `molten`, `hummingbot`, `wayfinder`, `crypto-workflow` |
+
+### 7-Aggregator DEX Routing
+Quotes from 1inch, 0x, Paraswap, OpenOcean, KyberSwap, Odos, and Li.Fi are compared in parallel. The best price wins after gas-inclusive comparison.
+
+### 5-Source Price Oracle
+Prices from CoinGecko, Birdeye, DexScreener, on-chain TWAP, and Chainlink are cross-referenced. Outliers are discarded; the median is returned with confidence scoring.
+
+### Multi-RPC Failover with Circuit Breakers
+Multiple RPC endpoints per chain with automatic failover. Circuit breakers track error rates and temporarily remove unhealthy providers. Latency-based routing sends requests to the fastest healthy endpoint.
+
+### Gas Estimation Service
+Estimates gas for any transaction, converts to USD, and compares swap routes on a gas-inclusive basis so the cheapest route isn't the one that costs more in gas.
+
+### FIFO Cost Basis Tracking
+Automatic lot-level P&L tracking using FIFO accounting. Every buy creates a lot; every sell matches against the oldest lots. Unrealized and realized gains are available at any time.
+
+### Plan Compiler & Scheduler
+Natural-language trading plans are compiled into executable step sequences with validation, then scheduled for execution with dependency tracking between steps.
+
+---
+
+## Wallet & Connectivity
+
+### Three Wallet Modes
+1. **WalletConnect** (default) — phone-based approval for every transaction. Supports MetaMask, Rainbow, Coinbase Wallet, Trust, Phantom, Rabby, Zerion, and OKX.
+2. **Private Key** (headless) — for automated/server deployments. Gated behind `ALLOW_PRIVATE_KEY_MODE=true`.
+3. **Bankr** (custodial) — API-managed wallet via Bankr platform.
+
+### Multi-Channel Output
+Telegram and Discord adapters with draft-stream support. The agent can send formatted messages, images, and transaction receipts to channels.
+
+### Fly.io Deployment
+Built-in commands for managing Fly.io deployments: `/flystatus`, `/flykeys`, `/flyrestart`, plus provider configuration.
+
+---
+
+## Agent Persona & UX
+
+### 73 Slash Commands
+Full command palette covering wallet management, safety modes, trading, analytics, deployment, model selection, LLM provider shortcuts, onboarding, plan management, diagnostics, and help.
+
+### 27 Skills
+Each tool has a companion skill file that teaches the LLM how and when to use it, including edge cases, required parameters, and safety considerations.
+
+### Configurable Personas
+Multiple persona modes that adjust the agent's communication style and risk tolerance.
+
+### Safety Service with Pre-flight Checks
+Every write operation goes through pre-flight validation: balance sufficiency, slippage bounds, gas estimation, approval checks, and rate limiting.
+
+---
+
+## Test Coverage
+
+846 tests across 26 test files covering plugin registration, tool behavior, service logic, command handlers, bridge operations, safety services, and integration scenarios.
+
+---
+
+## Roadmap — Planned Improvements
+
+The following items were identified during the competitive research phase and are prioritized for future sprints:
+
+### Near-term
+- **Cross-session memory** — FTS5+vector hybrid memory with LLM summarization, persisting context across restarts (inspired by Hermes Agent)
+- **Deny-by-default channel auth** — require explicit allowlisting of Telegram/Discord channels before the agent responds (inspired by ZeroClaw)
+- **`openclawnch migrate` command** — import settings, keys, and history from vanilla OpenClaw (inspired by ZeroClaw)
+
+### Medium-term
+- **XMTP adapter** — decentralized messaging channel for wallet-to-wallet agent communication (inspired by Lemon)
+- **Self-improving DeFi skills** — agent creates and refines skills from experience using LLM reflection (inspired by Hermes Agent)
+- **Per-wallet isolated context** — container-style isolation so multi-user deployments can't cross-contaminate state (inspired by NanoClaw)
+
+### Long-term
+- **Agent swarms** — multi-agent coordination for complex DeFi strategies (inspired by NanoClaw)
+- **Natural language cron** — schedule recurring checks and actions using plain English (inspired by Hermes Agent)
+- **WASM sandbox for tool execution** — run untrusted tool code in isolated WASM containers (inspired by IronClaw)
