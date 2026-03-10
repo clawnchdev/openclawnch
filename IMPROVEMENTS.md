@@ -119,9 +119,88 @@ Documents every OpenClaw plugin API surface OpenClawnch depends on: `registerToo
 
 ---
 
+## Self-Improvement (sprint 4)
+
+### Recursive Self-Improvement via Procedural Memory
+Inspired by [Hermes Agent](https://github.com/NousResearch/hermes-agent), the agent can learn from experience using file-backed procedural memory. No weight updates or code generation — learning is achieved by writing markdown files to disk that are injected into future prompts.
+
+Two modes controlled by `/evolve` and `/stable`:
+- **Stable** (default) — predictable behavior. Existing learned knowledge is accessible (read-only) but no new learning occurs.
+- **Evolving** — full self-improvement. The agent proactively saves memories, creates skills, and receives periodic nudges.
+
+### Agent Memory Service
+File-backed declarative memory with frozen snapshots. Two stores:
+- `MEMORY.md` — agent's own notes (environment facts, tool quirks, lessons). 2200 char limit.
+- `USER_{id}.md` — per-user profiles (preferences, communication style). 1375 char limit.
+- §-delimited entries with injection detection (~9 patterns covering prompt injection, credential references, invisible Unicode)
+- **Frozen snapshot pattern**: memory is read once at session start and injected into the system prompt. Mid-session writes update disk but do NOT change the active prompt — preserves the LLM prefix cache. Next session sees updated memory.
+- Persisted under `~/.openclawnch/memory/`
+
+### Evolution Mode Service
+Per-user stable/evolving toggle with nudge system:
+- Persisted to disk under `~/.openclawnch/evolution/`
+- Turn counting with configurable intervals: memory nudge every 10 turns, skill nudge every 15
+- Env vars: `OPENCLAWNCH_EVOLUTION_MODE`, `OPENCLAWNCH_MEMORY_NUDGE_INTERVAL`, `OPENCLAWNCH_SKILL_NUDGE_INTERVAL`
+- Write actions on `agent_memory` and `skill_evolve` tools are gated at registration time — blocked in stable mode regardless of LLM behavior
+
+### Session Recall Service
+JSONL-backed full-text search over past conversations:
+- In-memory tokenized search with TF-based relevance scoring
+- `recordTurn()` appends to `~/.openclawnch/recall/sessions.jsonl`
+- `search(query, maxResults)` returns ranked sessions with context windows
+- 50K entry cap with FIFO eviction
+- Always available (not gated by evolution mode — read-only)
+- Wired into `message_received` (user messages) and `after_tool_call` (tool results) hooks
+
+### Skill Security Guard
+Static analysis scanner for agent-created skills (~50 regex patterns across 10 categories):
+- Prompt injection, exfiltration, destructive commands, privilege escalation, obfuscation, crypto-specific dangers, persistence/backdoors, self-modification, supply chain attacks
+- Three trust levels: `builtin` (always passes), `learned` (critical+high blocks), `imported` (any finding blocks)
+- `scanSkillContent()`, `formatScanReport()`, `validateSkillFrontmatter()`
+
+### Skill Evolution Tool
+Agent-initiated skill creation and improvement:
+- Actions: create, patch, list, view, delete
+- Skills stored in `~/.openclawnch/learned-skills/` (separate from the 27 static skills, so upgrades don't overwrite agent-learned ones)
+- All writes pass through the skill security scanner
+- `buildLearnedSkillsIndex()` generates a compact index for system prompt injection
+- YAML frontmatter with agentskills.io format
+
+### 3 New Tools, 3 New Commands
+- **Tools** (31 total): `agent_memory`, `skill_evolve`, `session_recall`
+- **Commands** (78 total): `/evolve`, `/stable`, `/evolution`
+
+---
+
+## Bankr Credit Management (post-sprint 4)
+
+### `/topup` Command
+Top up LLM credits directly from Telegram:
+- `/topup <amount> [token]` — request a credit top-up via the Bankr Agent API
+- Validates amount (1–1000 range), supports token selection (USDC default, also SOL/ETH)
+- Uses `bankrPromptAndPoll()` for the mutation since exact REST endpoints aren't documented
+- Clear success/error feedback with formatted messages
+
+### `/autotopup` Command
+View and configure automatic credit top-ups:
+- `/autotopup` — view current auto top-up configuration
+- `/autotopup enable [amount] [threshold] [token]` — enable with optional parameters (defaults: 10 USDC, threshold 5)
+- `/autotopup disable` — disable auto top-up
+- Tries `GET /v1/credits/auto` on the LLM Gateway for structured data, falls back to Agent API prompt
+- Validates amount (1–500) and threshold (1–100) ranges
+
+### Enhanced `/llmcredits`
+Now shows credit balance (via `GET /v1/credits` on `llm.bankr.bot`), auto top-up status, and links to `/topup` and `/autotopup` commands. Graceful fallback when credit API is unavailable.
+
+### Two Bankr API Integration Points
+- **LLM Gateway** (`llm.bankr.bot`, auth: `X-API-Key` with `BANKR_LLM_KEY`) — read-only credit/usage queries
+- **Agent API** (`api.bankr.bot`, auth: `X-API-Key` with `BANKR_API_KEY` via credential vault) — wallet operations, prompts, signing, and mutation operations via `bankrPromptAndPoll()`
+
+---
+
 ## DeFi Trading Infrastructure (pre-existing)
 
-### 28 Specialized Tools
+### 31 Specialized Tools
 | Category | Tools |
 |----------|-------|
 | Trading | `defi-swap`, `defi-price`, `defi-balance`, `manage-orders`, `permit2` |
@@ -132,6 +211,7 @@ Documents every OpenClaw plugin API surface OpenClawnch depends on: `registerToo
 | Token Launch | `clawnch-launch`, `clawnch-fees`, `clawnch-info`, `clawnchconnect`, `clawnx` |
 | Bankr | `bankr-launch`, `bankr-leverage`, `bankr-polymarket`, `bankr-automate` |
 | Advanced | `molten`, `hummingbot`, `wayfinder`, `crypto-workflow` |
+| Self-Improvement | `agent-memory`, `skill-evolve`, `session-recall` |
 
 ### 7-Aggregator DEX Routing
 Quotes from 1inch, 0x, Paraswap, OpenOcean, KyberSwap, Odos, and Li.Fi are compared in parallel. The best price wins after gas-inclusive comparison.
@@ -170,8 +250,8 @@ Built-in commands for managing Fly.io deployments: `/flystatus`, `/flykeys`, `/f
 
 ## Agent Persona & UX
 
-### 73 Slash Commands
-Full command palette covering wallet management, safety modes, trading, analytics, deployment, model selection, LLM provider shortcuts, onboarding, plan management, diagnostics, and help.
+### 78 Slash Commands
+Full command palette covering wallet management, safety modes, trading, analytics, deployment, model selection, LLM provider shortcuts, onboarding, plan management, diagnostics, self-improvement modes, credit management, and help.
 
 ### 27 Skills
 Each tool has a companion skill file that teaches the LLM how and when to use it, including edge cases, required parameters, and safety considerations.
@@ -186,7 +266,7 @@ Every write operation goes through pre-flight validation: balance sufficiency, s
 
 ## Test Coverage
 
-846 tests across 26 test files covering plugin registration, tool behavior, service logic, command handlers, bridge operations, safety services, and integration scenarios.
+902 tests (+ 11 skipped) across 27 test files covering plugin registration, tool behavior, service logic, command handlers, bridge operations, safety services, self-improvement modules, credit management, and integration scenarios.
 
 ---
 
@@ -195,14 +275,13 @@ Every write operation goes through pre-flight validation: balance sufficiency, s
 The following items were identified during the competitive research phase and are prioritized for future sprints:
 
 ### Near-term
-- **Cross-session memory** — FTS5+vector hybrid memory with LLM summarization, persisting context across restarts (inspired by Hermes Agent)
 - **Deny-by-default channel auth** — require explicit allowlisting of Telegram/Discord channels before the agent responds (inspired by ZeroClaw)
 - **`openclawnch migrate` command** — import settings, keys, and history from vanilla OpenClaw (inspired by ZeroClaw)
 
 ### Medium-term
 - **XMTP adapter** — decentralized messaging channel for wallet-to-wallet agent communication (inspired by Lemon)
-- **Self-improving DeFi skills** — agent creates and refines skills from experience using LLM reflection (inspired by Hermes Agent)
 - **Per-wallet isolated context** — container-style isolation so multi-user deployments can't cross-contaminate state (inspired by NanoClaw)
+- **Vector-enhanced recall** — upgrade session recall from TF-based to embedding-based search for semantic matching
 
 ### Long-term
 - **Agent swarms** — multi-agent coordination for complex DeFi strategies (inspired by NanoClaw)

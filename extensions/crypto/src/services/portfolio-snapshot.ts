@@ -234,7 +234,7 @@ export class PortfolioSnapshotService {
             }),
           );
 
-          tokens.push(...tokenResults.filter((t): t is TokenBalance => t !== null && t.valueUsd >= this.config.minValueUsd));
+          tokens.push(...tokenResults.filter((t): t is TokenBalance & { _isStablecoin: boolean } => t !== null && t.valueUsd >= this.config.minValueUsd));
           return tokens;
         } catch {
           return [];

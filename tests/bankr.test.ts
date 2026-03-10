@@ -138,7 +138,7 @@ describe('bankr wallet mode in WalletState type', () => {
 // ─── Plugin Registration with Bankr Tools ────────────────────────────────
 
 describe('plugin registration with bankr', () => {
-  it('registers 28 tools including 4 bankr tools', { timeout: 15000 }, async () => {
+  it('registers 31 tools including 4 bankr tools', { timeout: 15000 }, async () => {
     const plugin = (await import('../extensions/crypto/index.js')).default;
     const registered: string[] = [];
     const mockApi = {
@@ -148,7 +148,7 @@ describe('plugin registration with bankr', () => {
       logger: { info: vi.fn(), warn: vi.fn() },
     };
     plugin.register(mockApi);
-    expect(registered).toHaveLength(28);
+    expect(registered).toHaveLength(31);
     expect(registered).toContain('bankr_launch');
     expect(registered).toContain('bankr_automate');
     expect(registered).toContain('bankr_polymarket');
@@ -165,7 +165,7 @@ describe('plugin registration with bankr', () => {
       logger: { info: vi.fn(), warn: vi.fn() },
     };
     plugin.register(mockApi);
-    expect(commands).toHaveLength(73);
+    expect(commands).toHaveLength(78);
     expect(commands).toContain('connect_bankr');
     expect(commands).toContain('automations');
     expect(commands).toContain('provider');
@@ -177,5 +177,84 @@ describe('plugin registration with bankr', () => {
     expect(commands).toContain('flyrestart');
     expect(commands).toContain('llm_opus');
     expect(commands).toContain('factoryreset_confirm');
+    expect(commands).toContain('topup');
+    expect(commands).toContain('autotopup');
+  });
+});
+
+// ─── Credit Management Commands ───────────────────────────────────────────
+
+describe('credit management commands', () => {
+  it('topupCommand has correct shape', async () => {
+    const { topupCommand } = await import(
+      '../extensions/crypto/src/commands/bankr-commands.js'
+    );
+    expect(topupCommand.name).toBe('topup');
+    expect(topupCommand.acceptsArgs).toBe(true);
+    expect(topupCommand.requireAuth).toBe(true);
+    expect(typeof topupCommand.handler).toBe('function');
+  });
+
+  it('autotopupCommand has correct shape', async () => {
+    const { autotopupCommand } = await import(
+      '../extensions/crypto/src/commands/bankr-commands.js'
+    );
+    expect(autotopupCommand.name).toBe('autotopup');
+    expect(autotopupCommand.acceptsArgs).toBe(true);
+    expect(autotopupCommand.requireAuth).toBe(true);
+    expect(typeof autotopupCommand.handler).toBe('function');
+  });
+
+  it('/topup without args shows usage help', async () => {
+    const { topupCommand } = await import(
+      '../extensions/crypto/src/commands/bankr-commands.js'
+    );
+    // No BANKR_API_KEY set — should show setup instructions
+    const result = await topupCommand.handler({ args: '' });
+    expect(result.text).toBeTruthy();
+    // Either shows usage help or setup instructions
+    expect(typeof result.text).toBe('string');
+  });
+
+  it('/topup rejects amount over 1000', async () => {
+    // Set a fake key to bypass the "not configured" check
+    const savedKey = process.env.BANKR_API_KEY;
+    process.env.BANKR_API_KEY = 'bk_test_key';
+    try {
+      const { topupCommand } = await import(
+        '../extensions/crypto/src/commands/bankr-commands.js'
+      );
+      const result = await topupCommand.handler({ args: '/topup 5000' });
+      expect(result.text).toContain('1000');
+    } finally {
+      if (savedKey) process.env.BANKR_API_KEY = savedKey;
+      else delete process.env.BANKR_API_KEY;
+    }
+  });
+
+  it('/autotopup without args shows config or setup instructions', async () => {
+    const { autotopupCommand } = await import(
+      '../extensions/crypto/src/commands/bankr-commands.js'
+    );
+    const result = await autotopupCommand.handler({ args: '' });
+    expect(result.text).toBeTruthy();
+    expect(typeof result.text).toBe('string');
+  });
+
+  it('/autotopup without bankr provider shows setup instructions', async () => {
+    const savedKey = process.env.BANKR_LLM_KEY;
+    const savedProvider = process.env.OPENCLAWNCH_LLM_PROVIDER;
+    delete process.env.BANKR_LLM_KEY;
+    delete process.env.OPENCLAWNCH_LLM_PROVIDER;
+    try {
+      const { autotopupCommand } = await import(
+        '../extensions/crypto/src/commands/bankr-commands.js'
+      );
+      const result = await autotopupCommand.handler({ args: '/autotopup' });
+      expect(result.text).toContain('not configured');
+    } finally {
+      if (savedKey) process.env.BANKR_LLM_KEY = savedKey;
+      if (savedProvider) process.env.OPENCLAWNCH_LLM_PROVIDER = savedProvider;
+    }
   });
 });

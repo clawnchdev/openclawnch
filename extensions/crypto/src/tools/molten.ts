@@ -67,7 +67,7 @@ async function moltenFetch(
     signal: AbortSignal.timeout(30000),
   });
 
-  const data = await response.json().catch(() => ({}));
+  const data = await response.json().catch(() => ({})) as Record<string, any>;
 
   if (!response.ok) {
     const errMsg = data?.error?.message || data?.message || response.statusText;

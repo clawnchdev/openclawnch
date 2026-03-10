@@ -9,6 +9,10 @@
  * 2. Standalone extension for vanilla OpenClaw (`clawhub install @clawnch/openclaw-crypto`)
  */
 
+// ── Plugin API type from OpenClaw SDK ────────────────────────────────────
+// Type-only import: provides compile-time checking without runtime coupling.
+import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/core';
+
 // Tools — Core (13 original)
 import { createClawnchConnectTool } from './src/tools/clawnchconnect.js';
 import { createDefiPriceTool } from './src/tools/defi-price.js';
@@ -67,7 +71,7 @@ import { doctorCommand } from './src/commands/doctor-command.js';
 import { connectCommand, walletConnectCommands, setConnectCommandApi, connectBankrCommand, disconnectCommand } from './src/commands/connect-command.js';
 import { modelCommand, llmShortcutCommands } from './src/commands/model-command.js';
 import { moltenCommand } from './src/commands/molten-command.js';
-import { creditsCommand, usageCommand, automationsCommand } from './src/commands/bankr-commands.js';
+import { creditsCommand, usageCommand, automationsCommand, topupCommand, autotopupCommand } from './src/commands/bankr-commands.js';
 import {
   providerCommand, providerAnthropicCommand, providerBankrCommand, providerOpenrouterCommand,
   providerOpenaiCommand, flykeysCommand, flystatusCommand, flyrestartCommand,
@@ -86,6 +90,19 @@ import { getTxLedger, toolToEventType, chainIdToName } from './src/services/tx-l
 import { getHeartbeatMonitor } from './src/services/heartbeat-monitor.js';
 import { getBudgetService } from './src/services/budget-service.js';
 
+// Self-improvement services (sprint 4)
+import { getAgentMemory } from './src/services/agent-memory.js';
+import { getEvolutionMode } from './src/services/evolution-mode.js';
+import { getSessionRecall } from './src/services/session-recall.js';
+
+// Self-improvement tools (sprint 4)
+import { createAgentMemoryTool } from './src/tools/agent-memory.js';
+import { createSkillEvolveTool, buildLearnedSkillsIndex } from './src/tools/skill-evolve.js';
+import { createSessionRecallTool } from './src/tools/session-recall.js';
+
+// Self-improvement commands (sprint 4)
+import { evolveCommand, stableCommand, evolutionCommand } from './src/commands/evolve-command.js';
+
 // Channel abstraction — multi-channel message sending
 import {
   createChannelSender,
@@ -99,11 +116,8 @@ import {
 /**
  * OpenClaw Plugin Definition
  * 
- * The `api` parameter is OpenClawPluginApi — provides registerTool(),
- * registerCommand(), on(), registerService(), etc.
- * 
- * We use `any` for the API type since we don't want a hard dependency
- * on openclaw internals. The plugin loader provides the typed API at runtime.
+ * The `api` parameter is typed via `OpenClawPluginApi` from the plugin SDK.
+ * This gives compile-time safety against upstream API changes.
  */
 const plugin = {
   id: 'crypto',
@@ -111,8 +125,10 @@ const plugin = {
   description: 'ClawnchConnect wallet, DeFi trading, token launchpad, and market intelligence',
   version: '0.1.0',
 
-  register(api: any) {
-    // ─── Write Tool Names (for readonly enforcement) ───────────────
+  register(api: OpenClawPluginApi) {
+    // ─── Write Tool Names (for readonly enforcement + ledger recording) ───
+    // Single source of truth: all tools that perform on-chain writes or
+    // financial state changes. Used by readonly gate and tx ledger.
     const WRITE_TOOL_NAMES = new Set([
       'defi_swap', 'transfer', 'bridge', 'permit2', 'clawnch_launch',
       'clawnch_fees', 'liquidity', 'compound_action', 'manage_orders',
@@ -143,7 +159,7 @@ const plugin = {
       api.registerTool(tool);
     }
 
-    // ─── Register Tools (28 total) ────────────────────────────────
+    // ─── Register Tools (31 total) ────────────────────────────────
     // Core tools (13)
     // Write-operation tools: ownerOnly = true (security: only bot owner can execute financial ops)
     // Read-only tools: ownerOnly = false (paired users can view prices, balances, etc.)
@@ -187,6 +203,41 @@ const plugin = {
 
     // Phase 7 tools (1) — Compound operations engine
     registerToolWithReadonlyGate(createCompoundActionTool());        // ownerOnly: true (can trigger financial writes)
+
+    // Sprint 4 tools (3) — Self-improvement (agent memory, skill evolution, session recall)
+    // These tools have an evolution mode gate: write actions are blocked in stable mode.
+    {
+      const memoryTool = createAgentMemoryTool();
+      const skillTool = createSkillEvolveTool();
+      const recallTool = createSessionRecallTool();
+
+      // Wrap memory + skill tools with evolution mode gate for write actions
+      const WRITE_ACTIONS_MEMORY = new Set(['add', 'replace', 'remove', 'user_add', 'user_remove']);
+      const WRITE_ACTIONS_SKILL = new Set(['create', 'patch', 'delete']);
+
+      const wrapWithEvoGate = (tool: any, writeActions: Set<string>) => {
+        const originalExecute = tool.execute;
+        tool.execute = async (toolCallId: string, args: unknown, ctx?: any) => {
+          const params = args as Record<string, unknown>;
+          const action = (params?.action as string) ?? '';
+          if (writeActions.has(action)) {
+            const userId = ctx?.senderId ?? ctx?.from ?? ctx?.metadata?.senderId;
+            if (userId && !getEvolutionMode().isEvolving(userId)) {
+              return {
+                content: [{ type: 'text', text: `Self-improvement is in stable mode. The "${action}" action requires evolving mode. Use /evolve to enable self-improvement.` }],
+                isError: true,
+              };
+            }
+          }
+          return originalExecute.call(tool, toolCallId, args, ctx);
+        };
+        return tool;
+      };
+
+      api.registerTool(wrapWithEvoGate(memoryTool, WRITE_ACTIONS_MEMORY));
+      api.registerTool(wrapWithEvoGate(skillTool, WRITE_ACTIONS_SKILL));
+      api.registerTool(recallTool); // session_recall is always read-only
+    }
 
     // ─── Register Chat Commands ────────────────────────────────────
     api.registerCommand(walletCommand);
@@ -244,6 +295,8 @@ const plugin = {
     api.registerCommand(usageCommand);
     api.registerCommand(connectBankrCommand);
     api.registerCommand(automationsCommand);
+    api.registerCommand(topupCommand);
+    api.registerCommand(autotopupCommand);
 
     // Fly.io runtime control (provider switching, secrets, restart)
     api.registerCommand(providerCommand);
@@ -270,6 +323,11 @@ const plugin = {
     api.registerCommand(balanceCommand);
     api.registerCommand(chainCommand);
     api.registerCommand(doctorCommand);
+
+    // Self-improvement mode
+    api.registerCommand(evolveCommand);
+    api.registerCommand(stableCommand);
+    api.registerCommand(evolutionCommand);
 
     // ─── Gateway Startup Hook ──────────────────────────────────────
     // Only init wallet at boot for private key mode (headless).
@@ -389,7 +447,7 @@ const plugin = {
               try {
                 const estimator = getGasEstimator();
                 const gas = await estimator.getGasPrice(chainId ?? 8453);
-                return gas.baseFee + gas.priorityFee;
+                return gas.totalStandard; // baseFee + standard priority fee
               } catch { return 0; }
             },
             timestamp: () => Math.floor(Date.now() / 1000),
@@ -408,14 +466,17 @@ const plugin = {
         // We build a dispatcher that invokes tools through the plugin API.
         // The api.runtime provides access to the tool registry.
         const toolDispatcher = {
-          call: async (toolName: string, params: Record<string, unknown>): Promise<unknown> => {
+          call: async (toolName: string, params: Record<string, unknown>, userId?: string): Promise<unknown> => {
             // Find the tool in the registered tools
             const tools = api.runtime?.tools?.getAll?.() ?? [];
             const tool = tools.find((t: any) => t.name === toolName);
             if (!tool) throw new Error(`Tool "${toolName}" not found in registry`);
 
-            // Execute the tool — tools return { text, details } or similar
-            const result = await tool.execute(params, {});
+            // Execute the tool with correct signature: (toolCallId, args, ctx)
+            // Pass userId in ctx so readonly gate and evolution gate can check it.
+            const toolCallId = `plan-${Date.now()}-${toolName}`;
+            const ctx = userId ? { senderId: userId } : {};
+            const result = await tool.execute(toolCallId, params, ctx);
             // Extract the meaningful result
             if (result && typeof result === 'object') {
               const r = result as Record<string, unknown>;
@@ -616,6 +677,20 @@ const plugin = {
             `[crypto] Onboarding step for user ${userId} on ${channel}: ${flow.currentStep}`
           );
         }
+
+        // ── Session recall: index inbound messages ─────────────────
+        try {
+          const sessionKey = ctx?.sessionKey ?? `${channel}-${chatId}`;
+          getSessionRecall().recordTurn({
+            sessionKey,
+            role: 'user',
+            content: String(message).slice(0, 2000),
+            userId: String(userId),
+            timestamp: Date.now(),
+          });
+        } catch {
+          // Non-critical
+        }
       } catch (err) {
         api.logger?.warn?.(
           `[crypto] Onboarding message hook error: ${err instanceof Error ? err.message : String(err)}`
@@ -770,6 +845,35 @@ When the user asks about prediction markets, use the bankr_polymarket tool.
 When the user asks about leveraged trading, use the bankr_leverage tool.`);
         }
 
+        // ── Self-improvement context ──────────────────────────────
+        // Inject frozen memory snapshot and learned skills index
+        try {
+          const memory = getAgentMemory();
+          const snapshot = memory.freezeSnapshot(sessionKey, userId ?? undefined);
+          if (snapshot) {
+            parts.push(snapshot);
+          }
+
+          // Inject learned skills index
+          const learnedIndex = buildLearnedSkillsIndex();
+          if (learnedIndex) {
+            parts.push(learnedIndex);
+          }
+
+          // Evolution mode hint
+          if (userId) {
+            const evo = getEvolutionMode();
+            if (evo.isEvolving(userId)) {
+              parts.push(
+                'Self-improvement mode: EVOLVING. You can save memories (agent_memory tool) and create skills (skill_evolve tool) from experience. ' +
+                'Proactively save useful discoveries, user preferences, and complex workflows.',
+              );
+            }
+          }
+        } catch {
+          // Non-critical — don't block prompt build if memory fails
+        }
+
         if (parts.length > 0) {
           return { prependContext: '\n\n' + parts.join('\n\n') };
         }
@@ -921,13 +1025,8 @@ When the user asks about leveraged trading, use the bankr_leverage tool.`);
         // ── Auto-record to Transaction Ledger ─────────────────────────
         // Record any write-tool result that contains a txHash to the
         // event-sourced transaction ledger for full audit trail.
-        const WRITE_TOOLS = new Set([
-          'defi_swap', 'transfer', 'bridge', 'permit2', 'clawnch_launch',
-          'clawnch_fees', 'liquidity', 'compound_action',
-          'bankr_launch', 'bankr_automate', 'bankr_polymarket', 'bankr_leverage',
-        ]);
-
-        if (tool && WRITE_TOOLS.has(String(tool))) {
+        // Uses the shared WRITE_TOOL_NAMES set (defined at register() scope).
+        if (tool && WRITE_TOOL_NAMES.has(String(tool))) {
           // Parse tool result once for both ledger and budget recording
           const writeData = typeof result === 'string' ? (() => { try { return JSON.parse(result); } catch { return {}; } })() : (result ?? {});
           const details = (writeData as any)?.details ?? writeData;
@@ -992,6 +1091,48 @@ When the user asks about leveraged trading, use the bankr_leverage tool.`);
               `[crypto] Failed to record to budget service: ${budgetErr instanceof Error ? budgetErr.message : String(budgetErr)}`
             );
           }
+        }
+
+        // ── Session recall: index tool results ────────────────────────
+        // Records assistant tool results so they can be recalled in future sessions.
+        try {
+          const recallSessionKey = ctx?.sessionKey ?? (parsedSession ? `${parsedSession.channel}-${parsedSession.userId}` : undefined);
+          if (recallSessionKey) {
+            const toolName = event?.toolName ?? event?.tool ?? 'unknown';
+            const toolResult = event?.result ?? event?.details;
+            const resultStr = typeof toolResult === 'string'
+              ? toolResult
+              : (toolResult ? JSON.stringify(toolResult).slice(0, 2000) : '');
+            if (resultStr) {
+              getSessionRecall().recordTurn({
+                sessionKey: recallSessionKey,
+                role: 'assistant',
+                content: `[tool:${toolName}] ${resultStr}`.slice(0, 2000),
+                userId: userId ? String(userId) : undefined,
+                timestamp: Date.now(),
+              });
+            }
+          }
+        } catch {
+          // Non-critical — don't break the hook if session recall fails
+        }
+
+        // ── Evolution mode: nudge tracking ────────────────────────────
+        // Record each tool call as a "turn" for nudge interval tracking.
+        // If a nudge fires, log it — the nudge text will be injected by
+        // the before_prompt_build hook on the next message.
+        try {
+          if (userId) {
+            const evo = getEvolutionMode();
+            if (evo.isEvolving(String(userId))) {
+              const nudge = evo.recordTurn(String(userId));
+              if (nudge) {
+                api.logger?.info?.(`[crypto] Evolution nudge for ${userId}: ${nudge.slice(0, 80)}...`);
+              }
+            }
+          }
+        } catch {
+          // Non-critical
         }
       } catch (err) {
         api.logger?.warn?.(

@@ -30,7 +30,7 @@
 
 import { Type } from '@sinclair/typebox';
 import { stringEnum, jsonResult, errorResult, readStringParam } from '../lib/tool-helpers.js';
-import { PlanCompiler, type Intent } from '../services/plan-compiler.js';
+import { PlanCompiler, type Intent, type IntentStep } from '../services/plan-compiler.js';
 import { PlanValidator } from '../services/plan-validator.js';
 import { getScheduler } from '../services/plan-scheduler.js';
 import { formatExecutionSummary } from '../services/plan-executor.js';
@@ -373,32 +373,32 @@ function handleHistory(args: Record<string, unknown>) {
  * Normalize the intent from snake_case params to camelCase for the compiler.
  */
 function normalizeIntent(raw: Record<string, unknown>): Intent {
-  const steps = (raw.steps as any[]).map((s: Record<string, unknown>) => ({
-    action: s.action as string,
-    tokenIn: s.token_in ?? s.tokenIn,
-    tokenOut: s.token_out ?? s.tokenOut,
-    amount: s.amount,
-    amountPct: s.amount_pct ?? s.amountPct,
-    slippageBps: s.slippage_bps ?? s.slippageBps,
-    chainId: s.chain_id ?? s.chainId,
-    to: s.to,
-    token: s.token,
-    toChain: s.to_chain ?? s.toChain,
-    fromChain: s.from_chain ?? s.fromChain,
-    orderType: s.order_type ?? s.orderType,
-    triggerPrice: s.trigger_price ?? s.triggerPrice,
-    tool: s.tool,
-    params: s.params,
+  const steps: IntentStep[] = (raw.steps as any[]).map((s: Record<string, any>) => ({
+    action: s.action as IntentStep['action'],
+    tokenIn: (s.token_in ?? s.tokenIn) as string | undefined,
+    tokenOut: (s.token_out ?? s.tokenOut) as string | undefined,
+    amount: s.amount as string | undefined,
+    amountPct: (s.amount_pct ?? s.amountPct) as number | undefined,
+    slippageBps: (s.slippage_bps ?? s.slippageBps) as number | undefined,
+    chainId: (s.chain_id ?? s.chainId) as number | undefined,
+    to: s.to as string | undefined,
+    token: s.token as string | undefined,
+    toChain: (s.to_chain ?? s.toChain) as number | undefined,
+    fromChain: (s.from_chain ?? s.fromChain) as number | undefined,
+    orderType: (s.order_type ?? s.orderType) as string | undefined,
+    triggerPrice: (s.trigger_price ?? s.triggerPrice) as number | undefined,
+    tool: s.tool as string | undefined,
+    params: s.params as Record<string, unknown> | undefined,
     condition: s.condition ? {
       token: (s.condition as any).token,
       field: (s.condition as any).field,
       op: (s.condition as any).op,
       value: (s.condition as any).value,
     } : undefined,
-    confirm: s.confirm,
-    onFailure: s.on_failure ?? s.onFailure,
-    retryCount: s.retry_count ?? s.retryCount,
-    label: s.label,
+    confirm: s.confirm as boolean | undefined,
+    onFailure: (s.on_failure ?? s.onFailure) as IntentStep['onFailure'],
+    retryCount: (s.retry_count ?? s.retryCount) as number | undefined,
+    label: s.label as string | undefined,
   }));
 
   const trigger = raw.trigger ? {

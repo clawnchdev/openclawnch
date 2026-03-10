@@ -54,8 +54,9 @@ export interface ToolDispatcher {
    * Call a tool by name with the given params.
    * Returns the tool result (the `details` field from jsonResult/errorResult).
    * Throws on tool-level errors.
+   * @param userId — passed through so tools can enforce per-user gates (readonly, evolution).
    */
-  call(toolName: string, params: Record<string, unknown>): Promise<unknown>;
+  call(toolName: string, params: Record<string, unknown>, userId?: string): Promise<unknown>;
 
   /**
    * Check if a tool exists.
@@ -73,6 +74,8 @@ export type ConfirmationCallback = (step: ActionNode, resolvedParams: Record<str
 interface ExecutionContext {
   planId: string;
   executionId: string;
+  /** The user who owns this plan — passed to tools for per-user gates. */
+  userId: string;
   /** Results from completed steps, keyed by node ID. */
   stepResults: Map<string, unknown>;
   /** Execution records for each step. */
@@ -109,6 +112,7 @@ export class PlanExecutor {
     const ctx: ExecutionContext = {
       planId: plan.id,
       executionId,
+      userId: plan.userId,
       stepResults: new Map(),
       steps: [],
       cancelled: false,
@@ -230,10 +234,10 @@ export class PlanExecutor {
       if (ctx.cancelled) throw new ExecutionCancelledError();
 
       try {
-        // Apply timeout if configured
+        // Apply timeout if configured; pass userId for per-user gates (readonly, evolution)
         const result = node.timeoutMs
-          ? await withTimeout(this.dispatcher.call(node.tool, resolvedParams), node.timeoutMs)
-          : await this.dispatcher.call(node.tool, resolvedParams);
+          ? await withTimeout(this.dispatcher.call(node.tool, resolvedParams, ctx.userId), node.timeoutMs)
+          : await this.dispatcher.call(node.tool, resolvedParams, ctx.userId);
 
         // Success
         step.status = 'completed';

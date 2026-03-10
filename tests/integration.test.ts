@@ -237,8 +237,8 @@ describe('cross-tool integration', () => {
 
 // ─── Plugin Registration Count ───────────────────────────────────────────
 
-describe('plugin registers 28 tools (13 core + 4 phase 2 + 4 phase 3 + 1 phase 4 + 1 phase 5 + 4 phase 6 + 1 phase 7)', () => {
-  it('total tool count is 28', async () => {
+describe('plugin registers 31 tools (13 core + 4 phase 2 + 4 phase 3 + 1 phase 4 + 1 phase 5 + 4 phase 6 + 1 phase 7 + 3 sprint 4)', () => {
+  it('total tool count is 31', async () => {
     const plugin = (await import('../extensions/crypto/index.js')).default;
     const tools: any[] = [];
     const mockApi = {
@@ -249,7 +249,7 @@ describe('plugin registers 28 tools (13 core + 4 phase 2 + 4 phase 3 + 1 phase 4
     };
 
     plugin.register(mockApi);
-    expect(tools.length).toBe(28);
+    expect(tools.length).toBe(31);
     expect(tools.map(t => t.name)).toContain('crypto_workflow');
     expect(tools.map(t => t.name)).toContain('transfer');
     expect(tools.map(t => t.name)).toContain('liquidity');

@@ -364,7 +364,7 @@ export class PlanCompiler {
           type: 'action',
           label: step.label ?? 'Launch token',
           tool: 'clawnch_launch',
-          params: step.params ?? {},
+          params: (step.params ?? {}) as Record<string, string | number | boolean | ValueRef>,
           requireConfirmation: step.confirm ?? true,
           onFailure: failurePolicy,
         };
@@ -390,7 +390,7 @@ export class PlanCompiler {
           type: 'action',
           label: step.label ?? `Run ${step.tool}`,
           tool: step.tool,
-          params: step.params ?? {},
+          params: (step.params ?? {}) as Record<string, string | number | boolean | ValueRef>,
           requireConfirmation: step.confirm ?? false,
           onFailure: failurePolicy,
         };

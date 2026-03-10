@@ -63,7 +63,7 @@
     "viem": "^2.0.0"
   },
   "peerDependencies": {
-    "openclaw": ">=2026.2.0",
+    "openclaw": ">=2026.3.0 <2027.0.0",
     "@walletconnect/sign-client": "^2.23.6"
   },
   "peerDependenciesMeta": {

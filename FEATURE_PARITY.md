@@ -4,7 +4,9 @@ This document tracks which OpenClaw features OpenClawnch depends on, tests again
 and extends. It is the single source of truth for merge compatibility when pulling
 future OpenClaw releases into this fork.
 
-**Minimum OpenClaw version:** `>=2026.2.0` (peer dependency)
+**Minimum OpenClaw version:** `>=2026.3.0` (peer dependency)
+**Bundled OpenClaw version:** `2026.3.8`
+**Upstream latest:** `2026.3.9`
 
 ## Plugin API Surface We Use
 
@@ -13,15 +15,27 @@ If upstream changes any of these signatures, our extension breaks.
 
 | API Method | Our Usage | Status |
 |---|---|---|
-| `api.registerTool(tool)` | 28 tools registered | Stable |
-| `api.registerCommand(cmd)` | 67+ commands registered | Stable |
-| `api.on('gateway_start', cb)` | Wallet init, plan scheduler start | Stable |
-| `api.on('message_received', cb)` | Onboarding flow interception | Stable |
-| `api.on('message_sending', cb)` | Cancel LLM response during onboarding | Stable |
-| `api.on('before_prompt_build', cb)` | System prompt injection (identity, mode, wallet state) | Stable |
-| `api.on('after_tool_call', cb)` | Onboarding progression, config hints, cost basis auto-record | Stable |
+| `api.registerTool(tool)` | 31 tools registered | Stable |
+| `api.registerCommand(cmd)` | 76 commands registered | Stable |
+| `api.on('gateway_start', cb)` | Wallet init, plan scheduler start, heartbeat start | Stable |
+| `api.on('message_received', cb)` | Onboarding flow interception, session recall indexing | Stable |
+| `api.on('message_sending', cb)` | Cancel LLM response during onboarding, credential leak scanning | Stable |
+| `api.on('before_prompt_build', cb)` | System prompt injection (identity, mode, wallet state, memory, skills) | Stable |
+| `api.on('after_tool_call', cb)` | Onboarding progression, config hints, cost basis auto-record, tx ledger, budget, session recall, evolution nudge | Stable |
 | `api.logger.info/warn` | Logging throughout | Stable |
-| `api.runtime.tools.getAll()` | Plan executor dispatches tools by name | Needs verification each release |
+| `api.runtime.tools.getAll()` | Plan executor dispatches tools by name | **Needs verification each release** |
+| `api.runtime.channel.<ch>` | Dynamic channel message sending (22+ channels) | **Needs verification each release** |
+
+### Upstream APIs Not Yet Used (potential adoption)
+
+| API Method | Potential Use | Priority |
+|---|---|---|
+| `api.registerService()` | Formalize plan scheduler, heartbeat as managed services | Medium |
+| `api.registerHttpRoute()` | Webhook endpoints for DEX callbacks | Low |
+| `api.registerHook()` | Typed hook registration with priority options | Medium |
+| `api.runtime.modelAuth` | Provider key resolution instead of raw process.env | Low |
+| `api.runtime.state.resolvePath()` | State directory resolution | Low |
+| `before_tool_call` hook | Pre-flight budget checks | Medium |
 
 ## Tool Registration Shape
 
@@ -34,7 +48,7 @@ Our tools conform to this interface (must match OpenClaw's `AnyAgentTool`):
   description: string;
   ownerOnly: boolean;
   parameters: TSchema;           // TypeBox schema
-  execute: (toolCallId: string, args: unknown) => Promise<ToolResult>;
+  execute: (toolCallId: string, args: unknown, ctx?: any) => Promise<ToolResult>;
 }
 ```
 
@@ -57,81 +71,75 @@ Our commands conform to:
 | Hook | Event fields we read | Context fields we read |
 |---|---|---|
 | `gateway_start` | (none) | (none) |
-| `message_received` | `event.content`, `event.from` | `ctx.channelId`, `ctx.conversationId`, `ctx.senderId`, `ctx.metadata.senderId` |
-| `message_sending` | `event.to` | `ctx.conversationId` |
-| `before_prompt_build` | (none) | `ctx.sessionKey` |
-| `after_tool_call` | `event.toolName`/`event.tool`, `event.result`/`event.details`, `event.error` | `ctx.sessionKey`, `ctx.conversationId` |
+| `message_received` | `event.content`, `event.from`, `event.metadata.senderId` | `ctx.channelId`, `ctx.conversationId`, `ctx.senderId`, `ctx.sessionKey`, `ctx.messageChannel` |
+| `message_sending` | `event.to`, `event.content`, `event.text` | `ctx.conversationId` |
+| `before_prompt_build` | (none) | `ctx.sessionKey`, `ctx.senderId`, `ctx.requesterSenderId` |
+| `after_tool_call` | `event.toolName`/`event.tool`, `event.result`/`event.details`, `event.error` | `ctx.sessionKey`, `ctx.conversationId`, `ctx.senderId`, `ctx.requesterSenderId` |
 
 ## Return Value Contracts
 
 | Hook | Return shape | Effect |
 |---|---|---|
 | `message_sending` | `{ cancel: true }` | Suppresses LLM response |
+| `message_sending` | `{ content: string }` | Replaces outbound text (used for redaction) |
 | `before_prompt_build` | `{ prependContext: string }` | Prepends text to system prompt |
+
+**Note:** Upstream v2026.3.7 added `prependSystemContext` and `appendSystemContext` for
+cacheable system prompt injection. Migration to these is recommended for static context.
+
+## Channel Sender Compatibility
+
+The channel sender (`channel-sender.ts`) dynamically discovers channels from
+`api.runtime.channel` at runtime. It uses the naming convention:
+
+```
+runtime.channel.<name>.sendMessage<PascalCase>
+```
+
+Known overrides for non-standard naming are maintained in `SEND_FN_OVERRIDES`.
+When OpenClaw adds a new channel, it should work automatically if it follows the
+naming convention. If not, add an override entry.
 
 ## OpenClaw Features We Do NOT Modify
 
 These are upstream features we rely on working correctly but do not patch:
 
 - Gateway HTTP server and webhook handling
-- Channel adapters (Telegram, Discord, Slack, Signal, WhatsApp, iMessage, LINE)
+- Channel adapters (Telegram, Discord, Slack, Signal, WhatsApp, iMessage, LINE, Matrix, Teams, etc.)
 - Agent runtime and LLM provider routing
-- Plugin loader and discovery (`openclaw.json` → `plugins.load.paths`)
+- Plugin loader and discovery (`openclaw.json` -> `plugins.load.paths`)
 - Skills loader (`skills.load.extraDirs`)
 - Session management and conversation persistence
 - Pairing code authentication
-- Model switching (`/model` command — we add shortcuts but don't modify core)
+- Model switching (`/model` command -- we add shortcuts but don't modify core)
 
 ## OpenClawnch-Only Additions (Not in Upstream)
 
-These are new services, tools, and commands that only exist in our extension:
-
-### Services (26)
-- `walletconnect-service.ts` — WalletConnect/private key/Bankr wallet management
-- `dex-aggregator.ts` — Multi-DEX swap quoting (7 aggregators)
-- `price-oracle.ts` — Multi-source price feeds (5 sources)
-- `rpc-provider.ts` — Multi-RPC failover with circuit breaker
-- `safety-service.ts` — Pre-flight balance/audit checks
-- `mode-service.ts` — Safe/danger/readonly + wallet/autosign modes
-- `budget-service.ts` — Per-operation gas+slippage budget tracking
-- `credential-vault.ts` — Centralized secret access with leak scanning
-- `endpoint-allowlist.ts` — HTTP endpoint allowlisting for tools
-- `onboarding-flow.ts` — Interactive onboarding state machine
-- `channel-sender.ts` — Channel-agnostic message routing
-- `plan-compiler.ts` — Natural language → Plan IR compiler
-- `plan-validator.ts` — 6-pass plan validation
-- `plan-scheduler.ts` — File-based plan persistence and execution scheduling
-- `plan-executor.ts` — Plan IR tree-walking executor
-- `gas-estimator.ts` — Gas price estimation
-- `builder-code.ts` — ERC-8021 builder code attribution
-- `allowance-manager.ts` — ERC-20 approval auditing
-- `bankr-api.ts` — Bankr Agent API client
-- `dexscreener-service.ts` — DexScreener API client
-- `price-service.ts` — Price lookup facade
-- `chainlink-oracle.ts` — On-chain Chainlink feeds
-- `spending-policy-service.ts` — Natural language spending rules
-- `tool-config-service.ts` — Tool requirement registry
-- `hummingbot-service.ts` — Hummingbot bot control
-- `molten-service.ts` — Molten agent matching
-
-### Tools (28)
+### Tools (31)
 See `extensions/crypto/index.ts` for the complete list.
 
-### Commands (67+)
+### Commands (76)
 See `extensions/crypto/index.ts` for the complete list.
+
+### Services (26+)
+See `extensions/crypto/src/services/` for the complete list.
 
 ## Version Compatibility Testing
 
 When pulling a new OpenClaw release:
 
-1. Run `npm test` (667 tests across 22 files)
-2. Verify plugin loads: `node bin/openclawnch.mjs --help`
-3. Check hook signatures haven't changed (search OpenClaw changelog for "plugin", "hook", "registerTool")
-4. Verify `api.runtime.tools.getAll()` still returns the expected shape
-5. Test one write operation end-to-end (connect wallet → swap)
+1. Run `pnpm test` (835+ tests across 26 files)
+2. Run `pnpm typecheck` (must pass with zero errors)
+3. Verify plugin loads: `node bin/openclawnch.mjs --help`
+4. Check hook signatures haven't changed (search OpenClaw changelog for "plugin", "hook", "registerTool")
+5. Verify `api.runtime.tools.getAll()` still returns the expected shape
+6. Verify `api.runtime.channel` still follows `sendMessage<PascalCase>` convention
+7. Test one write operation end-to-end (connect wallet -> swap)
 
 ## Changelog of Upstream Breaking Changes
 
 | OpenClaw Version | Breaking Change | Our Fix | Date |
 |---|---|---|---|
+| v2026.3.7 | `prependSystemContext` / `appendSystemContext` added to `before_prompt_build` | No fix needed — `prependContext` still works. Migration planned. | 2026-03-07 |
+| v2026.3.7 | `gateway.auth.mode` required when both token and password are set | N/A — we don't use dual auth. | 2026-03-07 |
 | (none yet) | — | — | — |

@@ -199,18 +199,15 @@ async function _doInitWalletService(config: WalletServiceConfig): Promise<{
     try {
       const { getBankrUserInfo } = await import('./bankr-api.js');
 
-      // Temporarily set the env var so bankr-api can read it
-      // (it may already be set, but ensure it is for this call)
-      const prevKey = process.env.BANKR_API_KEY;
-      process.env.BANKR_API_KEY = config.bankrApiKey;
+      // Ensure BANKR_API_KEY is set before calling getBankrUserInfo.
+      // We only set it if it isn't already configured (avoid race conditions
+      // from mutating process.env in async code).
+      if (!process.env.BANKR_API_KEY) {
+        process.env.BANKR_API_KEY = config.bankrApiKey;
+      }
 
       const userInfo = await getBankrUserInfo();
       const { isBankrClubActive } = await import('./bankr-types.js');
-
-      // Restore previous key if different (shouldn't happen in practice)
-      if (prevKey !== undefined && prevKey !== config.bankrApiKey) {
-        process.env.BANKR_API_KEY = prevKey;
-      }
 
       const evmWallet = userInfo.wallets.find(w => w.chain === 'evm');
       const solWallet = userInfo.wallets.find(w => w.chain === 'solana');

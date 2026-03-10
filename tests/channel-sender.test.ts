@@ -140,8 +140,10 @@ describe('extractChannelId', () => {
     expect(extractChannelId({ sessionKey: 'whatsapp-123' })).toBe('whatsapp');
   });
 
-  it('returns null for unknown channel', () => {
-    expect(extractChannelId({ channelId: 'xmpp' })).toBeNull();
+  it('passes through unknown channel names (dynamic discovery)', () => {
+    // With dynamic channel support, any string channelId is accepted.
+    // The sender will return false if no send function is found at runtime.
+    expect(extractChannelId({ channelId: 'xmpp' })).toBe('xmpp');
   });
 
   it('returns null for empty context', () => {

@@ -490,7 +490,7 @@ describe('phase 3 tool consistency', () => {
 // ─── Plugin Registration ─────────────────────────────────────────────────
 
 describe('phase 3 plugin registration', () => {
-  it('index.ts registers 28 tools', { timeout: 15000 }, async () => {
+  it('index.ts registers 31 tools', { timeout: 15000 }, async () => {
     const plugin = (await import('../extensions/crypto/index.js')).default;
     const registered: string[] = [];
     const mockApi = {
@@ -500,7 +500,7 @@ describe('phase 3 plugin registration', () => {
       logger: { info: () => {}, warn: () => {} },
     };
     plugin.register(mockApi);
-    expect(registered).toHaveLength(28);
+    expect(registered).toHaveLength(31);
     // Verify Phase 3 tools are included
     expect(registered).toContain('permit2');
     expect(registered).toContain('cost_basis');

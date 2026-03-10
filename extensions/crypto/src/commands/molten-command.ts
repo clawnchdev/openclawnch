@@ -46,7 +46,7 @@ export const moltenCommand = {
       });
 
       if (!profileRes.ok) {
-        const data = await profileRes.json().catch(() => ({}));
+        const data = await profileRes.json().catch(() => ({})) as Record<string, any>;
         const errCode = data?.error?.code;
 
         if (profileRes.status === 401) {
@@ -77,7 +77,7 @@ export const moltenCommand = {
         };
       }
 
-      const profile = await profileRes.json();
+      const profile = await profileRes.json() as Record<string, any>;
       const agent = profile?.agent || profile;
 
       const lines = [
@@ -103,8 +103,8 @@ export const moltenCommand = {
           signal: AbortSignal.timeout(10000),
         });
         if (convRes.ok) {
-          const convData = await convRes.json();
-          const count = convData?.conversations?.length ?? convData?.count ?? 0;
+           const convData = await convRes.json() as Record<string, any>;
+           const count = convData?.conversations?.length ?? convData?.count ?? 0;
           if (count > 0) {
             lines.push('');
             lines.push(`Active conversations: ${count}`);
@@ -124,8 +124,8 @@ export const moltenCommand = {
           signal: AbortSignal.timeout(10000),
         });
         if (eventsRes.ok) {
-          const eventsData = await eventsRes.json();
-          const events = eventsData?.events || [];
+           const eventsData = await eventsRes.json() as Record<string, any>;
+           const events = eventsData?.events || [];
           if (events.length > 0) {
             lines.push(`Unread events: ${events.length}`);
           }
