@@ -73,7 +73,7 @@ function isMacOS(): boolean {
  * Uses @noble/hashes for the scrypt implementation (already in dep tree via viem).
  */
 async function deriveKey(password: string, salt: Buffer): Promise<Buffer> {
-  const { scryptAsync } = await import('@noble/hashes/scrypt');
+  const { scryptAsync } = await import('@noble/hashes/scrypt.js');
   const passwordBytes = Buffer.from(password, 'utf-8');
   const derived = await scryptAsync(passwordBytes, salt, {
     N: SCRYPT_N,
@@ -266,7 +266,7 @@ function loadPayload(): EncryptedPayload | null {
  */
 export async function generateWallet(): Promise<GeneratedWallet> {
   const { generateMnemonic, mnemonicToAccount } = await import('viem/accounts');
-  const { wordlist } = await import('@scure/bip39/wordlists/english');
+  const { wordlist } = await import('@scure/bip39/wordlists/english.js');
 
   const mnemonic = generateMnemonic(wordlist);
   const account = mnemonicToAccount(mnemonic);
