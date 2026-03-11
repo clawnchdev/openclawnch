@@ -23,6 +23,7 @@ import {
   getWalletState,
   requireWalletClient,
   requirePublicClient,
+  getMevWalletClient,
 } from '../services/walletconnect-service.js';
 import { guardedFetch } from '../services/endpoint-allowlist.js';
 import { getCredentialVault } from '../services/credential-vault.js';
@@ -394,8 +395,8 @@ async function handleExecute(params: Record<string, unknown>) {
       return errorResult('No transaction data returned from LI.FI. The route may not be available.');
     }
 
-    // Step 2: Send transaction via wallet
-    const wallet = requireWalletClient();
+    // Step 2: Send transaction via wallet (MEV-protected when available)
+    const wallet = await getMevWalletClient();
     const publicClient = requirePublicClient();
 
     const txHash = await wallet.sendTransaction({

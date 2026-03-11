@@ -21,6 +21,8 @@ const ACTIONS = [
   'gateway_status', 'gateway_start', 'gateway_stop',
   'leverage', 'history', 'templates', 'backtest',
   'connectors', 'accounts', 'scripts',
+  // Condor-specific actions (Hummingbot Condor upgrade)
+  'pnl', 'clmm_positions', 'routines', 'routine_start', 'routine_stop', 'dashboard',
 ] as const;
 
 const HummingbotSchema = Type.Object({
@@ -31,7 +33,10 @@ const HummingbotSchema = Type.Object({
       'bot_deploy/bot_status/bot_stop/bot_logs/bot_history: manage bots. ' +
       'market_data/candles/orderbook: prices & data. templates: strategy templates. ' +
       'gateway_status/start/stop: DEX gateway. leverage: set leverage. ' +
-      'history: search trade history. backtest: run backtest.',
+      'history: search trade history. backtest: run backtest. ' +
+      'pnl: PnL tracking. clmm_positions: CLMM LP positions. ' +
+      'routines: list auto-discoverable routines. routine_start/stop: manage routines. ' +
+      'dashboard: Condor portfolio dashboard.',
   }),
   connector: Type.Optional(Type.String({ description: 'Connector name (e.g. "binance", "uniswap")' })),
   trading_pair: Type.Optional(Type.String({ description: 'Trading pair (e.g. "ETH-USDT")' })),
@@ -88,9 +93,9 @@ export function createHummingbotTool() {
     label: 'Hummingbot',
     ownerOnly: true,
     description:
-      'Control Hummingbot market-making bots. Place orders, manage executors, ' +
-      'deploy bots with strategies, check portfolio, get market data, run backtests. ' +
-      'Requires a running Hummingbot instance (set HUMMINGBOT_API_URL).',
+      'Control Hummingbot/Condor market-making bots. Place orders, manage executors, ' +
+      'deploy bots with strategies, check portfolio + PnL, CLMM LP positions, auto-routines, ' +
+      'get market data, run backtests. Requires a running Hummingbot/Condor instance (set HUMMINGBOT_API_URL).',
     parameters: HummingbotSchema,
     execute: async (_toolCallId: string, args: unknown) => {
       // Early check: is the tool configured?
@@ -357,6 +362,72 @@ export function createHummingbotTool() {
 
           case 'scripts': {
             const result = await client.listScripts();
+            return jsonResult(result);
+          }
+
+          // ── Condor-specific Actions ─────────────────────────────────
+          // These target Condor's extended API surface. If the backend is
+          // plain Hummingbot (not Condor), these will return a helpful error.
+
+          case 'pnl': {
+            if (typeof client.getPnL !== 'function') {
+              return errorResult('PnL tracking requires Condor backend. Upgrade from Hummingbot to Condor: https://github.com/hummingbot/condor');
+            }
+            const result = await client.getPnL({
+              connectorNames: p.connector ? [p.connector as string] : undefined,
+              tradingPairs: p.trading_pair ? [p.trading_pair as string] : undefined,
+              days: readNumberParam(p, 'days') ?? 7,
+            });
+            return jsonResult(result);
+          }
+
+          case 'clmm_positions': {
+            if (typeof client.getCLMMPositions !== 'function') {
+              return errorResult('CLMM LP positions require Condor backend. Upgrade from Hummingbot to Condor: https://github.com/hummingbot/condor');
+            }
+            const result = await client.getCLMMPositions({
+              connectorNames: p.connector ? [p.connector as string] : undefined,
+              accountNames: p.account ? [p.account as string] : undefined,
+            });
+            return jsonResult(result);
+          }
+
+          case 'routines': {
+            if (typeof client.listRoutines !== 'function') {
+              return errorResult('Auto-discoverable routines require Condor backend. Upgrade from Hummingbot to Condor: https://github.com/hummingbot/condor');
+            }
+            const result = await client.listRoutines();
+            return jsonResult(result);
+          }
+
+          case 'routine_start': {
+            if (typeof client.startRoutine !== 'function') {
+              return errorResult('Routines require Condor backend.');
+            }
+            const name = readStringParam(p, 'bot_name', { required: true })!;
+            const result = await client.startRoutine(name);
+            return jsonResult(result);
+          }
+
+          case 'routine_stop': {
+            if (typeof client.stopRoutine !== 'function') {
+              return errorResult('Routines require Condor backend.');
+            }
+            const name = readStringParam(p, 'bot_name', { required: true })!;
+            const result = await client.stopRoutine(name);
+            return jsonResult(result);
+          }
+
+          case 'dashboard': {
+            if (typeof client.getDashboard !== 'function') {
+              return errorResult('Portfolio dashboard requires Condor backend. Upgrade from Hummingbot to Condor: https://github.com/hummingbot/condor');
+            }
+            const result = await client.getDashboard({
+              includeBalances: true,
+              includePnL: true,
+              includeCLMM: true,
+              includeRoutines: true,
+            });
             return jsonResult(result);
           }
 

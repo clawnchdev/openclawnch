@@ -10,7 +10,7 @@ import { stringEnum, jsonResult, errorResult, readStringParam } from '../lib/too
 import { getWalletState, getPublicClient, isBankrMode } from '../services/walletconnect-service.js';
 import { getRpcManager } from '../services/rpc-provider.js';
 import { getPriceOracle } from '../services/price-oracle.js';
-import type { PortfolioSummary } from '../lib/types.js';
+import { resolveAddressOrEns, isEnsName } from '../lib/ens-resolver.js';
 
 const ACTIONS = ['overview', 'tokens', 'eth'] as const;
 
@@ -19,7 +19,7 @@ const DefiBalanceSchema = Type.Object({
     description: 'overview: full portfolio summary. tokens: ERC-20 token list. eth: just ETH balance.',
   }),
   address: Type.Optional(Type.String({
-    description: 'Wallet address to check (defaults to connected wallet)',
+    description: 'Wallet address (0x...) or ENS name (e.g. vitalik.eth). Defaults to connected wallet.',
   })),
   chain: Type.Optional(Type.String({
     description: 'Chain to check (default: "base"). Options: base, ethereum, arbitrum, optimism, polygon. Bankr mode adds: solana, unichain',
@@ -42,9 +42,10 @@ export function createDefiBalanceTool() {
       const action = readStringParam(params, 'action', { required: true })!;
       const chain = readStringParam(params, 'chain') || 'base';
 
-      // Resolve address
-      let address = readStringParam(params, 'address');
-      if (!address) {
+      // Resolve address (supports ENS names)
+      let address: string;
+      const addressInput = readStringParam(params, 'address');
+      if (!addressInput) {
         const state = getWalletState();
         if (!state.connected || !state.address) {
           return errorResult(
@@ -53,6 +54,19 @@ export function createDefiBalanceTool() {
           );
         }
         address = state.address;
+      } else if (isEnsName(addressInput)) {
+        try {
+          const publicClient = getPublicClient();
+          if (!publicClient) {
+            return errorResult('Public client not available for ENS resolution.');
+          }
+          const resolved = await resolveAddressOrEns(addressInput, publicClient);
+          address = resolved.address;
+        } catch (err) {
+          return errorResult(err instanceof Error ? err.message : String(err));
+        }
+      } else {
+        address = addressInput;
       }
 
       // Bankr mode: route all balance queries through Bankr API
