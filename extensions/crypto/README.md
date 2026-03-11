@@ -16,13 +16,13 @@ npx @clawnch/openclawnch
 
 ## What's Included
 
-**31 tools** — `clawnch_connect`, `defi_swap`, `defi_price`, `defi_balance`, `transfer`, `bridge`, `permit2`, `analytics`, `market_intel`, `herd_intelligence`, `compound_action`, and more.
+**42 tools** — `clawnch_connect`, `defi_swap`, `defi_price`, `defi_balance`, `transfer`, `bridge`, `permit2`, `analytics`, `market_intel`, `herd_intelligence`, `compound_action`, and more.
 
-**78 slash commands** — `/wallet`, `/connect`, `/swap`, `/send`, `/bridge`, `/plans`, `/setup`, and more. All tappable on Telegram.
+**87 slash commands** — `/wallet`, `/connect`, `/swap`, `/send`, `/bridge`, `/plans`, `/setup`, and more. All tappable on Telegram.
 
-**35 services** — WalletConnect lifecycle, multi-RPC failover, DEX aggregation (6 aggregators), price oracle with divergence detection, compound operation engine, credential vault with leak scanning.
+**47 services** — WalletConnect lifecycle, multi-RPC failover, DEX aggregation (6 aggregators), price oracle with divergence detection, compound operation engine, credential vault with leak scanning.
 
-**27 skill docs** — LLM guidance for tool usage, security patterns, and DeFi concepts.
+**42 skill docs** — LLM guidance for tool usage, security patterns, and DeFi concepts.
 
 ## Wallet Modes
 
