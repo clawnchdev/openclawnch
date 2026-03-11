@@ -169,7 +169,11 @@ describe('wayfinder tool', () => {
     expect(actionSchema.enum).toContain('gas_token');
     expect(actionSchema.enum).toContain('execute_swap');
     expect(actionSchema.enum).toContain('strategy');
-    expect(actionSchema.enum).toHaveLength(7);
+    expect(actionSchema.enum).toContain('lending');
+    expect(actionSchema.enum).toContain('yield_vaults');
+    expect(actionSchema.enum).toContain('perps');
+    expect(actionSchema.enum).toContain('pnl');
+    expect(actionSchema.enum).toHaveLength(11);
   });
 
   it('has cross-chain parameters', () => {
