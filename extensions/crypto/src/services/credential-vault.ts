@@ -260,8 +260,15 @@ class CredentialVault {
     }
 
     // 2. Pattern-based detection (catches secrets not in our registry)
+    //
+    // IMPORTANT: The private_key pattern uses a "context-positive" approach:
+    // In a crypto application, 64-hex-char strings are everywhere (tx hashes,
+    // block hashes, ABI-encoded data, Merkle proofs, event topics, etc.).
+    // Instead of matching all 64-hex strings and trying to exclude safe ones,
+    // we only flag them when the surrounding context indicates a secret.
     const LEAK_PATTERNS: Array<{ type: string; regex: RegExp }> = [
-      // Private keys (Ethereum)
+      // Private keys: only match 64-hex strings near danger-context words.
+      // The regex itself matches any 64-hex string; filtering is below.
       { type: 'private_key', regex: /\b(0x)?[0-9a-fA-F]{64}\b/g },
       // WalletConnect secrets
       { type: 'wc_secret', regex: /wc:[0-9a-f]{32}@/gi },
@@ -280,11 +287,35 @@ class CredentialVault {
         // Don't flag if already caught as a known secret value
         if (leaks.some(l => l.position === match!.index)) continue;
 
-        // For private key pattern: only flag if it looks like an actual key
-        // (not a tx hash, block hash, calldata, or ABI-encoded data)
+        // For private key pattern: apply strict false-positive filters.
+        // A crypto app routinely outputs 64-hex strings (tx hashes, event
+        // topics, ABI-encoded values) that are NOT secrets.
         if (type === 'private_key') {
-          const surrounding = text.slice(Math.max(0, match.index - 30), match.index + match[0].length + 30);
-          if (/\b(tx|transaction|hash|block|receipt|data|calldata|input|encoded|abi|selector|topics)\b/i.test(surrounding)) continue;
+          const hexPart = match[0].replace(/^0x/, '');
+
+          // Filter 1: Low entropy — ABI-padded values like 0x000...001
+          // Real private keys have high entropy (many distinct nibbles).
+          const uniqueNibbles = new Set(hexPart.toLowerCase().split('')).size;
+          if (uniqueNibbles < 8) continue;
+
+          // Filter 2: ABI-encoded address (24 leading zeros + 40-char addr)
+          if (/^0{24}[0-9a-fA-F]{40}$/.test(hexPart)) continue;
+
+          // Filter 3: Context-positive — only flag if surrounding text
+          // indicates this is actually a secret/key. Use a wide window
+          // (80 chars each side) for context.
+          const contextStart = Math.max(0, match.index - 80);
+          const contextEnd = Math.min(text.length, match.index + match[0].length + 80);
+          const surrounding = text.slice(contextStart, contextEnd);
+
+          // Danger-context: words that suggest a secret is being disclosed
+          const DANGER_CONTEXT = /\b(private\s*key|secret\s*key|priv\s*key|mnemonic|seed\s*phrase|signing\s*key|wallet\s*key|export\s*key|my\s*key|your\s*key)\b/i;
+          // Safe-context: words that indicate a normal crypto data type
+          const SAFE_CONTEXT = /\b(tx|transaction|hash|block|receipt|data|calldata|input|encoded|abi|selector|topics|event|log|proof|merkle|root|salt|create2|slot|storage|token[_\s]?id|nft|signature|sig\b|nonce|commitment|returndata|output|result|param|arg|swap|transfer|balance|0x[0-9a-fA-F]{40})\b/i;
+
+          // Only flag if danger context is present AND safe context is absent
+          if (!DANGER_CONTEXT.test(surrounding)) continue;
+          if (SAFE_CONTEXT.test(surrounding)) continue;
         }
 
         patternMatches.push({

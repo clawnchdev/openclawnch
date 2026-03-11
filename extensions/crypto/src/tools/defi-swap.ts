@@ -18,6 +18,7 @@ import { validateSwap, type SafetyCheckResult } from '../services/safety-service
 import { getPrice } from '../services/price-service.js';
 import { hasBankrApi } from '../services/bankr-api.js';
 import { guardedFetch } from '../services/endpoint-allowlist.js';
+import { resolveTokenDecimals, isNativeEth } from '../lib/token-decimals.js';
 
 const ACTIONS = ['quote', 'execute'] as const;
 
@@ -216,34 +217,10 @@ async function handleQuote(params: Record<string, unknown>) {
     const { parseEther, parseUnits, formatUnits } = await import('viem');
     const state = getWalletState();
 
-    // L2: Detect actual decimals instead of assuming 18 for all non-ETH tokens
-    const isEth = tokenIn.toLowerCase() === BASE_TOKENS.ETH!.toLowerCase()
-      || tokenIn.toLowerCase() === BASE_TOKENS.WETH!.toLowerCase();
-    let tokenDecimals = 18;
-    if (!isEth) {
-      // Check well-known tokens first
-      const knownEntry = Object.entries(BASE_TOKENS).find(
-        ([, addr]) => addr.toLowerCase() === tokenIn.toLowerCase()
-      );
-      if (knownEntry) {
-        // USDC/USDT = 6 decimals, others = 18
-        if (['USDC', 'USDT'].includes(knownEntry[0])) tokenDecimals = 6;
-      } else {
-        // Try reading decimals from chain
-        try {
-          const { erc20Abi } = await import('viem');
-          const publicClient = requirePublicClient();
-          const dec = await publicClient.readContract({
-            address: tokenIn as `0x${string}`,
-            abi: erc20Abi,
-            functionName: 'decimals',
-          }) as number;
-          tokenDecimals = dec;
-        } catch {
-          // Fallback to 18 if we can't read
-        }
-      }
-    }
+    // Detect actual decimals instead of assuming 18 for all tokens
+    const isEth = isNativeEth(tokenIn);
+    const publicClientForDecimals = (() => { try { return requirePublicClient(); } catch { return null; } })();
+    const tokenDecimals = await resolveTokenDecimals(tokenIn, publicClientForDecimals);
     const amountWei = isEth
       ? parseEther(amount)
       : parseUnits(amount, tokenDecimals);
@@ -315,30 +292,7 @@ async function handleQuote(params: Record<string, unknown>) {
 
     // Build comparison table from all aggregator quotes
     // Detect output token decimals for correct display
-    let outDecimals = 18;
-    {
-      const isOutEth = tokenOut.toLowerCase() === BASE_TOKENS.ETH!.toLowerCase()
-        || tokenOut.toLowerCase() === BASE_TOKENS.WETH!.toLowerCase();
-      if (!isOutEth) {
-        const knownOut = Object.entries(BASE_TOKENS).find(
-          ([, addr]) => addr.toLowerCase() === tokenOut.toLowerCase()
-        );
-        if (knownOut && ['USDC', 'USDT'].includes(knownOut[0])) {
-          outDecimals = 6;
-        } else if (!knownOut) {
-          try {
-            const { erc20Abi } = await import('viem');
-            const publicClient = requirePublicClient();
-            const dec = await publicClient.readContract({
-              address: tokenOut as `0x${string}`,
-              abi: erc20Abi,
-              functionName: 'decimals',
-            }) as number;
-            outDecimals = dec;
-          } catch { /* fallback to 18 */ }
-        }
-      }
-    }
+    const outDecimals = await resolveTokenDecimals(tokenOut, publicClientForDecimals);
     const comparison = allQuotes
       .filter((q) => !q.error)
       .map((q) => ({
@@ -427,29 +381,11 @@ async function handleExecute(params: Record<string, unknown>) {
       apiBaseUrl: process.env.CLAWNCHER_API_URL || 'https://clawn.ch',
     });
 
-    const { parseEther, parseUnits, erc20Abi } = await import('viem');
+    const { parseEther, parseUnits } = await import('viem');
 
     // Detect actual decimals for input token (critical: USDC=6, not 18)
-    const isEthIn = tokenIn.toLowerCase() === BASE_TOKENS.ETH!.toLowerCase()
-      || tokenIn.toLowerCase() === BASE_TOKENS.WETH!.toLowerCase();
-    let sellDecimals = 18;
-    if (!isEthIn) {
-      const knownIn = Object.entries(BASE_TOKENS).find(
-        ([, addr]) => addr.toLowerCase() === tokenIn.toLowerCase(),
-      );
-      if (knownIn && ['USDC', 'USDT'].includes(knownIn[0])) {
-        sellDecimals = 6;
-      } else if (!knownIn) {
-        try {
-          const dec = await publicClient.readContract({
-            address: tokenIn as `0x${string}`,
-            abi: erc20Abi,
-            functionName: 'decimals',
-          }) as number;
-          sellDecimals = dec;
-        } catch { /* fallback to 18 */ }
-      }
-    }
+    const isEthIn = isNativeEth(tokenIn);
+    const sellDecimals = await resolveTokenDecimals(tokenIn, publicClient);
     const sellAmountWei = isEthIn
       ? parseEther(amount)
       : parseUnits(amount, sellDecimals);

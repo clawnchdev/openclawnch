@@ -617,9 +617,10 @@ describe('Credential Vault', () => {
     );
     const vault = getCredentialVault();
 
-    const fakeKey = '0x' + 'cd'.repeat(32);
-    // Use a context that doesn't look like a tx hash
-    const text = `My secret key is ${fakeKey} please keep safe`;
+    // Use a high-entropy fake key (realistic — real keys have many distinct nibbles)
+    const fakeKey = '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80';
+    // Use danger-context words so the context-positive filter triggers
+    const text = `My private key is ${fakeKey} please keep safe`;
 
     const result = vault.scanForLeaks(text);
     expect(result.clean).toBe(false);

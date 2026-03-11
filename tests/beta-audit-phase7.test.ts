@@ -560,16 +560,23 @@ describe('Real RPC integration (Base mainnet)', () => {
 // ── 10. Wallet State in System Prompt ───────────────────────────────────────
 
 describe('System prompt wallet state injection', () => {
-  it('wallet state is referenced in index.ts system prompt hook', async () => {
-    // Verify the system prompt code includes wallet state injection
+  it('wallet state is referenced in prompt builder hook', async () => {
+    // Verify the system prompt code includes wallet state injection.
+    // The prompt logic was extracted from index.ts to src/hooks/prompt-builder.ts.
     const fs = await import('fs');
-    const src = fs.readFileSync(
+    const promptSrc = fs.readFileSync(
+      new URL('../extensions/crypto/src/hooks/prompt-builder.ts', import.meta.url),
+      'utf8',
+    );
+    expect(promptSrc).toContain('NOT CONNECTED');
+    expect(promptSrc).toContain('CONNECTED');
+    expect(promptSrc).toContain('/connect');
+
+    // Index.ts still registers the before_prompt_build hook
+    const indexSrc = fs.readFileSync(
       new URL('../extensions/crypto/index.ts', import.meta.url),
       'utf8',
     );
-    expect(src).toContain('NOT CONNECTED');
-    expect(src).toContain('CONNECTED');
-    expect(src).toContain('/connect');
-    expect(src).toContain('before_prompt_build');
+    expect(indexSrc).toContain('before_prompt_build');
   });
 });
