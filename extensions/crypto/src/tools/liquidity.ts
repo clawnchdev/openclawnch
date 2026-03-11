@@ -24,6 +24,24 @@ import {
 } from '../services/walletconnect-service.js';
 import { checkBalance } from '../services/safety-service.js';
 
+/** Validate and convert a token ID string to BigInt. */
+function validateTokenId(raw: string): bigint {
+  const trimmed = raw.trim();
+  if (!/^\d+$/.test(trimmed)) {
+    throw new Error(`Invalid token_id: "${raw}". Must be a non-negative integer.`);
+  }
+  return BigInt(trimmed);
+}
+
+/** Validate a numeric amount string. */
+function validateAmount(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed || !/^\d+(\.\d+)?$/.test(trimmed)) {
+    throw new Error(`Invalid amount: "${raw}". Must be a positive number (e.g. "1.5" or "100").`);
+  }
+  return trimmed;
+}
+
 const ACTIONS = [
   'positions', 'v4_position', 'v4_pool',
   'v3_mint', 'v4_mint', 'v3_add', 'v3_remove', 'v3_collect',
@@ -165,7 +183,7 @@ async function handleV4Position(liquidity: any, params: Record<string, unknown>)
   const tokenId = readStringParam(params, 'token_id');
   if (!tokenId) return errorResult('token_id is required for v4_position.');
 
-  const pos = await liquidity.v4GetPosition(BigInt(tokenId));
+  const pos = await liquidity.v4GetPosition(validateTokenId(tokenId));
 
   return jsonResult({
     tokenId: pos.tokenId.toString(),
@@ -240,9 +258,10 @@ async function getTokenDecimals(tokenAddress: string): Promise<number> {
 
 /** Convert a human-readable amount string to BigInt wei using actual token decimals. */
 async function toTokenWei(amount: string, tokenAddress: string): Promise<bigint> {
+  const trimmed = validateAmount(amount);
   const decimals = await getTokenDecimals(tokenAddress);
   const { parseUnits } = await import('viem');
-  return parseUnits(amount, decimals);
+  return parseUnits(trimmed, decimals);
 }
 
 // ─── Write Operations ─────────────────────────────────────────────────────
@@ -345,11 +364,14 @@ async function handleV3Add(liquidity: any, params: Record<string, unknown>) {
     return errorResult(`Insufficient gas: ${safety.blockers.join('; ')}`);
   }
 
+  // Validate amounts before conversion
+  const a0 = validateAmount(amount0);
+  const a1 = validateAmount(amount1);
   // Use actual token decimals when addresses are provided, otherwise fall back to 18
-  const amount0Wei = token0 ? await toTokenWei(amount0, token0) : BigInt(Math.round(parseFloat(amount0) * 1e18));
-  const amount1Wei = token1 ? await toTokenWei(amount1, token1) : BigInt(Math.round(parseFloat(amount1) * 1e18));
+  const amount0Wei = token0 ? await toTokenWei(a0, token0) : BigInt(Math.round(parseFloat(a0) * 1e18));
+  const amount1Wei = token1 ? await toTokenWei(a1, token1) : BigInt(Math.round(parseFloat(a1) * 1e18));
 
-  const result = await liquidity.v3AddLiquidity(BigInt(tokenId), {
+  const result = await liquidity.v3AddLiquidity(validateTokenId(tokenId), {
     amount0Desired: amount0Wei,
     amount1Desired: amount1Wei,
     deadline: 1200,
@@ -375,7 +397,7 @@ async function handleV3Remove(liquidity: any, params: Record<string, unknown>) {
   }
 
   const pct = percentage / 100;
-  const result = await liquidity.v3RemoveLiquidity(BigInt(tokenId), {
+  const result = await liquidity.v3RemoveLiquidity(validateTokenId(tokenId), {
     percentageToRemove: pct,
     burnToken: pct === 1,
     deadline: 1200,
@@ -400,7 +422,7 @@ async function handleV3Collect(liquidity: any, params: Record<string, unknown>) 
     return errorResult(`Insufficient gas: ${safety.blockers.join('; ')}`);
   }
 
-  const result = await liquidity.v3CollectFees(BigInt(tokenId));
+  const result = await liquidity.v3CollectFees(validateTokenId(tokenId));
 
   return jsonResult({
     status: 'success',

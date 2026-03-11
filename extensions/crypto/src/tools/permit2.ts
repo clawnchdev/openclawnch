@@ -188,10 +188,14 @@ async function handleApprove(params: Record<string, unknown>) {
     // with that amount instead of max uint160. This limits exposure.
     const scopedAmount = readStringParam(params, 'amount');
     if (scopedAmount) {
+      // Validate amount before BigInt conversion — must be a non-negative integer (smallest unit)
+      if (!/^\d+$/.test(scopedAmount.trim())) {
+        return errorResult(`Invalid amount: "${scopedAmount}". Must be a non-negative integer in the token's smallest unit (e.g. wei).`);
+      }
       // Parse the amount as a BigInt (expected in token's smallest unit)
       const spenderInput = readStringParam(params, 'spender') || 'universal_router';
       const spender = resolveSpender(spenderInput);
-      const amount = BigInt(scopedAmount);
+      const amount = BigInt(scopedAmount.trim());
       const expiration = Math.floor(Date.now() / 1000) + 86400 * 30; // 30 days
       const txHash = await client.directApprove(
         token as `0x${string}`,

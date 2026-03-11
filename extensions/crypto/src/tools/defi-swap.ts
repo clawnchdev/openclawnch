@@ -12,6 +12,7 @@ import {
   getWCSigner,
   requireWalletClient,
   requirePublicClient,
+  getMevWalletClient,
   isBankrMode,
 } from '../services/walletconnect-service.js';
 import { validateSwap, type SafetyCheckResult } from '../services/safety-service.js';
@@ -211,6 +212,10 @@ async function handleQuote(params: Record<string, unknown>) {
   const tokenIn = resolveToken(readStringParam(params, 'token_in', { required: true })!);
   const tokenOut = resolveToken(readStringParam(params, 'token_out', { required: true })!);
   const amount = readStringParam(params, 'amount', { required: true })!;
+  // Validate amount format early — prevents opaque errors in parseEther/parseUnits
+  if (!/^\d+(\.\d+)?$/.test(amount.trim())) {
+    return errorResult(`Invalid amount: "${amount}". Must be a positive number (e.g. "1.5" or "100").`);
+  }
   const slippage = readNumberParam(params, 'slippage') ?? 1.0;
 
   try {
@@ -342,6 +347,10 @@ async function handleExecute(params: Record<string, unknown>) {
   const tokenIn = resolveToken(readStringParam(params, 'token_in', { required: true })!);
   const tokenOut = resolveToken(readStringParam(params, 'token_out', { required: true })!);
   const amount = readStringParam(params, 'amount', { required: true })!;
+  // Validate amount format early — prevents opaque errors in parseEther/parseUnits
+  if (!/^\d+(\.\d+)?$/.test(amount.trim())) {
+    return errorResult(`Invalid amount: "${amount}". Must be a positive number (e.g. "1.5" or "100").`);
+  }
   const slippage = readNumberParam(params, 'slippage') ?? 1.0;
 
   // Pre-flight safety checks (blocking for execute)
@@ -372,7 +381,7 @@ async function handleExecute(params: Record<string, unknown>) {
 
   try {
     const { ClawnchSwapper } = await import('@clawnch/clawncher-sdk');
-    const wallet = requireWalletClient();
+    const wallet = await getMevWalletClient();
     const publicClient = requirePublicClient();
 
     const swapper = new ClawnchSwapper({

@@ -422,6 +422,11 @@ async function handleSendTx(params: Record<string, unknown>) {
   const data = readStringParam(params, 'data');
   const summary = readStringParam(params, 'summary') || 'Transaction submitted by agent';
 
+  // Validate value before parseEther to prevent opaque viem errors
+  if (valueStr && !/^\d+(\.\d+)?$/.test(valueStr.trim())) {
+    return errorResult(`Invalid value: "${valueStr}". Must be a positive number (in ETH).`);
+  }
+
   try {
     const { parseEther } = await import('viem');
     const value = valueStr ? parseEther(valueStr) : undefined;
@@ -440,26 +445,39 @@ async function handleSendTx(params: Record<string, unknown>) {
         },
       );
 
+      // Wait for on-chain confirmation
+      const { requirePublicClient } = await import('../services/walletconnect-service.js');
+      const publicClient = requirePublicClient();
+      const receipt = await publicClient.waitForTransactionReceipt({ hash: result.hash });
+
       return jsonResult({
-        status: result.autoApproved ? 'auto_approved' : 'approved',
+        status: receipt.status === 'reverted' ? 'reverted' : (result.autoApproved ? 'auto_approved' : 'approved'),
         hash: result.hash,
         policyLabel: result.policyLabel,
         summary,
+        blockNumber: receipt.blockNumber.toString(),
+        gasUsed: receipt.gasUsed.toString(),
       });
     } else {
       // Private key path — direct send
-      const { requireWalletClient } = await import('../services/walletconnect-service.js');
+      const { requireWalletClient, requirePublicClient } = await import('../services/walletconnect-service.js');
       const wallet = requireWalletClient();
+      const publicClient = requirePublicClient();
       const hash = await wallet.sendTransaction({
         to: to as `0x${string}`,
         value,
         data: data as `0x${string}` | undefined,
       });
 
+      // Wait for on-chain confirmation
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+
       return jsonResult({
-        status: 'sent',
+        status: receipt.status === 'reverted' ? 'reverted' : 'sent',
         hash,
         summary,
+        blockNumber: receipt.blockNumber.toString(),
+        gasUsed: receipt.gasUsed.toString(),
         note: 'Sent directly (private key mode, no approval required)',
       });
     }

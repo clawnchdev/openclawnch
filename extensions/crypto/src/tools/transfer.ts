@@ -14,8 +14,10 @@ import {
   getWalletState,
   requireWalletClient,
   requirePublicClient,
+  getMevWalletClient,
 } from '../services/walletconnect-service.js';
 import { checkBalance } from '../services/safety-service.js';
+import { resolveAddressOrEns, isEnsName } from '../lib/ens-resolver.js';
 
 const ACTIONS = ['send', 'estimate'] as const;
 
@@ -24,7 +26,7 @@ const TransferSchema = Type.Object({
     description: 'send: execute the transfer. estimate: check balance and estimate gas without sending.',
   }),
   to: Type.String({
-    description: 'Recipient address (0x...)',
+    description: 'Recipient address (0x...) or ENS name (e.g. vitalik.eth)',
   }),
   amount: Type.String({
     description: 'Amount to send in human-readable units (e.g. "0.1" for 0.1 ETH, "100" for 100 USDC)',
@@ -115,8 +117,14 @@ async function getTokenInfo(tokenAddress: string): Promise<{ decimals: number; s
 }
 
 function parseTokenAmount(amount: string, decimals: number): bigint {
+  const trimmed = amount.trim();
+  // Validate numeric format before BigInt conversion
+  if (!trimmed || !/^\d+(\.\d+)?$/.test(trimmed)) {
+    throw new Error(`Invalid amount: "${amount}". Must be a positive number (e.g. "1.5" or "100").`);
+  }
+
   // Handle decimal amounts properly
-  const parts = amount.split('.');
+  const parts = trimmed.split('.');
   const whole = parts[0] ?? '0';
   let fraction = parts[1] ?? '';
 
@@ -133,15 +141,31 @@ function parseTokenAmount(amount: string, decimals: number): bigint {
 // ─── Action Handlers ──────────────────────────────────────────────────────
 
 async function handleEstimate(params: Record<string, unknown>) {
-  const to = readStringParam(params, 'to', { required: true })!;
-  // H4: Validate recipient address
-  if (!isValidAddress(to)) {
-    return errorResult(`Invalid recipient address: "${to}". Must be a valid 0x... Ethereum address (40 hex chars).`);
-  }
+  const toInput = readStringParam(params, 'to', { required: true })!;
   const amount = readStringParam(params, 'amount', { required: true })!;
+  // Validate amount format early — prevents opaque errors in parseTokenAmount/parseEther
+  if (!/^\d+(\.\d+)?$/.test(amount.trim())) {
+    return errorResult(`Invalid amount: "${amount}". Must be a positive number (e.g. "1.5" or "100").`);
+  }
   const tokenAddr = readStringParam(params, 'token');
   if (tokenAddr && !isValidAddress(tokenAddr)) {
     return errorResult(`Invalid token address: "${tokenAddr}". Must be a valid 0x... address.`);
+  }
+
+  // Resolve recipient: supports both 0x addresses and ENS names
+  // Validate format first (before requiring publicClient for ENS lookups)
+  if (!isValidAddress(toInput) && !isEnsName(toInput)) {
+    return errorResult(`Invalid recipient address: "${toInput}". Must be a valid 0x... Ethereum address (40 hex chars) or ENS name (e.g. vitalik.eth).`);
+  }
+  let to: string;
+  let ensName: string | undefined;
+  try {
+    const publicClient = requirePublicClient();
+    const resolved = await resolveAddressOrEns(toInput, publicClient);
+    to = resolved.address;
+    ensName = resolved.ensName;
+  } catch (err) {
+    return errorResult(err instanceof Error ? err.message : String(err));
   }
   const isErc20 = !!tokenAddr;
 
@@ -231,20 +255,36 @@ async function handleEstimate(params: Record<string, unknown>) {
 }
 
 async function handleSend(params: Record<string, unknown>) {
-  const to = readStringParam(params, 'to', { required: true })!;
-  // H4: Validate recipient address
-  if (!isValidAddress(to)) {
-    return errorResult(`Invalid recipient address: "${to}". Must be a valid 0x... Ethereum address (40 hex chars).`);
-  }
+  const toInput = readStringParam(params, 'to', { required: true })!;
   const amount = readStringParam(params, 'amount', { required: true })!;
+  // Validate amount format early — prevents opaque errors in parseTokenAmount/parseEther
+  if (!/^\d+(\.\d+)?$/.test(amount.trim())) {
+    return errorResult(`Invalid amount: "${amount}". Must be a positive number (e.g. "1.5" or "100").`);
+  }
   const tokenAddr = readStringParam(params, 'token');
   if (tokenAddr && !isValidAddress(tokenAddr)) {
     return errorResult(`Invalid token address: "${tokenAddr}". Must be a valid 0x... address.`);
   }
+
+  // Resolve recipient: supports both 0x addresses and ENS names
+  // Validate format first (before requiring publicClient for ENS lookups)
+  if (!isValidAddress(toInput) && !isEnsName(toInput)) {
+    return errorResult(`Invalid recipient address: "${toInput}". Must be a valid 0x... Ethereum address (40 hex chars) or ENS name (e.g. vitalik.eth).`);
+  }
+  let to: string;
+  let ensName: string | undefined;
+  try {
+    const publicClient = requirePublicClient();
+    const resolved = await resolveAddressOrEns(toInput, publicClient);
+    to = resolved.address;
+    ensName = resolved.ensName;
+  } catch (err) {
+    return errorResult(err instanceof Error ? err.message : String(err));
+  }
   const isErc20 = !!tokenAddr;
 
   try {
-    const wallet = requireWalletClient();
+    const wallet = await getMevWalletClient();
     const publicClient = requirePublicClient();
 
     if (isErc20) {
@@ -295,6 +335,7 @@ async function handleSend(params: Record<string, unknown>) {
         type: 'ERC-20',
         token: { address: tokenAddr, symbol: info.symbol, decimals: info.decimals },
         to,
+        ...(ensName ? { ensName } : {}),
         amount,
         amountWei: amountWei.toString(),
         txHash,
@@ -328,6 +369,7 @@ async function handleSend(params: Record<string, unknown>) {
         status: 'success',
         type: 'ETH',
         to,
+        ...(ensName ? { ensName } : {}),
         amount,
         amountWei: value.toString(),
         txHash,
