@@ -36,6 +36,34 @@ export type TxEventType =
   | 'bankr_polymarket'
   | 'bankr_leverage'
   | 'permit2'
+  | 'lend_supply'
+  | 'lend_borrow'
+  | 'lend_repay'
+  | 'lend_withdraw'
+  | 'approval_revoke'
+  | 'stake'
+  | 'stake_unstake'
+  | 'stake_wrap'
+  | 'stake_unwrap'
+  | 'nft_transfer'
+  | 'nft_buy'
+  | 'nft_list'
+  | 'privacy_deposit'
+  | 'privacy_withdraw'
+  | 'privacy_transfer'
+  | 'yield_deposit'
+  | 'yield_withdraw'
+  | 'governance_vote'
+  | 'governance_delegate'
+  | 'safe_propose'
+  | 'safe_confirm'
+  | 'airdrop_check'
+  | 'airdrop_claim'
+  | 'order_create'
+  | 'order_cancel'
+  | 'hummingbot_action'
+  | 'molten_action'
+  | 'clawnx_post'
   | 'unknown';
 
 export interface TxEvent {
@@ -126,6 +154,100 @@ const TOOL_EVENT_MAP: Record<string, TxEventType> = {
   bankr_automate: 'bankr_automate',
   bankr_polymarket: 'bankr_polymarket',
   bankr_leverage: 'bankr_leverage',
+  defi_lend: 'lend_supply', // Default — overridden by action-specific mapping below
+  approvals: 'approval_revoke',
+  defi_stake: 'stake', // Default — overridden by action-specific mapping below
+  nft: 'nft_transfer', // Default — overridden by action-specific mapping below
+  privacy: 'privacy_deposit', // Default — overridden by action-specific mapping below
+  yield: 'yield_deposit', // Default — overridden by action-specific mapping below
+  governance: 'governance_vote', // Default — overridden by action-specific mapping below
+  safe: 'safe_propose', // Default — overridden by action-specific mapping below
+  airdrop: 'airdrop_check', // Default — overridden by action-specific mapping below
+  manage_orders: 'order_create', // Default — overridden by action-specific mapping below
+  hummingbot: 'hummingbot_action',
+  molten: 'molten_action',
+  clawnx: 'clawnx_post',
+};
+
+/**
+ * Map defi_lend action names to specific event types.
+ * Used by the lending tool to record granular events.
+ */
+export const LEND_ACTION_EVENT_MAP: Record<string, TxEventType> = {
+  supply: 'lend_supply',
+  borrow: 'lend_borrow',
+  repay: 'lend_repay',
+  withdraw: 'lend_withdraw',
+};
+
+/**
+ * Map defi_stake action names to specific event types.
+ */
+export const STAKE_ACTION_EVENT_MAP: Record<string, TxEventType> = {
+  stake: 'stake',
+  unstake: 'stake_unstake',
+  wrap: 'stake_wrap',
+  unwrap: 'stake_unwrap',
+};
+
+/**
+ * Map nft action names to specific event types.
+ */
+export const NFT_ACTION_EVENT_MAP: Record<string, TxEventType> = {
+  transfer: 'nft_transfer',
+  buy: 'nft_buy',
+  list: 'nft_list',
+};
+
+/**
+ * Map privacy action names to specific event types.
+ */
+export const PRIVACY_ACTION_EVENT_MAP: Record<string, TxEventType> = {
+  deposit: 'privacy_deposit',
+  withdraw: 'privacy_withdraw',
+  transfer: 'privacy_transfer',
+};
+
+/**
+ * Map yield action names to specific event types.
+ */
+export const YIELD_ACTION_EVENT_MAP: Record<string, TxEventType> = {
+  deposit: 'yield_deposit',
+  withdraw: 'yield_withdraw',
+};
+
+/**
+ * Map governance action names to specific event types.
+ */
+export const GOVERNANCE_ACTION_EVENT_MAP: Record<string, TxEventType> = {
+  vote: 'governance_vote',
+  delegate: 'governance_delegate',
+};
+
+/**
+ * Map safe action names to specific event types.
+ * Safe operations are off-chain (REST API) but recorded for audit trail.
+ */
+export const SAFE_ACTION_EVENT_MAP: Record<string, TxEventType> = {
+  propose: 'safe_propose',
+  confirm: 'safe_confirm',
+};
+
+/**
+ * Map airdrop action names to specific event types.
+ */
+export const AIRDROP_ACTION_EVENT_MAP: Record<string, TxEventType> = {
+  check: 'airdrop_check',
+  check_all: 'airdrop_check',
+  claim: 'airdrop_claim',
+};
+
+/**
+ * Map manage_orders action names to specific event types.
+ */
+export const ORDER_ACTION_EVENT_MAP: Record<string, TxEventType> = {
+  create: 'order_create',
+  cancel: 'order_cancel',
 };
 
 export function toolToEventType(toolName: string): TxEventType {
