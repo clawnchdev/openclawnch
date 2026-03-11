@@ -55,6 +55,21 @@ import { createBankrLeverageTool } from './src/tools/bankr-leverage.js';
 // Tools — Phase 7 (Compound Operations Engine)
 import { createCompoundActionTool } from './src/tools/compound-action.js';
 
+// Tools — Phase 10 (DeFi Primitives Expansion)
+import { createDefiLendTool } from './src/tools/defi-lend.js';
+import { createApprovalsTool } from './src/tools/approvals.js';
+import { createDefiStakeTool } from './src/tools/defi-stake.js';
+import { createNftTool } from './src/tools/nft.js';
+import { createYieldTool } from './src/tools/yield.js';
+import { createGovernanceTool } from './src/tools/governance.js';
+import { createFarcasterTool } from './src/tools/farcaster.js';
+import { createSafeTool } from './src/tools/safe.js';
+import { createAirdropTool } from './src/tools/airdrop.js';
+
+// Tools — Phase 11 (External Integrations)
+import { createPrivacyTool } from './src/tools/privacy.js';
+import { createBrowserTool } from './src/tools/browser.js';
+
 // Commands
 import { walletCommand } from './src/commands/wallet-command.js';
 import { policyCommand } from './src/commands/policy-command.js';
@@ -63,6 +78,7 @@ import { resetCommand, resetConfirmCommand } from './src/commands/reset-command.
 import {
   professionalCommand, degenCommand, chillCommand, technicalCommand, mentorCommand,
   capAllCommand, capCommands, skipCommand,
+  createWalletCommand, importWalletCommand,
 } from './src/commands/onboarding-commands.js';
 import {
   safemodeCommand, dangermodeCommand, walletsignCommand, autosignCommand, modeCommand, readonlyCommand,
@@ -77,6 +93,7 @@ import {
   providerOpenaiCommand, flykeysCommand, flystatusCommand, flyrestartCommand,
 } from './src/commands/fly-commands.js';
 import { setupCommand } from './src/commands/setup-command.js';
+import { recoverCommand, exportWalletCommand, walletBackupCommand } from './src/commands/wallet-manage-commands.js';
 import { plansCommand, plansActiveCommand, plansCancelCommand, plansClearCommand } from './src/commands/plans-command.js';
 import { helpCommand, portfolioCommand, balanceCommand, chainCommand } from './src/commands/help-command.js';
 import { isReadonly } from './src/services/mode-service.js';
@@ -98,6 +115,9 @@ import { createSessionRecallTool } from './src/tools/session-recall.js';
 
 // Self-improvement commands (sprint 4)
 import { evolveCommand, stableCommand, evolutionCommand } from './src/commands/evolve-command.js';
+
+// Forum topics + thread bindings commands (sprint 8)
+import { topicsCommand, topicsSetupCommand, topicBindCommand, topicUnbindCommand } from './src/commands/forum-commands.js';
 
 // Extracted hook logic
 import { buildPromptContext } from './src/hooks/prompt-builder.js';
@@ -134,6 +154,8 @@ const plugin = {
       'clawnch_fees', 'liquidity', 'compound_action', 'manage_orders',
       'bankr_launch', 'bankr_automate', 'bankr_polymarket', 'bankr_leverage',
       'clawnchconnect', 'molten', 'hummingbot', 'clawnx',
+      'defi_lend', 'approvals', 'defi_stake', 'nft', 'privacy', 'yield', 'browser',
+      'governance', 'farcaster', 'safe', 'airdrop',
     ]);
 
     /**
@@ -204,6 +226,21 @@ const plugin = {
     // Phase 7 tools (1) — Compound operations engine
     registerToolWithReadonlyGate(createCompoundActionTool());        // ownerOnly: true (can trigger financial writes)
 
+    // Phase 10 tools — DeFi Primitives Expansion
+    registerToolWithReadonlyGate(createDefiLendTool());              // ownerOnly: true (financial write)
+    registerToolWithReadonlyGate(createApprovalsTool());             // ownerOnly: true (can revoke approvals)
+    registerToolWithReadonlyGate(createDefiStakeTool());             // ownerOnly: true (financial write)
+    registerToolWithReadonlyGate(createNftTool());                   // ownerOnly: true (buy/sell/transfer NFTs)
+    registerToolWithReadonlyGate(createYieldTool());                  // ownerOnly: true (vault deposits/withdrawals)
+    registerToolWithReadonlyGate(createGovernanceTool());             // ownerOnly: true (on-chain voting + delegation)
+    registerToolWithReadonlyGate(createFarcasterTool());              // ownerOnly: true (social posting)
+    registerToolWithReadonlyGate(createSafeTool());                   // ownerOnly: true (multisig management)
+    registerToolWithReadonlyGate(createAirdropTool());                // ownerOnly: true (claim airdrops)
+
+    // Phase 11 tools — External Integrations
+    registerToolWithReadonlyGate(createPrivacyTool());               // ownerOnly: true (financial write, ZK deposits)
+    registerToolWithReadonlyGate(createBrowserTool());               // ownerOnly: true (browser automation, can interact with dApps)
+
     // Sprint 4 tools (3) — Self-improvement (agent memory, skill evolution, session recall)
     // These tools have an evolution mode gate: write actions are blocked in stable mode.
     {
@@ -259,8 +296,15 @@ const plugin = {
       api.registerCommand(cmd);
     }
 
-    // Onboarding: skip
+    // Onboarding: skip + wallet creation
     api.registerCommand(skipCommand);
+    api.registerCommand(createWalletCommand);
+    api.registerCommand(importWalletCommand);
+
+    // Wallet management: recover, export, backup
+    api.registerCommand(recoverCommand);
+    api.registerCommand(exportWalletCommand);
+    api.registerCommand(walletBackupCommand);
 
     // Mode: safety and signing
     api.registerCommand(safemodeCommand);
@@ -328,6 +372,12 @@ const plugin = {
     api.registerCommand(evolveCommand);
     api.registerCommand(stableCommand);
     api.registerCommand(evolutionCommand);
+
+    // Forum topics + thread bindings
+    api.registerCommand(topicsCommand);
+    api.registerCommand(topicsSetupCommand);
+    api.registerCommand(topicBindCommand);
+    api.registerCommand(topicUnbindCommand);
 
     // ─── Gateway Startup Hook ──────────────────────────────────────
     // Only init wallet at boot for private key mode (headless).
@@ -680,7 +730,7 @@ const plugin = {
         const flow = getOnboardingFlow(String(userId));
         if (!flow.isActive) return;
 
-        const response = flow.processMessage(String(message));
+        const response = await flow.processMessage(String(message));
 
         if (response) {
           // Mark this conversation as handled by onboarding

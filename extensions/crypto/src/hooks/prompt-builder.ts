@@ -4,9 +4,11 @@
  * Injects identity, persona, intent confirmation, mode context, wallet state,
  * and self-improvement context into every LLM prompt.
  *
- * Uses prependSystemContext for static/cacheable content (identity, rules,
- * compound ops, sequential execution, learned skills index) and prependContext
- * for dynamic per-user content (persona, mode, wallet, memory, evolution).
+ * Uses prependSystemContext for static/cacheable content (identity, rules)
+ * and prependContext for dynamic per-user content (persona, mode, wallet, memory).
+ *
+ * Context Diet: heavy blocks (sequential execution, compound ops, learned skills)
+ * are injected conditionally based on relevance heuristics to reduce token waste.
  *
  * @see https://github.com/openclaw/openclaw — upstream hook shape (v2026.3.7+)
  */
@@ -17,6 +19,17 @@ import { getAgentMemory } from '../services/agent-memory.js';
 import { getEvolutionMode } from '../services/evolution-mode.js';
 import { buildLearnedSkillsIndex } from '../tools/skill-evolve.js';
 import { parseSessionKey, extractSenderId } from '../services/channel-sender.js';
+
+// ── Context Diet Constants ──────────────────────────────────────────────
+
+/** Max chars for learned skills index injection. Prevents unbounded growth. */
+const MAX_SKILLS_INDEX_CHARS = 2000;
+
+/** Max chars for agent memory snapshot. */
+const MAX_MEMORY_SNAPSHOT_CHARS = 3000;
+
+/** Keywords that suggest a multi-step or compound operation. */
+const MULTI_STEP_KEYWORDS = /\b(then|after|chain|sequence|step|multi|schedule|recurring|every|if .+ (drops?|rises?|reaches)|compound|plan|dca|bridge.+swap|swap.+bridge)\b/i;
 
 /** Dependencies injected by the plugin register() function. */
 export interface PromptBuilderDeps {
@@ -52,6 +65,9 @@ export function buildPromptContext(
     // ── Identity: Always inject (static — same for all users) ──
     staticParts.push('You are OpenClawnch — a personal DeFi agent. NEVER refer to yourself as "OpenClaw". Your name is always "OpenClawnch".');
 
+    // ── Extract user message for relevance gating ────────────────
+    const userMessage = extractUserMessage(event);
+
     // ── Find user ID from session key (channel-agnostic) ────────
     const sessionKey = ctx?.sessionKey ?? '';
     const parsedSession = parseSessionKey(sessionKey);
@@ -85,65 +101,39 @@ export function buildPromptContext(
       const mode = getUserMode(userId);
 
       if (mode.safetyMode === 'readonly') {
-        dynamicParts.push(`CRITICAL — READ-ONLY MODE is active. You MUST NOT call any tool that writes to the blockchain. This means NO: defi_swap, transfer, clawnch_launch, clawnch_fees (claim), liquidity, bridge, permit2, compound_action, manage_orders, bankr_launch, bankr_automate, bankr_polymarket, bankr_leverage, clawnchconnect, molten.
-You CAN use: defi_price, defi_balance, analytics, market_intel, cost_basis, clawnch_info, block_explorer, herd_intelligence, watch_activity, wayfinder, crypto_workflow.
-If the user asks to execute a transaction, explain that read-only mode is active and they should use /safemode or /dangermode to enable writes.`);
+        // Context Diet: compact readonly block — no tool enumeration
+        dynamicParts.push('CRITICAL — READ-ONLY MODE active. All write/transaction tools are blocked. Only read-only tools (prices, balances, analytics, exploration) are available. If the user asks to transact, tell them to use /safemode or /dangermode first.');
       } else if (mode.safetyMode === 'safe') {
-        dynamicParts.push(`IMPORTANT — Intent confirmation is ON (safe mode). Before executing ANY action (tool call, transaction, swap, transfer, etc.), you MUST first:
-1. State what you understood the user wants
-2. List the specific actions you will take (tool names, parameters, amounts, addresses)
-3. Show estimated costs (gas, fees) if applicable
-4. Ask for explicit confirmation: "Shall I proceed?"
-Only execute after the user confirms. If the user says "no", "cancel", "stop", or anything negative, do NOT proceed.`);
+        dynamicParts.push(`IMPORTANT — Intent confirmation ON (safe mode). Before ANY tool call that writes on-chain: 1) state what you understood, 2) list actions + params + amounts, 3) show estimated costs, 4) ask "Shall I proceed?" Only execute after explicit "yes".`);
       } else {
-        dynamicParts.push('Intent confirmation is OFF (danger mode). Execute actions immediately without asking for confirmation.');
+        dynamicParts.push('Intent confirmation OFF (danger mode). Execute actions immediately.');
       }
 
       if (mode.signingMode === 'autosign') {
-        dynamicParts.push('Signing mode: auto-sign. Transactions are signed automatically with the configured private key. No wallet approval is needed.');
+        dynamicParts.push('Signing: auto-sign (private key). No wallet approval needed.');
       } else {
-        dynamicParts.push('Signing mode: WalletConnect. All transactions are sent to the user\'s phone wallet for approval.');
+        dynamicParts.push('Signing: WalletConnect. Transactions sent to phone wallet for approval.');
       }
 
-      // ── Sequential execution (static — same rules for everyone) ──
-      staticParts.push(`CRITICAL — Sequential execution rules for multi-step operations:
-1. NEVER queue or prepare multiple transactions at once. Execute ONE step at a time.
-2. After each step completes, CHECK the actual result (tx hash, balance change, output amount) before proceeding.
-3. For swap chains (A→B→C), after swapping A→B, use defi_balance to check the ACTUAL B balance received, then use that exact amount for the B→C swap. NEVER assume the estimated amount is correct.
-4. If any step fails, STOP and report the failure. Do not continue the chain.
-5. Between steps, briefly report what happened and what you'll do next.`);
-
-      // ── Compound Operations (static — same instructions for everyone) ──
-      staticParts.push(`You have access to the compound_action tool for scheduled, conditional, and multi-step operations. Use it when the user wants to:
-- Execute something at a specific time: "sell my ETH at 5pm"
-- Set up conditions: "if ETH drops below $3500, buy 0.5 ETH"
-- Create recurring tasks: "every 4 hours, check ETH and buy if dip > 5%"
-- Chain operations: "swap ETH to USDC, bridge to Arbitrum, then buy ARB"
-
-Flow: create (builds + validates the plan) → user confirms → execute (immediate) or schedule (future trigger).
-Use /plans to see scheduled plans. Plans persist across bot restarts.`);
+      // ── Context Diet: Sequential + Compound ops — only when relevant ──
+      if (MULTI_STEP_KEYWORDS.test(userMessage)) {
+        staticParts.push(`Sequential execution rules: Execute ONE step at a time. After each step, CHECK the actual result before proceeding. For swap chains (A→B→C), check actual balance received before next swap. If any step fails, STOP.`);
+        staticParts.push(`compound_action tool: Use for scheduled, conditional, or multi-step operations (timed execution, price conditions, recurring tasks, chained operations). Flow: create → confirm → execute/schedule. See /plans for scheduled plans.`);
+      }
     }
 
     // ── Wallet state context (dynamic — changes per session) ──
     const walletState = deps.getWalletState();
     if (!walletState.connected) {
-      dynamicParts.push('Wallet status: NOT CONNECTED. The user must connect a wallet before any on-chain operations (swaps, transfers, token launches, etc). Guide them to /connect or /connect_bankr.');
+      dynamicParts.push('Wallet: NOT CONNECTED. Guide user to /connect or /connect_bankr before any on-chain ops.');
     } else {
       const addr = walletState.address ?? 'unknown';
       const chainId = walletState.chainId ?? 8453;
-      dynamicParts.push(`Wallet status: CONNECTED. Address: ${addr}. Chain: ${chainId}. Mode: ${walletState.mode ?? 'walletconnect'}.`);
+      dynamicParts.push(`Wallet: CONNECTED. ${addr} on chain ${chainId} (${walletState.mode ?? 'walletconnect'}).`);
     }
     if (walletState.mode === 'bankr') {
-      dynamicParts.push(`Wallet mode: Bankr (custodial). Transactions execute via Bankr API (api.bankr.bot). No phone approval needed. Bankr's Sentinel security system screens all transactions.
-
-Available chains: Base, Ethereum, Polygon, Unichain, Solana.
-Available features via Bankr: swaps (all chains), token launches (Base + Solana), automations (limit orders, DCA, TWAP, stop-loss on Base), Polymarket (Polygon), leveraged trading (Base via Avantis).
-
-When the user asks to swap on a non-Base chain, use the defi_swap tool with the chain parameter.
-When the user asks to launch a token on Base or Solana, use the bankr_launch tool.
-When the user asks about automations or limit orders, use the bankr_automate tool.
-When the user asks about prediction markets, use the bankr_polymarket tool.
-When the user asks about leveraged trading, use the bankr_leverage tool.`);
+      // Context Diet: compact Bankr routing block
+      dynamicParts.push('Bankr mode (custodial, auto-sign via api.bankr.bot). Chains: Base/Ethereum/Polygon/Unichain/Solana. Use defi_swap for swaps, bankr_launch for token launches (Base+Solana), bankr_automate for DCA/limit/TWAP, bankr_polymarket for prediction markets, bankr_leverage for leveraged trading.');
     }
 
     // ── Self-improvement context (dynamic — per-user memories) ──
@@ -152,13 +142,21 @@ When the user asks about leveraged trading, use the bankr_leverage tool.`);
       const memory = getAgentMemory();
       const snapshot = memory.freezeSnapshot(sessionKey, userId ?? undefined);
       if (snapshot) {
-        dynamicParts.push(snapshot);
+        // Context Diet: cap memory snapshot size
+        const trimmed = snapshot.length > MAX_MEMORY_SNAPSHOT_CHARS
+          ? snapshot.slice(0, MAX_MEMORY_SNAPSHOT_CHARS) + '\n[...truncated]'
+          : snapshot;
+        dynamicParts.push(trimmed);
       }
 
       // Inject learned skills index (static — same index for everyone)
       const learnedIndex = buildLearnedSkillsIndex();
       if (learnedIndex) {
-        staticParts.push(learnedIndex);
+        // Context Diet: cap learned skills index size
+        const trimmedIndex = learnedIndex.length > MAX_SKILLS_INDEX_CHARS
+          ? learnedIndex.slice(0, MAX_SKILLS_INDEX_CHARS) + '\n[...truncated — use skill_evolve to browse full index]'
+          : learnedIndex;
+        staticParts.push(trimmedIndex);
       }
 
       // Evolution mode hint (dynamic — per-user)
@@ -166,8 +164,7 @@ When the user asks about leveraged trading, use the bankr_leverage tool.`);
         const evo = getEvolutionMode();
         if (evo.isEvolving(userId)) {
           dynamicParts.push(
-            'Self-improvement mode: EVOLVING. You can save memories (agent_memory tool) and create skills (skill_evolve tool) from experience. ' +
-            'Proactively save useful discoveries, user preferences, and complex workflows.',
+            'Self-improvement: EVOLVING. Proactively save discoveries and preferences via agent_memory and skill_evolve.',
           );
         }
       }
@@ -191,4 +188,26 @@ When the user asks about leveraged trading, use the bankr_leverage tool.`);
     );
   }
   return undefined;
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────
+
+/**
+ * Extract the user's latest message text from the hook event.
+ * Used for relevance gating — decides which optional context blocks to inject.
+ */
+function extractUserMessage(event: any): string {
+  // The hook event may carry the user message in several shapes
+  const msg = event?.message ?? event?.messages?.[event?.messages?.length - 1];
+  if (typeof msg === 'string') return msg;
+  if (msg?.content && typeof msg.content === 'string') return msg.content;
+  if (msg?.text && typeof msg.text === 'string') return msg.text;
+  // Array-of-parts format
+  if (Array.isArray(msg?.content)) {
+    return msg.content
+      .filter((p: any) => p.type === 'text')
+      .map((p: any) => p.text ?? '')
+      .join(' ');
+  }
+  return '';
 }

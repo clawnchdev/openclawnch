@@ -57,6 +57,9 @@
       "mode": "token"
     },
     "controlUi": {
+    },
+    "acp": {
+      "provenance": "meta+receipt"
     }
   },
   "plugins": {

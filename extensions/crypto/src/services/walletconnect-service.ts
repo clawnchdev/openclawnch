@@ -20,6 +20,7 @@ import type {
 } from '@clawnch/sdk';
 import type { TransactionRecord, WalletState } from '../lib/types.js';
 import { wrapWithBuilderCode } from './builder-code.js';
+import { hasKeychainWallet, loadAndDecrypt } from './keychain-wallet.js';
 
 // ─── Singleton State ─────────────────────────────────────────────────────
 // Using `any` for client types to avoid viem version conflicts between
@@ -118,6 +119,42 @@ async function _doInitWalletService(config: WalletServiceConfig): Promise<{
     _mode = 'private_key';
 
     return { mode: 'private_key', address: account.address };
+  }
+
+  // Mode 1b: Keychain-stored encrypted mnemonic (local wallet generation)
+  // Same runtime path as private_key — identical walletClient, same _mode.
+  // Only the key acquisition differs: Keychain + password vs raw env var.
+  if (!config.privateKey && hasKeychainWallet()) {
+    const walletPassword = process.env.CLAWNCHER_WALLET_PASSWORD;
+    if (walletPassword) {
+      try {
+        const { account: keychainAccount } = await loadAndDecrypt(walletPassword);
+        const { createWalletClient } = await import('viem');
+
+        _walletClient = createWalletClient({
+          account: keychainAccount,
+          chain,
+          transport: http(rpcUrl),
+        });
+        _walletClient = wrapWithBuilderCode(_walletClient, chain.id);
+        _connectedAddress = keychainAccount.address;
+        _mode = 'private_key';
+
+        return { mode: 'private_key', address: keychainAccount.address };
+      } catch (err) {
+        // Wrong password or corrupted data — fall through to WalletConnect/Bankr
+        console.warn(
+          `[wallet] Keychain wallet decrypt failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    } else {
+      // Wallet exists but no password env var — can't unlock headlessly.
+      // Interactive unlock (via onboarding/channel prompt) is handled separately.
+      console.info(
+        '[wallet] Keychain wallet found but CLAWNCHER_WALLET_PASSWORD not set — skipping auto-unlock. ' +
+        'Set CLAWNCHER_WALLET_PASSWORD env var for headless mode, or use onboarding to unlock interactively.',
+      );
+    }
   }
 
   // Mode 2: WalletConnect
@@ -325,6 +362,51 @@ export function requirePublicClient(): any {
     throw new Error('Public client not initialized. The wallet service must be started first.');
   }
   return _publicClient;
+}
+
+/**
+ * Get a wallet client that routes write transactions through MEV-protected RPCs
+ * (Flashbots Protect, MEV Blocker) when available. Protects against sandwich
+ * attacks and frontrunning by bypassing the public mempool.
+ *
+ * Only effective in private_key mode — WalletConnect transactions are broadcast
+ * by the phone wallet (out of our control), and Bankr transactions are broadcast
+ * by the Bankr API.
+ *
+ * Falls back to the regular wallet client if:
+ * - MEV protection is disabled in RpcManager config
+ * - No MEV RPCs are available for the current chain
+ * - Mode is not private_key (WC, Bankr)
+ */
+export async function getMevWalletClient(): Promise<any> {
+  const wallet = requireWalletClient();
+
+  // MEV routing only works when we control transaction broadcasting (private_key mode).
+  // WC mode: phone wallet broadcasts. Bankr mode: Bankr API broadcasts.
+  if (_mode !== 'private_key') return wallet;
+
+  try {
+    const { getRpcManager } = await import('./rpc-provider.js');
+    const rpcManager = getRpcManager();
+    const chainId = _publicClient?.chain?.id ?? 8453;
+
+    if (!rpcManager.isMevProtectionEnabled()) return wallet;
+
+    const mevTransport = rpcManager.getMevTransport(chainId);
+    if (!mevTransport) return wallet;
+
+    const { createWalletClient } = await import('viem');
+    const mevClient = createWalletClient({
+      account: wallet.account,
+      chain: _publicClient?.chain,
+      transport: mevTransport,
+    });
+
+    return wrapWithBuilderCode(mevClient, chainId);
+  } catch {
+    // MEV client creation failed — fall back to regular wallet client
+    return wallet;
+  }
 }
 
 // ─── Disconnect ──────────────────────────────────────────────────────────

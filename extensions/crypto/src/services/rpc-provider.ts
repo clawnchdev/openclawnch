@@ -38,6 +38,10 @@ export interface RpcManagerConfig {
   circuitThreshold?: number;
   /** How long circuit stays open in ms. Default 300_000 (5 min). */
   circuitResetMs?: number;
+  /** Enable MEV protection via private transaction RPCs (Flashbots, MEV Blocker).
+   *  When true, write transactions on supported chains route through private mempools.
+   *  Default: true. */
+  mevProtection?: boolean;
 }
 
 // ── Default Providers ───────────────────────────────────────────────────────
@@ -103,6 +107,40 @@ const CHAIN_NAME_TO_ID: Record<string, number> = {
   polygon: 137, matic: 137,
 };
 
+// ── MEV Protection RPCs ─────────────────────────────────────────────────────
+// Private transaction RPCs that submit to block builders directly, bypassing
+// the public mempool. Protects against sandwich attacks and frontrunning.
+
+export interface MevRpcConfig {
+  url: string;
+  name: string;
+  /** Which chain IDs this MEV RPC supports */
+  chains: number[];
+}
+
+const MEV_PROTECTION_RPCS: MevRpcConfig[] = [
+  {
+    url: 'https://rpc.flashbots.net',
+    name: 'Flashbots Protect',
+    chains: [1], // Ethereum mainnet only
+  },
+  {
+    url: 'https://rpc.mevblocker.io',
+    name: 'MEV Blocker',
+    chains: [1], // Ethereum mainnet only
+  },
+  {
+    url: 'https://rpc.flashbots.net/fast',
+    name: 'Flashbots Fast',
+    chains: [1], // Ethereum mainnet, faster inclusion
+  },
+  {
+    url: 'https://base.flashbots.net',
+    name: 'Flashbots Base',
+    chains: [8453], // Base
+  },
+];
+
 // ── Circuit Breaker State ───────────────────────────────────────────────────
 
 const healthMap = new Map<string, ProviderHealth>();
@@ -158,6 +196,7 @@ export class RpcManager {
       timeoutMs: userConfig.timeoutMs ?? 3000,
       circuitThreshold: userConfig.circuitThreshold ?? 5,
       circuitResetMs: userConfig.circuitResetMs ?? 300_000,
+      mevProtection: userConfig.mevProtection ?? true,
     };
   }
 
@@ -299,6 +338,62 @@ export class RpcManager {
   /** List supported chain IDs. */
   getSupportedChains(): number[] {
     return Object.keys(DEFAULT_PROVIDERS).map(Number);
+  }
+
+  // ── MEV Protection ──────────────────────────────────────────────────────
+
+  /** Check if MEV protection is enabled. */
+  isMevProtectionEnabled(): boolean {
+    return this.config.mevProtection;
+  }
+
+  /**
+   * Get MEV-protected RPC URLs for a chain.
+   * Returns private transaction RPCs that bypass the public mempool.
+   * Falls back to empty array if no MEV RPCs are available for the chain.
+   */
+  getMevRpcs(chainId: number): MevRpcConfig[] {
+    if (!this.config.mevProtection) return [];
+    return MEV_PROTECTION_RPCS.filter(r => r.chains.includes(chainId));
+  }
+
+  /**
+   * Get a viem http transport configured for MEV-protected submission.
+   * Uses Flashbots Protect (primary) with MEV Blocker as fallback.
+   * Returns null if no MEV RPCs are available for the chain.
+   */
+  getMevTransport(chainId: number): ReturnType<typeof http> | null {
+    const rpcs = this.getMevRpcs(chainId);
+    if (rpcs.length === 0) return null;
+
+    // Use first available MEV RPC, with health check filtering
+    for (const rpc of rpcs) {
+      const key = `mev:${chainId}:${rpc.name}`;
+      if (isAvailable(key)) {
+        return http(rpc.url, { timeout: this.config.timeoutMs });
+      }
+    }
+
+    // All circuit-broken — return first anyway (circuit will reset eventually)
+    return http(rpcs[0]!.url, { timeout: this.config.timeoutMs });
+  }
+
+  /**
+   * Record a MEV RPC failure (for circuit breaker tracking).
+   */
+  recordMevFailure(chainId: number, rpcName: string, isRateLimit = false): void {
+    const key = `mev:${chainId}:${rpcName}`;
+    recordFailure(key, isRateLimit, {
+      circuitThreshold: this.config.circuitThreshold,
+      circuitResetMs: this.config.circuitResetMs,
+    });
+  }
+
+  /**
+   * Record a MEV RPC success.
+   */
+  recordMevSuccess(chainId: number, rpcName: string): void {
+    recordSuccess(`mev:${chainId}:${rpcName}`);
   }
 }
 

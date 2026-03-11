@@ -35,6 +35,7 @@ const ALLOWED_HOSTS: ReadonlySet<string> = new Set([
   'pro-api.coingecko.com',
   'pro-api.coinmarketcap.com',
   'coins.llama.fi',
+  'yields.llama.fi',
   'public-api.birdeye.so',
 
   // ── RPC Providers (accessed via viem, not raw fetch, but listed for completeness)
@@ -90,6 +91,31 @@ const ALLOWED_HOSTS: ReadonlySet<string> = new Set([
   'api.herdintelligence.com',
   'api.molten.gg',
   'api.wayfinder.ai',
+
+  // ── NFT (Reservoir) ───────────────────────────────────────────────
+  'api.reservoir.tools',
+  'api-base.reservoir.tools',
+  'api-arbitrum.reservoir.tools',
+  'api-optimism.reservoir.tools',
+  'api-polygon.reservoir.tools',
+
+  // ── Governance ────────────────────────────────────────────────────────
+  'hub.snapshot.org',
+  'api.tally.xyz',
+
+  // ── Farcaster (Neynar API) ──────────────────────────────────────────
+  'api.neynar.com',
+
+  // ── Safe Transaction Service ──────────────────────────────────────────
+  'safe-transaction-mainnet.safe.global',
+  'safe-transaction-base.safe.global',
+  'safe-transaction-arbitrum.safe.global',
+  'safe-transaction-optimism.safe.global',
+  'safe-transaction-polygon.safe.global',
+
+  // ── Airdrop Eligibility APIs ──────────────────────────────────────────
+  'claims.eigenfoundation.org',
+  'www.layerzero.foundation',
 
   // ── X/Twitter (ClawnX tool) ──────────────────────────────────────────
   'api.twitter.com',

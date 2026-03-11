@@ -49,6 +49,11 @@ const SECRET_REGISTRY: Record<string, {
     description: 'Wallet private key for auto-signing',
     sensitive: 'critical',
   },
+  'wallet.keychainMnemonic': {
+    envVar: 'CLAWNCHER_WALLET_PASSWORD',
+    description: 'Password for Keychain-encrypted wallet mnemonic',
+    sensitive: 'critical',
+  },
   'walletconnect.projectId': {
     envVar: 'WALLETCONNECT_PROJECT_ID',
     description: 'WalletConnect cloud project ID',
@@ -193,6 +198,11 @@ const SECRET_REGISTRY: Record<string, {
     description: 'Telegram bot API token',
     sensitive: 'high',
   },
+  'nft.reservoir.apiKey': {
+    envVar: 'RESERVOIR_API_KEY',
+    description: 'Reservoir NFT API key (free tier: 4 req/sec)',
+    sensitive: 'medium',
+  },
 };
 
 // ─── Credential Vault ────────────────────────────────────────────────────
@@ -274,6 +284,10 @@ class CredentialVault {
       { type: 'wc_secret', regex: /wc:[0-9a-f]{32}@/gi },
       // Generic API keys (long alphanumeric strings that look like keys)
       { type: 'api_key_pattern', regex: /\b(sk-|bk_|xai-|pk_|sk_live_|rk_live_)[a-zA-Z0-9_\-]{20,}\b/g },
+      // BIP-39 mnemonic sequences: 12 or 24 consecutive lowercase words (3-8 chars each)
+      // Heuristic: a sequence of 12+ short lowercase words is very likely a seed phrase
+      // Case-insensitive to catch mixed-case mnemonics (e.g. "Abandon Ability ...")
+      { type: 'bip39_mnemonic', regex: /\b([a-zA-Z]{3,8}\s+){11,}[a-zA-Z]{3,8}\b/gi },
     ];
 
     // Collect all pattern matches first, then apply redactions in reverse

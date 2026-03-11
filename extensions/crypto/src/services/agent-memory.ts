@@ -49,7 +49,8 @@ const INJECTION_PATTERNS = [
   /<\/?system[-_]?(message|prompt|instruction)>/i,
   /\bdo\s+not\s+(tell|reveal|mention|show)\s+(the\s+)?user\b/i,
   /\bact\s+as\s+if\s+(you|the)\s+(are|is|have)\b/i,
-  /\b(CLAWNCHER_PRIVATE_KEY|BANKR_API_KEY|PRIVATE_KEY)\b/i,
+  /\b(CLAWNCHER_PRIVATE_KEY|BANKR_API_KEY|PRIVATE_KEY|WALLET_PASSWORD)\b/i,
+  /\b(mnemonic|seed\s*phrase|recovery\s*phrase|secret\s*words)\b/i,
   /[\u200B-\u200F\u202A-\u202E\uFEFF]/,  // invisible unicode
 ];
 

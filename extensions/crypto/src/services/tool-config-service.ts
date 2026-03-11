@@ -265,6 +265,92 @@ export const TOOL_REQUIREMENTS: ToolRequirement[] = [
     walletRequired: true,
     worksWithoutKeys: true,
   },
+
+  // ── Phase 10: NFTs ────────────────────────────────────────────────
+  {
+    tool: 'nft',
+    label: 'NFT',
+    description: 'View, transfer, buy, list, and manage NFTs via Reservoir API',
+    requiredKeys: ['RESERVOIR_API_KEY'],
+    optionalKeys: [],
+    keySource: 'https://reservoir.tools (free tier available)',
+    setupHint: '`/flykeys set RESERVOIR_API_KEY your_key`',
+    walletRequired: true,
+  },
+
+  // ── Phase 11: Privacy ─────────────────────────────────────────────
+  {
+    tool: 'privacy',
+    label: 'Privacy',
+    description: 'Private transactions via Veil.cash ZK privacy pools on Base',
+    requiredKeys: [],
+    walletRequired: true,
+    worksWithoutKeys: true,
+  },
+
+  // ── Phase 10: Yield Aggregation ─────────────────────────────────
+  {
+    tool: 'yield',
+    label: 'Yield',
+    description: 'Find and execute yield opportunities across DeFi via DeFiLlama + Yearn V3 vaults',
+    requiredKeys: [],
+    walletRequired: true,
+    worksWithoutKeys: true,
+  },
+
+  // ── Phase 11: Browser Automation ──────────────────────────────────
+  {
+    tool: 'browser',
+    label: 'Browser',
+    description: 'Browser automation via PinchTab for dApp interaction, airdrop claims, and web scraping',
+    requiredKeys: [],
+    optionalKeys: ['PINCHTAB_URL'],
+    walletRequired: false,
+    worksWithoutKeys: true,
+    setupHint: 'Install PinchTab: https://pinchtab.com — then run `pinchtab serve`',
+  },
+
+  // ── Phase 10: Governance ──────────────────────────────────────────────
+  {
+    tool: 'governance',
+    label: 'Governance',
+    description: 'DAO governance: proposals, voting (Snapshot + on-chain), delegation',
+    requiredKeys: [],
+    walletRequired: true,
+    worksWithoutKeys: true,
+  },
+
+  // ── Phase 10: Farcaster ───────────────────────────────────────────────
+  {
+    tool: 'farcaster',
+    label: 'Farcaster',
+    description: 'Social actions on Farcaster: post, feed, search, channels, trending',
+    requiredKeys: ['NEYNAR_API_KEY'],
+    optionalKeys: ['NEYNAR_SIGNER_UUID', 'NEYNAR_FID'],
+    keySource: 'https://neynar.com (free tier available)',
+    setupHint: '`/flykeys set NEYNAR_API_KEY your_key`',
+    walletRequired: false,
+  },
+
+  // ── Phase 10: Safe Multisig ─────────────────────────────────────────
+  {
+    tool: 'safe',
+    label: 'Safe Multisig',
+    description: 'Manage Safe{Wallet} multisig: info, balances, pending txs, propose, confirm',
+    requiredKeys: [],
+    walletRequired: true,
+    worksWithoutKeys: true,
+  },
+
+  // ── Phase 10: Airdrop Tracking ────────────────────────────────────────
+  {
+    tool: 'airdrop',
+    label: 'Airdrop Tracker',
+    description: 'Check airdrop eligibility and generate claim transactions',
+    requiredKeys: [],
+    walletRequired: true,
+    worksWithoutKeys: true,
+  },
 ];
 
 // ─── Lookup Helpers ──────────────────────────────────────────────────────

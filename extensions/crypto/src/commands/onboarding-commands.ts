@@ -80,6 +80,40 @@ function makeCapCommand(capId: string, name: string) {
 
 export const capCommands = CAPABILITIES.map(c => makeCapCommand(c.id, c.name));
 
+// ── Wallet Creation Commands ────────────────────────────────────────────────
+
+export const createWalletCommand = {
+  name: 'create_wallet',
+  description: 'Generate a new encrypted wallet (stored locally)',
+  acceptsArgs: false,
+  requireAuth: true,
+  handler: async (ctx: any) => {
+    const userId = getSenderId(ctx);
+    const flow = getOnboardingFlow(userId);
+    const response = await flow.onCreateWallet();
+    if (response) {
+      return { text: response.text };
+    }
+    return { text: 'Wallet creation is only available during the wallet connection step. Use /connect for other wallet options.' };
+  },
+};
+
+export const importWalletCommand = {
+  name: 'import_wallet',
+  description: 'Import wallet from a 12/24-word seed phrase',
+  acceptsArgs: false,
+  requireAuth: true,
+  handler: async (ctx: any) => {
+    const userId = getSenderId(ctx);
+    const flow = getOnboardingFlow(userId);
+    const response = flow.onImportWallet();
+    if (response) {
+      return { text: response.text };
+    }
+    return { text: 'Wallet import is only available during the wallet connection step. Use /connect for other wallet options.' };
+  },
+};
+
 // ── Skip Command ────────────────────────────────────────────────────────────
 
 export const skipCommand = {

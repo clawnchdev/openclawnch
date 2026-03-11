@@ -12,12 +12,25 @@
       "import": "./dist/wrapper.js"
     }
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "files": [
     "dist",
     "bin",
-    "deploy",
-    "extensions",
-    "SOUL.md"
+    "deploy/Dockerfile",
+    "deploy/entrypoint.sh",
+    "deploy/fly.template.toml",
+    "deploy/.env.example",
+    "deploy/openclaw.json",
+    "deploy/docker-compose.yml",
+    "extensions/crypto/dist",
+    "extensions/crypto/skills",
+    "extensions/crypto/package.json",
+    "extensions/crypto/openclaw.plugin.json",
+    "extensions/crypto/README.md",
+    "SOUL.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "pnpm build:ext && pnpm build:wrapper",
@@ -52,9 +65,9 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/clawnchbot/openclawnch"
+    "url": "https://github.com/clawnch/openclawnch"
   },
-  "homepage": "https://clawn.ch",
+  "homepage": "https://openclawn.ch",
   "engines": {
     "node": ">=22.12.0"
   },

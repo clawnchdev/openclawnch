@@ -19,6 +19,13 @@
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import {
+  generateWallet,
+  encryptAndStore,
+  getConfirmationWords,
+  validateConfirmation,
+  getStorageInfo,
+} from './keychain-wallet.js';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -27,6 +34,10 @@ export type OnboardingStep =
   | 'choose_persona'
   | 'choose_capabilities'
   | 'connect_wallet'
+  | 'create_wallet_confirm'   // Show mnemonic, await 3-word confirmation
+  | 'create_wallet_password'  // Await password for encryption
+  | 'import_wallet_mnemonic'  // Await mnemonic paste
+  | 'import_wallet_password'  // Await password for encryption
   | 'wallet_connected'
   | 'first_read'
   | 'first_write'
@@ -71,6 +82,12 @@ export interface OnboardingState {
   startedAt: number;
   completedAt?: number;
   lastInteraction: number;
+  /** Transient: mnemonic during wallet creation (never persisted to disk). */
+  _pendingMnemonic?: string;
+  /** Transient: confirmation words the user must verify. */
+  _pendingConfirmation?: Array<{ index: number; word: string }>;
+  /** Transient: imported mnemonic awaiting password. */
+  _pendingImportMnemonic?: string;
 }
 
 export interface OnboardingMessage {
@@ -240,7 +257,9 @@ export function loadState(userId: string): OnboardingState | null {
 
 export function saveState(state: OnboardingState): void {
   ensureStateDir();
-  writeFileSync(statePath(state.userId), JSON.stringify(state, null, 2), 'utf8');
+  // Strip transient fields (mnemonics) — NEVER persist to disk
+  const { _pendingMnemonic, _pendingConfirmation, _pendingImportMnemonic, ...persistable } = state;
+  writeFileSync(statePath(state.userId), JSON.stringify(persistable, null, 2), 'utf8');
 }
 
 // ── Messages ────────────────────────────────────────────────────────────────
@@ -577,10 +596,12 @@ export class OnboardingFlow {
       this.state.step = 'connect_wallet';
       saveState(this.state);
 
+      const walletOptions = `\n\nChoose how to connect a wallet:\n\n  /create_wallet — Generate a new wallet (stored locally, encrypted)\n  /import_wallet — Import from a 12/24-word seed phrase\n  /connect — Connect MetaMask, Rainbow, Coinbase Wallet, etc. via WalletConnect\n  /connect_bankr — Use Bankr custodial wallet (zero setup)`;
+
       return {
-        text: buildCapabilitiesConfirmation(ids),
+        text: buildCapabilitiesConfirmation(ids) + walletOptions,
         showConnectLink: true,
-        suggestion: 'Tap the link to connect your wallet',
+        suggestion: 'Tap /create_wallet to get started or /connect for an existing wallet',
       };
     }
 
@@ -591,6 +612,222 @@ export class OnboardingFlow {
       text: buildCapabilitiesConfirmation(ids),
       suggestion: "What's the price of ETH?",
     };
+  }
+
+  // ── Local Wallet Creation Flow ────────────────────────────────────────
+
+  /**
+   * Start the "Create new wallet" flow. Generates a mnemonic and shows it.
+   */
+  async onCreateWallet(): Promise<OnboardingMessage | null> {
+    if (this.state.step !== 'connect_wallet') return null;
+
+    const wallet = await generateWallet();
+    const confirmWords = getConfirmationWords(wallet.mnemonic);
+
+    // Store transiently in memory (never persisted to disk)
+    this.state._pendingMnemonic = wallet.mnemonic;
+    this.state._pendingConfirmation = confirmWords;
+    this.state.step = 'create_wallet_confirm';
+    this.state.lastInteraction = Date.now();
+    // Save step but NOT the mnemonic (strip transient fields)
+    saveState(this.state);
+
+    const words = wallet.mnemonic.split(' ');
+    const wordGrid = words.map((w, i) => `  ${String(i + 1).padStart(2, ' ')}. ${w}`).join('\n');
+
+    const confirmPrompt = confirmWords
+      .map(c => `Word #${c.index}`)
+      .join(', ');
+
+    return {
+      text: `New wallet generated.\n\nAddress: \`${wallet.address}\`\n\nWrite down these 12 words — this is your only chance:\n\n${wordGrid}\n\nTo confirm you've saved them, type the following words:\n${confirmPrompt}\n\n(e.g. "${confirmWords.map(c => c.word).join(' ')}")`,
+      suggestion: confirmWords.map(c => c.word).join(' '),
+    };
+  }
+
+  /**
+   * Process mnemonic confirmation words during wallet creation.
+   */
+  async onConfirmMnemonic(message: string): Promise<OnboardingMessage | null> {
+    if (this.state.step !== 'create_wallet_confirm') return null;
+    if (!this.state._pendingMnemonic || !this.state._pendingConfirmation) {
+      // Lost transient state (e.g. process restart) — restart creation
+      this.state.step = 'connect_wallet';
+      saveState(this.state);
+      return {
+        text: 'Wallet creation was interrupted. Please try /create_wallet again.',
+      };
+    }
+
+    // Parse user's confirmation words
+    const userWords = message.trim().split(/\s+/);
+    const expected = this.state._pendingConfirmation;
+
+    // Build confirmation array matching expected format
+    const confirmations = expected.map((exp, i) => ({
+      index: exp.index,
+      word: userWords[i] ?? '',
+    }));
+
+    if (!validateConfirmation(this.state._pendingMnemonic, confirmations)) {
+      const retryPrompt = expected.map(c => `Word #${c.index}`).join(', ');
+      return {
+        text: `Incorrect. Please type the correct words for: ${retryPrompt}`,
+        suggestion: expected.map(c => c.word).join(' '),
+      };
+    }
+
+    // Confirmed — ask for password
+    this.state.step = 'create_wallet_password';
+    this.state.lastInteraction = Date.now();
+    saveState(this.state);
+
+    return {
+      text: 'Mnemonic confirmed. Now set a password to encrypt your wallet (minimum 8 characters).\n\nThis password will be required to unlock your wallet each session.',
+      suggestion: 'Type a strong password',
+    };
+  }
+
+  /**
+   * Process password during wallet creation — encrypt and store.
+   */
+  async onSetWalletPassword(password: string): Promise<OnboardingMessage | null> {
+    if (this.state.step !== 'create_wallet_password') return null;
+    if (!this.state._pendingMnemonic) {
+      this.state.step = 'connect_wallet';
+      saveState(this.state);
+      return { text: 'Wallet creation was interrupted. Please try /create_wallet again.' };
+    }
+
+    if (password.length < 8) {
+      return { text: 'Password must be at least 8 characters. Try again.' };
+    }
+
+    try {
+      await encryptAndStore(this.state._pendingMnemonic, password);
+      const { mnemonicToAccount } = await import('viem/accounts');
+      const account = mnemonicToAccount(this.state._pendingMnemonic);
+      const address = account.address;
+      const storage = getStorageInfo();
+
+      // Clear transient mnemonic from memory
+      this.state._pendingMnemonic = undefined;
+      this.state._pendingConfirmation = undefined;
+      this.state.step = 'first_read';
+      this.state.walletConnected = true;
+      this.state.walletAddress = address;
+      this.state.lastInteraction = Date.now();
+      saveState(this.state);
+
+      const storageDesc = storage.backend === 'keychain'
+        ? 'macOS Keychain'
+        : `encrypted file (${storage.path})`;
+
+      return {
+        text: `Wallet created and encrypted.\n\nAddress: \`${address}\`\nStorage: ${storageDesc}\n\nSend ETH or USDC to this address to get started.\n\nTry a read operation: "What's the price of ETH?"`,
+        suggestion: "What's the price of ETH?",
+      };
+    } catch (err) {
+      return {
+        text: `Failed to encrypt wallet: ${err instanceof Error ? err.message : String(err)}. Try again.`,
+      };
+    }
+  }
+
+  /**
+   * Start the "Import existing wallet" flow — prompt for mnemonic.
+   */
+  onImportWallet(): OnboardingMessage | null {
+    if (this.state.step !== 'connect_wallet') return null;
+
+    this.state.step = 'import_wallet_mnemonic';
+    this.state.lastInteraction = Date.now();
+    saveState(this.state);
+
+    return {
+      text: 'Paste your 12 or 24-word seed phrase (BIP-39 mnemonic).\n\nThis message will be processed locally and never stored in plaintext.',
+      suggestion: 'Paste your seed phrase',
+    };
+  }
+
+  /**
+   * Process imported mnemonic — validate and ask for password.
+   */
+  async onImportMnemonic(message: string): Promise<OnboardingMessage | null> {
+    if (this.state.step !== 'import_wallet_mnemonic') return null;
+
+    const words = message.trim().split(/\s+/);
+    if (words.length !== 12 && words.length !== 24) {
+      return {
+        text: `Expected 12 or 24 words, got ${words.length}. Please paste a valid BIP-39 mnemonic.`,
+      };
+    }
+
+    // Validate by deriving an account
+    try {
+      const { mnemonicToAccount } = await import('viem/accounts');
+      const account = mnemonicToAccount(words.join(' '));
+
+      this.state._pendingImportMnemonic = words.join(' ');
+      this.state.step = 'import_wallet_password';
+      this.state.lastInteraction = Date.now();
+      saveState(this.state);
+
+      return {
+        text: `Valid mnemonic. Derived address: \`${account.address}\`\n\nSet a password to encrypt this wallet (minimum 8 characters).`,
+        suggestion: 'Type a strong password',
+      };
+    } catch (err) {
+      return {
+        text: `Invalid mnemonic: ${err instanceof Error ? err.message : String(err)}. Please try again.`,
+      };
+    }
+  }
+
+  /**
+   * Process password during import — encrypt and store.
+   */
+  async onImportPassword(password: string): Promise<OnboardingMessage | null> {
+    if (this.state.step !== 'import_wallet_password') return null;
+    if (!this.state._pendingImportMnemonic) {
+      this.state.step = 'connect_wallet';
+      saveState(this.state);
+      return { text: 'Import was interrupted. Please try /import_wallet again.' };
+    }
+
+    if (password.length < 8) {
+      return { text: 'Password must be at least 8 characters. Try again.' };
+    }
+
+    try {
+      await encryptAndStore(this.state._pendingImportMnemonic, password);
+      const { mnemonicToAccount } = await import('viem/accounts');
+      const account = mnemonicToAccount(this.state._pendingImportMnemonic);
+      const address = account.address;
+      const storage = getStorageInfo();
+
+      // Clear transient mnemonic from memory
+      this.state._pendingImportMnemonic = undefined;
+      this.state.step = 'first_read';
+      this.state.walletConnected = true;
+      this.state.walletAddress = address;
+      this.state.lastInteraction = Date.now();
+      saveState(this.state);
+
+      const storageDesc = storage.backend === 'keychain'
+        ? 'macOS Keychain'
+        : `encrypted file (${storage.path})`;
+
+      return {
+        text: `Wallet imported and encrypted.\n\nAddress: \`${address}\`\nStorage: ${storageDesc}\n\nTry a read operation: "What's the price of ETH?"`,
+        suggestion: "What's the price of ETH?",
+      };
+    } catch (err) {
+      return {
+        text: `Failed to encrypt wallet: ${err instanceof Error ? err.message : String(err)}. Try again.`,
+      };
+    }
   }
 
   /**
@@ -653,7 +890,7 @@ export class OnboardingFlow {
    * Process an incoming message and return any onboarding-specific
    * response. Returns null if no onboarding action is needed.
    */
-  processMessage(message: string): OnboardingMessage | null {
+  processMessage(message: string): OnboardingMessage | null | Promise<OnboardingMessage | null> {
     // Only intervene during active onboarding
     if (!this.isActive) return null;
 
@@ -664,6 +901,20 @@ export class OnboardingFlow {
     // Free-form text during onboarding passes through to the LLM normally.
     if (this.state.step === 'welcome') {
       return this.getWelcomeMessage();
+    }
+
+    // Wallet creation steps intercept free-form text (password, mnemonic, confirmation)
+    if (this.state.step === 'create_wallet_confirm') {
+      return this.onConfirmMnemonic(message);
+    }
+    if (this.state.step === 'create_wallet_password') {
+      return this.onSetWalletPassword(message);
+    }
+    if (this.state.step === 'import_wallet_mnemonic') {
+      return this.onImportMnemonic(message);
+    }
+    if (this.state.step === 'import_wallet_password') {
+      return this.onImportPassword(message);
     }
 
     return null;

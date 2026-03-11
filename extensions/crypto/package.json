@@ -47,6 +47,9 @@
     "base",
     "ai-agent"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "author": "Clawnch",
   "license": "MIT",
   "repository": {
@@ -54,7 +57,7 @@
     "url": "https://github.com/clawnch/openclawnch",
     "directory": "extensions/crypto"
   },
-  "homepage": "https://clawn.ch",
+  "homepage": "https://openclawn.ch",
   "dependencies": {
     "@clawnch/sdk": "^2.2.1",
     "@clawnch/clawncher-sdk": "^0.3.3",

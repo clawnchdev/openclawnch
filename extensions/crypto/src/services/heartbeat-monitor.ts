@@ -41,7 +41,8 @@ export interface PositionSnapshot {
 }
 
 export interface HeartbeatAlert {
-  type: 'price_drop' | 'price_gain' | 'portfolio_drop' | 'new_token' | 'position_gone';
+  type: 'price_drop' | 'price_gain' | 'portfolio_drop' | 'new_token' | 'position_gone'
+    | 'health_factor_warning' | 'health_factor_critical';
   severity: 'info' | 'warning' | 'critical';
   symbol: string;
   chain: string;
@@ -272,6 +273,59 @@ class HeartbeatMonitor {
           }
         }
         this.lastPortfolioValueUsd = snapshot.totalValueUsd;
+
+        // ── Lending health factor check ───────────────────────────────
+        try {
+          const { getLendingService } = await import('./lending-service.js');
+          const { requirePublicClient } = await import('./walletconnect-service.js');
+
+          const lendingSvc = getLendingService();
+          const publicClient = requirePublicClient();
+          const accountData = await lendingSvc.getUserAccountData(
+            wallet.address as `0x${string}`, publicClient,
+          );
+
+          // Only alert if user has active debt (healthFactor !== Infinity)
+          if (accountData.healthFactor !== Infinity && accountData.totalDebtUsd > 0) {
+            if (accountData.healthFactor < 1.1) {
+              newAlerts.push({
+                type: 'health_factor_critical',
+                severity: 'critical',
+                symbol: 'AAVE_POSITION',
+                chain: 'base',
+                message: `DANGER: Aave health factor is ${accountData.healthFactor.toFixed(4)} — ` +
+                  `immediate liquidation risk! Collateral: $${accountData.totalCollateralUsd.toFixed(2)}, ` +
+                  `Debt: $${accountData.totalDebtUsd.toFixed(2)}. Add collateral or repay debt immediately.`,
+                data: {
+                  healthFactor: accountData.healthFactor,
+                  totalCollateralUsd: accountData.totalCollateralUsd,
+                  totalDebtUsd: accountData.totalDebtUsd,
+                  availableBorrowsUsd: accountData.availableBorrowsUsd,
+                },
+                timestamp: Date.now(),
+              });
+            } else if (accountData.healthFactor < 1.5) {
+              newAlerts.push({
+                type: 'health_factor_warning',
+                severity: 'warning',
+                symbol: 'AAVE_POSITION',
+                chain: 'base',
+                message: `WARNING: Aave health factor is ${accountData.healthFactor.toFixed(4)} — ` +
+                  `approaching liquidation zone. Collateral: $${accountData.totalCollateralUsd.toFixed(2)}, ` +
+                  `Debt: $${accountData.totalDebtUsd.toFixed(2)}. Consider adding collateral or repaying debt.`,
+                data: {
+                  healthFactor: accountData.healthFactor,
+                  totalCollateralUsd: accountData.totalCollateralUsd,
+                  totalDebtUsd: accountData.totalDebtUsd,
+                  availableBorrowsUsd: accountData.availableBorrowsUsd,
+                },
+                timestamp: Date.now(),
+              });
+            }
+          }
+        } catch {
+          // Lending check failed — skip silently (wallet may not have a public client)
+        }
 
       } catch {
         // Failed to get portfolio — skip this tick silently
