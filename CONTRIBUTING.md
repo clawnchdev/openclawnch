@@ -30,7 +30,7 @@ pnpm build
 ```
 openclawnch/
   src/                    # Root wrapper package
-  extensions/crypto/      # Crypto extension plugin
+  extensions/crypto/      # Crypto extension
     src/
       tools/              # Tool implementations
       services/           # Service layer (RPC, wallet, APIs)

@@ -4,7 +4,7 @@ Your personal crypto agent. AI assistant with direct access to blockchain protoc
 
 Works on **Telegram, Discord, Slack, Signal, WhatsApp, iMessage, and LINE**. Deploy on **Fly.io** or **self-host with Docker**.
 
-Built on [OpenClaw](https://github.com/openclaw/openclaw) — not a fork, a plugin.
+A crypto-native fork of [OpenClaw](https://github.com/openclaw/openclaw).
 
 ## Setup
 
@@ -346,7 +346,7 @@ Plans persist to disk and survive restarts. Scheduler runs a 15-second tick loop
 Two npm packages, one repo:
 
 - `openclawnch` — CLI wrapper + deploy tooling
-- `@clawnch/openclaw-crypto` — Standalone OpenClaw plugin (42 tools, 87 commands, 47 services)
+- `@clawnch/openclaw-crypto` — Standalone crypto extension (42 tools, 87 commands, 47 services)
 
 Each user runs their own instance (Fly.io or Docker) with their own API keys. No shared infrastructure.
 

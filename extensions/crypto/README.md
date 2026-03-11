@@ -1,6 +1,6 @@
 # @clawnch/openclaw-crypto
 
-Crypto/DeFi extension for [OpenClaw](https://github.com/openclaw/openclaw). Adds wallet management, token swaps, market intelligence, cross-chain bridging, compound operations, and more — all through OpenClaw's plugin system.
+Crypto/DeFi extension for [OpenClaw](https://github.com/openclaw/openclaw). Adds wallet management, token swaps, market intelligence, cross-chain bridging, compound operations, and more.
 
 ## Install
 
