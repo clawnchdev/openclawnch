@@ -11,19 +11,20 @@
  */
 
 import type { Address } from 'viem';
+import { AAVE, MORPHO, CBETH, TOKENS } from '../lib/contract-registry.js';
 
-// ── Contract Addresses (Base Mainnet) ────────────────────────────────────
+// ── Contract Addresses (Base Mainnet) — sourced from contract-registry ───
 
 export const LENDING_CONTRACTS = {
   aave: {
-    pool: '0xA238Dd80C259a72e81d7e4664a9801593F98d1c5' as Address,
-    poolDataProvider: '0x2d8A3C5677189723C4cB8873CfC9C8976FDF38Ac' as Address,
-    oracle: '0x2Cc0Fc26eD4563A5ce5e8bdcFe1A2878676Ae156' as Address,
+    pool: AAVE.pool,
+    poolDataProvider: AAVE.poolDataProvider,
+    oracle: AAVE.oracle,
     chain: 8453,
     name: 'Aave V3 Base',
   },
   morpho: {
-    core: '0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb' as Address,
+    core: MORPHO.core,
     chain: 8453,
     name: 'Morpho Base',
   },
@@ -44,31 +45,31 @@ export interface LendingAsset {
 export const LENDING_ASSETS: Record<string, LendingAsset> = {
   ETH: {
     symbol: 'ETH',
-    address: '0x4200000000000000000000000000000000000006' as Address, // WETH on Base
+    address: TOKENS.base.WETH,
     decimals: 18,
-    aToken: '0xD4a0e0b9149BCee3C920d2E00b5dE09138fd8bb7' as Address,
-    variableDebtToken: '0x24e6e0795b3c7c71D965fCc4f371803d1c1DcA1E' as Address,
+    aToken: AAVE.aTokens.WETH.aToken,
+    variableDebtToken: AAVE.aTokens.WETH.debtToken,
   },
   USDC: {
     symbol: 'USDC',
-    address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' as Address,
+    address: TOKENS.base.USDC,
     decimals: 6,
-    aToken: '0x4e65fE4DbA92790696d040ac24Aa414708F5c0AB' as Address,
-    variableDebtToken: '0x59dca05b6c26dbd64b5381374aAaC5CD05644C28' as Address,
+    aToken: AAVE.aTokens.USDC.aToken,
+    variableDebtToken: AAVE.aTokens.USDC.debtToken,
   },
   cbETH: {
     symbol: 'cbETH',
-    address: '0x2Ae3F1Ec7F1F5012CFEab0185bfc7aa3cf0DEc22' as Address,
+    address: CBETH.base,
     decimals: 18,
-    aToken: '0xcf3D55c10DB69f28fD1A75Bd73f3D8A2d9c595ad' as Address,
-    variableDebtToken: '0x1DabC36c04f3C3Fc41Da4385e7Aa38f7684C4A13' as Address,
+    aToken: AAVE.aTokens.cbETH.aToken,
+    variableDebtToken: AAVE.aTokens.cbETH.debtToken,
   },
   USDbC: {
     symbol: 'USDbC',
-    address: '0xd9aAEc86B65D86f6A7B5B1b0c42FFA531710b6CA' as Address,
+    address: TOKENS.base.USDbC,
     decimals: 6,
-    aToken: '0x0a1d576f3eFeF75b330424287a95A366e8281D54' as Address,
-    variableDebtToken: '0x7376b2F323dC56fCd4C191B34163ac8a84702DAB' as Address,
+    aToken: AAVE.aTokens.USDbC.aToken,
+    variableDebtToken: AAVE.aTokens.USDbC.debtToken,
   },
 };
 

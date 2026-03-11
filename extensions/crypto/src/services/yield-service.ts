@@ -14,6 +14,7 @@
 import { formatUnits, parseUnits } from 'viem';
 import type { Address } from 'viem';
 import { guardedFetch } from './endpoint-allowlist.js';
+import { YEARN, TOKENS } from '../lib/contract-registry.js';
 
 // ── DeFiLlama Pool Types ─────────────────────────────────────────────────
 
@@ -61,17 +62,17 @@ export interface VaultPosition {
 
 export const YEARN_VAULTS_BASE: Record<string, { address: Address; asset: string; decimals: number }> = {
   'yvUSDC': {
-    address: '0x528D0A9F0F3e2BDD98De14163C5E3CB289F37daF' as Address,
+    address: YEARN.base.yvUSDC,
     asset: 'USDC',
     decimals: 6,
   },
   'yvWETH': {
-    address: '0xa0225CBE2feAD5efA5E5d5C7f5291e7e2a6C02E4' as Address,
+    address: YEARN.base.yvWETH,
     asset: 'WETH',
     decimals: 18,
   },
   'yvDAI': {
-    address: '0x305F25377d0a39091e99B975558b1bdfC3975654' as Address,
+    address: YEARN.base.yvDAI,
     asset: 'DAI',
     decimals: 18,
   },
@@ -80,9 +81,9 @@ export const YEARN_VAULTS_BASE: Record<string, { address: Address; asset: string
 // ── Underlying Token Addresses (Base) ────────────────────────────────────
 
 const BASE_TOKENS: Record<string, Address> = {
-  USDC: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' as Address,
-  WETH: '0x4200000000000000000000000000000000000006' as Address,
-  DAI: '0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb' as Address,
+  USDC: TOKENS.base.USDC,
+  WETH: TOKENS.base.WETH,
+  DAI: TOKENS.base.DAI,
 };
 
 // ── ERC-4626 Vault ABI (minimal — standard interface) ────────────────────

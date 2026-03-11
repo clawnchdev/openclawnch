@@ -9,6 +9,8 @@
  * the agent's persistent state directory.
  */
 
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { Type } from '@sinclair/typebox';
 import { stringEnum, jsonResult, errorResult, readStringParam, readNumberParam } from '../lib/tool-helpers.js';
 import { getPrice } from '../services/price-service.js';
@@ -85,8 +87,7 @@ const ManageOrdersSchema = Type.Object({
   chain_amount_pct: Type.Optional(Type.Number({ description: 'Follow-up amount %' })),
 });
 
-// In-memory storage adapter (persists for session lifetime)
-// In production, this would be backed by the agent's state store
+// In-memory storage with file-based persistence on shutdown/startup
 let _orders: any[] = [];
 let _riskConfig: any = null;
 let _ordersInstance: any = null;
@@ -391,4 +392,55 @@ export function createManageOrdersTool() {
       }
     },
   };
+}
+
+// ── Persistence ──────────────────────────────────────────────────────────
+
+function getOrdersStateDir(): string {
+  return process.env.OPENCLAWNCH_TX_DIR
+    ? join(process.env.OPENCLAWNCH_TX_DIR, '..', 'orders')
+    : join(process.env.HOME ?? '/tmp', '.openclawnch', 'orders');
+}
+
+function getOrdersStatePath(): string {
+  return join(getOrdersStateDir(), 'orders.json');
+}
+
+function getRiskStatePath(): string {
+  return join(getOrdersStateDir(), 'risk-config.json');
+}
+
+/** Persist orders and risk config to disk. Called on graceful shutdown. */
+export function persistOrders(): void {
+  if (_orders.length === 0 && !_riskConfig) return;
+
+  const dir = getOrdersStateDir();
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+
+  if (_orders.length > 0) {
+    writeFileSync(getOrdersStatePath(), JSON.stringify(_orders, null, 2), 'utf8');
+  }
+  if (_riskConfig) {
+    writeFileSync(getRiskStatePath(), JSON.stringify(_riskConfig, null, 2), 'utf8');
+  }
+}
+
+/** Restore orders and risk config from disk. Called on startup. */
+export function restoreOrders(): void {
+  try {
+    const ordersPath = getOrdersStatePath();
+    if (existsSync(ordersPath)) {
+      _orders = JSON.parse(readFileSync(ordersPath, 'utf8'));
+    }
+  } catch { /* corrupt file — start fresh */ }
+
+  try {
+    const riskPath = getRiskStatePath();
+    if (existsSync(riskPath)) {
+      _riskConfig = JSON.parse(readFileSync(riskPath, 'utf8'));
+    }
+  } catch { /* corrupt file — start fresh */ }
+
+  // Reset the instance so next ensureOrders() call picks up restored data
+  _ordersInstance = null;
 }

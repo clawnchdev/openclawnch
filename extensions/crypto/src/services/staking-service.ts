@@ -15,26 +15,27 @@
 import { formatUnits, parseEther } from 'viem';
 import { getRpcManager } from './rpc-provider.js';
 import { guardedFetch } from './endpoint-allowlist.js';
+import { LIDO, ROCKET_POOL, CBETH } from '../lib/contract-registry.js';
 
-// ── Contract Addresses (Ethereum Mainnet) ───────────────────────────────────
+// ── Contract Addresses — sourced from contract-registry ─────────────────
 
 const CONTRACTS = {
   lido: {
-    stETH: '0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84' as const,
-    wstETH: '0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0' as const,
+    stETH: LIDO.ethereum.stETH,
+    wstETH: LIDO.ethereum.wstETH,
   },
   rocketPool: {
-    rETH: '0xae78736Cd615f374D3085123A210448E74Fc6393' as const,
-    depositPool: '0xDD3f50F8A6CafbE9b31a427582963f465E745AF8' as const,
+    rETH: ROCKET_POOL.ethereum.rETH,
+    depositPool: ROCKET_POOL.ethereum.depositPool,
   },
-  cbETH: '0xBe9895146f7AF43049ca1c1AE358B0541Ea49BBf' as const,
+  cbETH: CBETH.ethereum,
 } as const;
 
 // Base bridged addresses (for position checking)
 const BASE_TOKENS = {
-  wstETH: '0xc1CBa3fCea344f92D9239c08C0568f6F2F0ee452' as const,
-  cbETH: '0x2Ae3F1Ec7F1F5012CFEab0185bfc7aa3cf0DEc22' as const,
-  rETH: '0xB6fe221Fe9EeF5aBa221c348bA20A1Bf5e73624c' as const,
+  wstETH: LIDO.base.wstETH,
+  cbETH: CBETH.base,
+  rETH: ROCKET_POOL.base.rETH,
 };
 
 // ── Minimal ABIs ────────────────────────────────────────────────────────────

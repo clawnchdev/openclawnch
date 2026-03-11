@@ -12,11 +12,16 @@
  * Topic IDs are Telegram message_thread_id values. The "General" topic
  * has thread_id = undefined (or 1 in some API versions).
  *
+ * State is persisted to disk on shutdown and restored on startup.
+ *
  * Usage:
  *   const topics = getForumTopics();
  *   topics.registerTopic(chatId, threadId, 'trading');
  *   const threadId = topics.getTopicForPurpose(chatId, 'alerts');
  */
+
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { join } from 'node:path';
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -243,4 +248,73 @@ export function getForumTopics(): ForumTopicsService {
 
 export function resetForumTopics(): void {
   _instance = null;
+}
+
+// ── Persistence ──────────────────────────────────────────────────────────
+
+function getForumStateDir(): string {
+  return process.env.OPENCLAWNCH_TX_DIR
+    ? join(process.env.OPENCLAWNCH_TX_DIR, '..', 'forum-topics')
+    : join(process.env.HOME ?? '/tmp', '.openclawnch', 'forum-topics');
+}
+
+function getForumStatePath(): string {
+  return join(getForumStateDir(), 'topics.json');
+}
+
+interface PersistedTopicConfig {
+  threadId: number;
+  name: string;
+  purpose: TopicPurpose;
+  receivesNotifications: boolean;
+}
+
+interface PersistedChatTopics {
+  chatId: string;
+  forumEnabled: boolean;
+  topics: PersistedTopicConfig[];
+}
+
+/** Persist all forum topic state to disk. Called on graceful shutdown. */
+export function persistForumTopics(): void {
+  if (!_instance) return;
+  const svc = _instance;
+
+  const chats: PersistedChatTopics[] = [];
+  for (const chatId of svc.listForumChats()) {
+    const topics = svc.listTopics(chatId);
+    if (topics.length > 0) {
+      chats.push({
+        chatId,
+        forumEnabled: true,
+        topics: topics.map(t => ({
+          threadId: t.threadId,
+          name: t.name,
+          purpose: t.purpose,
+          receivesNotifications: t.receivesNotifications,
+        })),
+      });
+    }
+  }
+
+  if (chats.length === 0) return;
+
+  const dir = getForumStateDir();
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  writeFileSync(getForumStatePath(), JSON.stringify(chats, null, 2), 'utf8');
+}
+
+/** Restore forum topic state from disk. Called on startup. */
+export function restoreForumTopics(): void {
+  const path = getForumStatePath();
+  try {
+    if (!existsSync(path)) return;
+    const data = JSON.parse(readFileSync(path, 'utf8')) as PersistedChatTopics[];
+    const svc = getForumTopics();
+    for (const chat of data) {
+      for (const topic of chat.topics) {
+        svc.registerTopic(chat.chatId, topic.threadId, topic.name, topic.purpose);
+      }
+    }
+  } catch { /* corrupt file — start fresh */ }
 }

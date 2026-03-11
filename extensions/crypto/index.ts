@@ -103,6 +103,10 @@ import { initWalletService, getWalletState as getWalletStateFn } from './src/ser
 import { getOnboardingFlow, isNewUser, type OnboardingMessage } from './src/services/onboarding-flow.js';
 import { getCredentialVault } from './src/services/credential-vault.js';
 import { getHeartbeatMonitor } from './src/services/heartbeat-monitor.js';
+import { getScheduler } from './src/services/plan-scheduler.js';
+import { persistForumTopics, restoreForumTopics } from './src/services/forum-topics.js';
+import { persistThreadBindings, restoreThreadBindings } from './src/services/thread-bindings.js';
+import { persistOrders, restoreOrders } from './src/tools/manage-orders.js';
 
 // Self-improvement services (sprint 4)
 import { getEvolutionMode } from './src/services/evolution-mode.js';
@@ -442,6 +446,19 @@ const plugin = {
         }
       }
 
+      // ─── Restore Persisted State ─────────────────────────────────
+      // Reload forum topics, thread bindings, and orders from disk.
+      try {
+        restoreForumTopics();
+        restoreThreadBindings();
+        restoreOrders();
+        api.logger?.info?.('[crypto] Restored persisted state (forum topics, thread bindings, orders)');
+      } catch (err) {
+        api.logger?.warn?.(
+          `[crypto] Failed to restore some persisted state: ${err instanceof Error ? err.message : String(err)}`
+        );
+      }
+
       // ─── Start Plan Scheduler + Executor ─────────────────────────
       // Wire real resolvers, tool dispatcher, and Telegram notifications.
       try {
@@ -671,6 +688,41 @@ const plugin = {
           `[crypto] Heartbeat monitor failed to start: ${err instanceof Error ? err.message : String(err)}`
         );
       }
+
+      // ─── Graceful Shutdown Handler ──────────────────────────────────
+      // The host process (openclaw gateway) receives SIGTERM from Docker/Fly.
+      // registerService uses optional chaining — if the host doesn't support
+      // managed services, these intervals leak. Install process-level handlers
+      // as a safety net to ensure clean shutdown.
+      const shutdownServices = (): void => {
+        try { getScheduler().stop(); } catch { /* already stopped or never started */ }
+        try { getHeartbeatMonitor().stop(); } catch { /* already stopped or never started */ }
+        // Persist in-memory forum topics and thread bindings
+        try { persistForumTopics(); } catch { /* best effort */ }
+        try { persistThreadBindings(); } catch { /* best effort */ }
+        try { persistOrders(); } catch { /* best effort */ }
+        api.logger?.info?.('[crypto] Graceful shutdown: services stopped, state persisted');
+      };
+
+      let shutdownCalled = false;
+      const onShutdownSignal = (signal: string): void => {
+        if (shutdownCalled) return; // Prevent double-shutdown
+        shutdownCalled = true;
+        api.logger?.info?.(`[crypto] Received ${signal}, shutting down...`);
+        shutdownServices();
+        // Don't call process.exit — let the host process handle that
+      };
+
+      process.on('SIGTERM', () => onShutdownSignal('SIGTERM'));
+      process.on('SIGINT', () => onShutdownSignal('SIGINT'));
+
+      // Also handle 'beforeExit' for non-signal shutdowns
+      process.on('beforeExit', () => {
+        if (!shutdownCalled) {
+          shutdownCalled = true;
+          shutdownServices();
+        }
+      });
     });
 
     // ─── Onboarding State Tracking ──────────────────────────────────────

@@ -373,15 +373,16 @@ describe('Feature 3 deep: Draft Streaming logic', () => {
 
 describe('Feature 4 deep: Chainlink Oracle logic', () => {
   it('feed addresses are valid checksummed Ethereum addresses', async () => {
+    // Feed addresses now live in contract-registry.ts (centralized registry)
     const fs = await import('node:fs');
     const source = fs.readFileSync(
-      new URL('../extensions/crypto/src/services/chainlink-oracle.ts', import.meta.url).pathname.replace('/tests/../', '/'),
+      new URL('../extensions/crypto/src/lib/contract-registry.ts', import.meta.url).pathname.replace('/tests/../', '/'),
       'utf8',
     );
     // All feed addresses should be 0x + 40 hex chars
     const addressRegex = /0x[0-9a-fA-F]{40}/g;
     const addresses = source.match(addressRegex) || [];
-    expect(addresses.length).toBeGreaterThan(40); // at least 40+ feed addresses across 5 chains
+    expect(addresses.length).toBeGreaterThan(40); // at least 40+ feed addresses across 5 chains + protocol contracts
     for (const addr of addresses) {
       expect(addr).toHaveLength(42);
     }

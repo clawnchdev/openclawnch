@@ -10,6 +10,7 @@
 
 import { type Address, formatUnits } from 'viem';
 import { guardedFetch } from './endpoint-allowlist.js';
+import { AERODROME, UNISWAP, AAVE, ENS } from '../lib/contract-registry.js';
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -61,29 +62,29 @@ export interface GovernorInfo {
 export const KNOWN_GOVERNORS: Record<string, GovernorInfo> = {
   // Base ecosystem governors
   'aerodrome': {
-    address: '0x77758EBdD55270809E96DCfe3CDEBe26d4A0eFb1' as Address,
+    address: AERODROME.governor,
     chainId: 8453,
     name: 'Aerodrome Finance',
-    tokenAddress: '0x940181a94A35A4569E4529A3CDfB74e38FD98631' as Address,
+    tokenAddress: AERODROME.token,
   },
   // Ethereum mainnet governors
   'uniswap': {
-    address: '0x408ED6354d4973f66138C91495F2f2FCbd8724C3' as Address,
+    address: UNISWAP.governance.governor,
     chainId: 1,
     name: 'Uniswap Governor Bravo',
-    tokenAddress: '0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984' as Address,
+    tokenAddress: UNISWAP.governance.token,
   },
   'aave': {
-    address: '0xEC568fffba86c094cf06b22134B23074DFE2252c' as Address,
+    address: AAVE.governance.governor,
     chainId: 1,
     name: 'Aave Governance V2',
-    tokenAddress: '0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9' as Address,
+    tokenAddress: AAVE.governance.token,
   },
   'ens': {
-    address: '0x323A76393544d5ecca80cd6ef2A560C6a395b7E3' as Address,
+    address: ENS.governor,
     chainId: 1,
     name: 'ENS Governor',
-    tokenAddress: '0xC18360217D8F7Ab5e7c516566761Ea12Ce7F9D72' as Address,
+    tokenAddress: ENS.token,
   },
 };
 

@@ -212,6 +212,86 @@ describeE2E('E2E: Onboarding Flow', () => {
   });
 });
 
+// ─── Testnet Wallet Integration ──────────────────────────────────────────
+// These tests connect a real wallet via private key mode on Base Sepolia.
+// Requires:
+//   CLAWNCHER_PRIVATE_KEY — a funded testnet private key (0x-prefixed, 66 chars)
+//   CLAWNCHER_NETWORK=sepolia — forces Base Sepolia chain
+//
+// Run: OPENCLAWNCH_E2E=1 CLAWNCHER_PRIVATE_KEY=0x... CLAWNCHER_NETWORK=sepolia \
+//      pnpm vitest run tests/e2e-scaffold.test.ts
+
+const TESTNET_PK = process.env.CLAWNCHER_PRIVATE_KEY;
+const TESTNET_ENABLED = E2E_ENABLED && !!TESTNET_PK && process.env.CLAWNCHER_NETWORK === 'sepolia';
+const describeTestnet = TESTNET_ENABLED ? describe : describe.skip;
+
+describeTestnet('E2E Testnet: Private Key Wallet on Base Sepolia', () => {
+  let initWalletService: any;
+  let getWalletState: any;
+  let requirePublicClient: any;
+  let requireWalletClient: any;
+
+  beforeAll(async () => {
+    const wsSvc = await import('../extensions/crypto/src/services/walletconnect-service.js');
+    initWalletService = wsSvc.initWalletService;
+    getWalletState = wsSvc.getWalletState;
+    requirePublicClient = wsSvc.requirePublicClient;
+    requireWalletClient = wsSvc.requireWalletClient;
+
+    // Initialize wallet in private-key mode on Sepolia
+    await initWalletService({
+      privateKey: TESTNET_PK,
+      network: 'sepolia',
+    });
+  });
+
+  it('wallet initializes and is connected', () => {
+    const state = getWalletState();
+    expect(state.connected).toBe(true);
+    expect(state.address).toMatch(/^0x[a-fA-F0-9]{40}$/);
+    expect(state.mode).toBe('private_key');
+  });
+
+  it('public client reads chain ID (Base Sepolia = 84532)', async () => {
+    const publicClient = requirePublicClient();
+    const chainId = await publicClient.getChainId();
+    expect(chainId).toBe(84532); // Base Sepolia chain ID
+  });
+
+  it('wallet has non-zero testnet ETH balance', async () => {
+    const publicClient = requirePublicClient();
+    const state = getWalletState();
+    const balance = await publicClient.getBalance({ address: state.address as `0x${string}` });
+    // Should have at least some dust (> 0.0001 ETH = 10^14 wei)
+    expect(balance).toBeGreaterThan(0n);
+  });
+
+  it('can send 0-value self-transfer on testnet', async () => {
+    const walletClient = requireWalletClient();
+    const state = getWalletState();
+    const publicClient = requirePublicClient();
+
+    // Send 0 ETH to self — proves the full tx pipeline works
+    const hash = await walletClient.sendTransaction({
+      to: state.address as `0x${string}`,
+      value: 0n,
+    });
+
+    expect(hash).toMatch(/^0x[a-fA-F0-9]{64}$/);
+
+    // Wait for receipt
+    const receipt = await publicClient.waitForTransactionReceipt({ hash });
+    expect(receipt.status).toBe('success');
+  }, 30_000); // 30s timeout for on-chain confirmation
+
+  it('defi_price tool works with real API', async () => {
+    const { getPrice } = await import('../extensions/crypto/src/services/price-service.js');
+    const result = await getPrice('ETH');
+    expect(result).toBeDefined();
+    expect(result.priceUsd).toBeGreaterThan(0);
+  });
+});
+
 // ─── Non-E2E: Verify scaffold structure ──────────────────────────────────
 
 describe('E2E scaffold structure', () => {
@@ -224,6 +304,13 @@ describe('E2E scaffold structure', () => {
   it('BOT_API_URL defaults to localhost', () => {
     if (!process.env.OPENCLAWNCH_BOT_URL) {
       expect(BOT_API_URL).toBe('http://localhost:3000');
+    }
+  });
+
+  it('testnet tests are gated behind CLAWNCHER_PRIVATE_KEY + CLAWNCHER_NETWORK=sepolia', () => {
+    // Verify testnet tests don't accidentally run without explicit opt-in
+    if (!TESTNET_PK || process.env.CLAWNCHER_NETWORK !== 'sepolia') {
+      expect(TESTNET_ENABLED).toBe(false);
     }
   });
 });
