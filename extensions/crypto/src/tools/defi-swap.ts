@@ -374,8 +374,11 @@ async function handleExecute(params: Record<string, unknown>) {
     if (safety.warnings.length > 0) {
       // Warnings are included in the successful result below
     }
-  } catch {
-    // Safety check infrastructure failure shouldn't block — proceed with caution
+  } catch (err) {
+    // Safety check infrastructure failure — log but don't block the swap.
+    // The user explicitly requested this trade; blocking on infra failure
+    // would be worse than proceeding without the safety overlay.
+    console.warn('[defi-swap] Safety check failed, proceeding without validation:', err instanceof Error ? err.message : String(err));
   }
 
   try {

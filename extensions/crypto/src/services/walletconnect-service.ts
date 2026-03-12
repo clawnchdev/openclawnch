@@ -411,8 +411,10 @@ export async function getMevWalletClient(): Promise<any> {
     });
 
     return wrapWithBuilderCode(mevClient, chainId);
-  } catch {
-    // MEV client creation failed — fall back to regular wallet client
+  } catch (err) {
+    // MEV client creation failed — fall back to regular wallet client.
+    // Log so the user knows MEV protection is not active for this tx.
+    console.warn('[wallet] MEV protection unavailable, using standard RPC:', err instanceof Error ? err.message : String(err));
     return wallet;
   }
 }
