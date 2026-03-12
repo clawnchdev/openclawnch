@@ -59,7 +59,7 @@ async function doConnect(wallet: WalletOption, ctx: any): Promise<{ text: string
   const state = getWalletState();
   if (state.connected && state.address) {
     return {
-      text: `Wallet already connected: ${state.address.slice(0, 6)}...${state.address.slice(-4)} (chain ${state.chainId})\n\nUse the clawnchconnect tool with action "disconnect" to disconnect first.`,
+      text: `Wallet already connected: ${state.address.slice(0, 6)}...${state.address.slice(-4)} (chain ${state.chainId})\n\nUse /disconnect to disconnect first.`,
     };
   }
 
@@ -68,7 +68,7 @@ async function doConnect(wallet: WalletOption, ctx: any): Promise<{ text: string
 
   if (!projectId && !privateKey) {
     return {
-      text: `WalletConnect is not configured.\n\nTo enable wallet connection, set the WALLETCONNECT_PROJECT_ID environment variable.\n\nOn Fly.io: \`fly secrets set WALLETCONNECT_PROJECT_ID="your-project-id" -a <your-app>\`\nOn Docker: add to your \`.env\` file or \`docker-compose.yml\`\n\nGet a project ID at https://cloud.reown.com`,
+      text: `WalletConnect is not configured.\n\nTo enable it, run \`openclawnch init\` or add WALLETCONNECT_PROJECT_ID to your .env file.\n\nGet a project ID at https://cloud.reown.com`,
     };
   }
 
@@ -177,13 +177,13 @@ export const connectCommand = {
     const state = getWalletState();
     if (state.connected && state.address) {
       return {
-        text: `Wallet already connected: ${state.address.slice(0, 6)}...${state.address.slice(-4)} (chain ${state.chainId})\n\nUse the clawnchconnect tool with action "disconnect" to disconnect first.`,
+        text: `Wallet already connected: ${state.address.slice(0, 6)}...${state.address.slice(-4)} (chain ${state.chainId})\n\nUse /disconnect to disconnect first.`,
       };
     }
 
     const lines = ['Which wallet do you use?\n'];
     for (const w of WALLETS) {
-      lines.push(`  /connect_${w.id}`);
+      lines.push(`  /connect_${w.id} — ${w.label}`);
     }
     lines.push('  /connect_bankr — Bankr (custodial, multi-chain)');
     lines.push('\nTap one to connect.');

@@ -58,7 +58,7 @@ describe('OnboardingFlow', () => {
     const msg = flow.getWelcomeMessage();
 
     expect(msg).not.toBeNull();
-    expect(msg!.text).toContain('crypto assistant');
+    expect(msg!.text).toContain('DeFi agent');
     expect(msg!.text).toContain('/professional');
     expect(msg!.text).toContain('/degen');
     expect(msg!.text).toContain('/chill');

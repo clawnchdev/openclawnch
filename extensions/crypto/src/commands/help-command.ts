@@ -20,7 +20,9 @@ export const helpCommand = {
 
 **Wallet**
   /connect — Connect mobile wallet
-  /connect_bankr — Connect Bankr (custodial)
+  /create_wallet — Generate a new local wallet
+  /import_wallet — Import from seed phrase
+  /connect_bankr — Bankr (custodial)
   /disconnect — Disconnect wallet
   /wallet — Wallet status
   /balance — ETH balance
@@ -54,18 +56,18 @@ export const helpCommand = {
   /plans_clear — Cancel all
 
 **Bankr**
-  /connect_bankr — Bankr wallet
   /llmcredits — Credit balance
   /llmcost — Cost tracking
   /automations — Automation status
 
-**Deploy** (Fly.io)
-  /flykeys — API keys
+**Diagnostics**
+  /setup — Config status (X/42 tools ready)
+  /doctor — Run diagnostic checks
+  /flykeys — API keys (Fly.io deploys)
   /flystatus — Machine status
   /flyrestart — Restart bot
 
 **Other**
-  /setup — Config status
   /molten — Molten agent
   /factoryreset — Wipe all data
   /skip — Skip onboarding
@@ -94,11 +96,24 @@ export const balanceCommand = {
     const addr = state.address;
     const short = `${addr.slice(0, 6)}...${addr.slice(-4)}`;
     const mode = state.mode === 'bankr' ? 'Bankr (custodial)' : state.mode === 'private_key' ? 'Private key' : 'WalletConnect';
+    const chainName = state.chainId ? (CHAIN_NAMES[state.chainId] ?? `Chain ${state.chainId}`) : null;
 
     return {
-      text: `**Wallet:** ${short}\n**Mode:** ${mode}${state.chainId ? `\n**Chain:** ${state.chainId}` : ''}\n\nFor token balances with USD values, ask me:\n"What are my balances?" or "Show my balance on Base"`,
+      text: `**Wallet:** ${short}\n**Mode:** ${mode}${chainName ? `\n**Chain:** ${chainName}` : ''}\n\nFor token balances with USD values, ask me:\n"What are my balances?" or "Show my balance on Base"`,
     };
   },
+};
+
+// ── Shared chain lookup ─────────────────────────────────────────────────────
+
+const CHAIN_NAMES: Record<number, string> = {
+  1: 'Ethereum Mainnet',
+  8453: 'Base',
+  42161: 'Arbitrum One',
+  10: 'Optimism',
+  137: 'Polygon',
+  84532: 'Base Sepolia',
+  11155111: 'Ethereum Sepolia',
 };
 
 // ── /chain ──────────────────────────────────────────────────────────────────
@@ -111,16 +126,6 @@ export const chainCommand = {
   handler: async (_ctx: any) => {
     const state = getWalletState();
 
-    const CHAIN_NAMES: Record<number, string> = {
-      1: 'Ethereum Mainnet',
-      8453: 'Base',
-      42161: 'Arbitrum One',
-      10: 'Optimism',
-      137: 'Polygon',
-      84532: 'Base Sepolia',
-      11155111: 'Ethereum Sepolia',
-    };
-
     if (!state.connected) {
       return {
         text: 'No wallet connected. Default chain: **Base (8453)**\n\nConnect a wallet to interact with a specific chain: /connect',
@@ -131,7 +136,7 @@ export const chainCommand = {
     const name = CHAIN_NAMES[chainId] ?? `Chain ${chainId}`;
 
     return {
-      text: `**Current chain:** ${name} (${chainId})\n\nTo switch chains, ask me: "Switch to Arbitrum" or use the clawnchconnect tool.`,
+      text: `**Current chain:** ${name} (${chainId})\n\nTo switch chains, ask me: "Switch to Arbitrum"`,
     };
   },
 };
@@ -159,7 +164,7 @@ export const portfolioCommand = {
     const mode = state.mode === 'bankr' ? 'Bankr (custodial)' : state.mode === 'private_key' ? 'Private key' : 'WalletConnect';
 
     return {
-      text: `**Wallet:** ${short}\n**Mode:** ${mode}${state.chainId ? `\n**Chain:** ${state.chainId}` : ''}${state.bankrSolAddress ? `\n**Solana:** ${state.bankrSolAddress.slice(0, 6)}...${state.bankrSolAddress.slice(-4)}` : ''}\n\nFor a full token breakdown with USD values, ask me:\n"Show my portfolio" or "What are my balances on Base?"`,
+      text: `**Wallet:** ${short}\n**Mode:** ${mode}${state.chainId ? `\n**Chain:** ${CHAIN_NAMES[state.chainId] ?? `Chain ${state.chainId}`}` : ''}${state.bankrSolAddress ? `\n**Solana:** ${state.bankrSolAddress.slice(0, 6)}...${state.bankrSolAddress.slice(-4)}` : ''}\n\nFor a full token breakdown with USD values, ask me:\n"Show my portfolio" or "What are my balances on Base?"`,
     };
   },
 };

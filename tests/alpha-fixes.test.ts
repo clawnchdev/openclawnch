@@ -102,7 +102,7 @@ describe('H7: /help command returns grouped commands', () => {
     expect(text).toContain('**Persona**');
     expect(text).toContain('**Plans**');
     expect(text).toContain('**Bankr**');
-    expect(text).toContain('**Deploy**');
+    expect(text).toContain('**Diagnostics**');
     expect(text).toContain('**Other**');
   });
 

@@ -16,14 +16,22 @@ export const walletCommand = {
 
     if (!state.connected) {
       return {
-        text: 'No wallet connected.\n\nTo connect, ask the agent to use the clawnchconnect tool, or set WALLETCONNECT_PROJECT_ID / CLAWNCHER_PRIVATE_KEY.',
+        text: 'No wallet connected.\n\nUse /connect to pair your mobile wallet, /create_wallet to generate a new one, or /connect_bankr for Bankr (custodial).',
       };
     }
+
+    const CHAIN_NAMES: Record<number, string> = {
+      1: 'Ethereum', 8453: 'Base', 42161: 'Arbitrum', 10: 'Optimism', 137: 'Polygon',
+      84532: 'Base Sepolia', 11155111: 'Ethereum Sepolia',
+    };
+
+    const chainId = state.chainId ?? 8453;
+    const chainName = CHAIN_NAMES[chainId] ?? `Chain ${chainId}`;
 
     const lines = [
       `**Wallet Connected**`,
       `Address: \`${state.address}\``,
-      `Chain ID: ${state.chainId}`,
+      `Chain: ${chainName} (${chainId})`,
       `Mode: ${state.mode === 'private_key' ? 'Private key (headless)' : state.mode === 'bankr' ? 'Bankr (custodial)' : 'WalletConnect'}`,
     ];
 

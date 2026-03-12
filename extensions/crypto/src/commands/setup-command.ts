@@ -91,7 +91,11 @@ export const setupCommand = {
 
     if (needsKeys.length > 0) {
       lines.push('');
-      lines.push('Use /flykeys to set API keys, then /flyrestart to apply.');
+      if (process.env.FLY_APP_NAME) {
+        lines.push('Use /flykeys to set API keys, then /flyrestart to apply.');
+      } else {
+        lines.push('Add the missing API keys to your .env file or run `openclawnch init` to reconfigure.');
+      }
     }
 
     return { text: lines.join('\n') };
