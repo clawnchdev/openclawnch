@@ -264,66 +264,22 @@ export function saveState(state: OnboardingState): void {
 
 // ── Messages ────────────────────────────────────────────────────────────────
 
-const WELCOME_MESSAGE = `Welcome. I'm OpenClawnch, your personal crypto assistant — an AI agent with direct, open-ended access to blockchain protocols, market data, and transaction execution.
+const WELCOME_MESSAGE = `Welcome. I'm OpenClawnch — a personal DeFi agent that can check prices, execute trades, manage wallets, bridge cross-chain, and more.
 
-Here's what I can do:
+I can connect to your mobile wallet (MetaMask, Rainbow, Coinbase, etc.) — every transaction goes to your phone for approval.
 
-  Wallet
-    Connect your phone wallet (MetaMask, Rainbow, Coinbase, Trust, Zerion, Uniswap)
-    Send tokens and ETH to any address
-    Gasless token approvals via Permit2
-    Every transaction goes to your phone for approval (or auto-sign in danger mode)
+First, pick a communication style:
 
-  Prices & Market Intelligence
-    Real-time token prices from DexScreener and CoinGecko
-    Trending tokens, new pairs, and volume leaders
-    Whale activity tracking and smart money flows
-    Clawnch agent leaderboard and herd intelligence
-
-  Portfolio & On-Chain Analytics
-    ETH and ERC-20 balances with USD valuations
-    Cost basis tracking (auto-records your swaps)
-    On-chain activity monitoring for any address
-    Block explorer lookups (tx details, contract info)
-    Protocol-level analytics (TVL, volume, fees)
-
-  Trading
-    Token swaps via DEX aggregators with best-price routing
-    Limit orders and order management
-    Multi-step workflows (e.g. "buy X, set stop-loss, monitor")
-
-  Liquidity
-    Add/remove liquidity on Uniswap V3 and V4 pools
-    Manage concentrated liquidity positions and ranges
-
-  Token Launchpad
-    Deploy new ERC-20 tokens on Base via the Clawnch launchpad
-    Auto-create Uniswap V4 pool with dev buy
-    Claim LP trading fee revenue from launched tokens
-    Token info lookup for any Clawnch-launched token
-
-  Cross-Chain
-    Bridge tokens across Ethereum, Base, Arbitrum, Optimism, Polygon, and more
-    AI-optimized route planning across chains and protocols (Wayfinder)
-
-  Advanced
-    ClawnX protocol interaction
-    Automated market making via Hummingbot
-    Custom multi-step crypto workflows
-
-Before we begin, I'd like to know how you prefer me to communicate.
-
-Pick a style:
-
-  /professional — Clear, concise, business-like
-  /degen — CT native, crypto twitter energy
-  /chill — Relaxed, like texting a friend
+  /professional — Clear and business-like
+  /degen — CT native energy
+  /chill — Like texting a friend
   /technical — Data-heavy, on-chain metrics
   /mentor — Educational, explains as it goes
 
-Or just type your own preferred tone.
+Or type your own preferred tone (10+ characters).
 
-/skip — Skip onboarding`;
+/skip — Skip onboarding and jump straight in
+/help — See all commands`;
 
 function buildPersonaConfirmation(persona: PersonaId, customText?: string): string {
   const intro = persona === 'custom'
@@ -434,7 +390,7 @@ function parsePersonaChoice(message: string): { persona: PersonaId; customText?:
   if (/^5\b/.test(lower) || lower === 'mentor') return { persona: 'mentor' };
 
   // If the message is long enough, treat it as a custom persona description
-  if (message.trim().length >= 5) {
+  if (message.trim().length >= 10) {
     return { persona: 'custom', customText: message.trim() };
   }
 
@@ -641,8 +597,7 @@ export class OnboardingFlow {
       .join(', ');
 
     return {
-      text: `New wallet generated.\n\nAddress: \`${wallet.address}\`\n\nWrite down these 12 words — this is your only chance:\n\n${wordGrid}\n\nTo confirm you've saved them, type the following words:\n${confirmPrompt}\n\n(e.g. "${confirmWords.map(c => c.word).join(' ')}")`,
-      suggestion: confirmWords.map(c => c.word).join(' '),
+      text: `New wallet generated.\n\nAddress: \`${wallet.address}\`\n\nWrite down these 12 words — this is your only chance:\n\n${wordGrid}\n\nTo confirm you've saved them, type the following words separated by spaces:\n${confirmPrompt}`,
     };
   }
 
@@ -684,8 +639,7 @@ export class OnboardingFlow {
     saveState(this.state);
 
     return {
-      text: 'Mnemonic confirmed. Now set a password to encrypt your wallet (minimum 8 characters).\n\nThis password will be required to unlock your wallet each session.',
-      suggestion: 'Type a strong password',
+      text: 'Mnemonic confirmed. Now set a password to encrypt your wallet (minimum 8 characters).\n\nThis password will be required to unlock your wallet each session.\n\n⚠️ Your password will be visible in chat history. Delete the message after sending.',
     };
   }
 
@@ -746,8 +700,7 @@ export class OnboardingFlow {
     saveState(this.state);
 
     return {
-      text: 'Paste your 12 or 24-word seed phrase (BIP-39 mnemonic).\n\nThis message will be processed locally and never stored in plaintext.',
-      suggestion: 'Paste your seed phrase',
+      text: 'Paste your 12 or 24-word seed phrase (BIP-39 mnemonic).\n\nThe phrase is processed locally and never stored in plaintext.\n\n⚠️ Your seed phrase will be visible in chat history. Delete the message immediately after sending.',
     };
   }
 
