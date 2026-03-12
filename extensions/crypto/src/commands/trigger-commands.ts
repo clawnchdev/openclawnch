@@ -33,6 +33,12 @@ function formatTriggerDetail(plan: Plan): string {
       return `at ${new Date(t.at).toLocaleString()}`;
     case 'immediate':
       return 'immediate';
+    case 'onchain_event':
+      return `on-chain: ${t.eventSignature} on ${t.contractAddress.slice(0, 10)}...${t.recurring ? ' (recurring)' : ' (once)'}`;
+    case 'balance':
+      return `${t.token} balance ${t.condition} ${t.threshold}${t.recurring ? ' (recurring)' : ' (once)'}`;
+    default:
+      return `unknown trigger type`;
   }
 }
 

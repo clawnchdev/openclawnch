@@ -973,6 +973,15 @@ function describeTrigger(t: Trigger): string {
       const recur = t.recurring ? ' (recurring)' : ' (once)';
       return `When ${t.token} ${t.condition} $${t.threshold}${recur}`;
     }
+    case 'onchain_event': {
+      const recur = t.recurring ? ' (recurring)' : ' (once)';
+      return `On-chain: ${t.eventSignature} on ${t.contractAddress.slice(0, 10)}... (chain ${t.chainId})${recur}`;
+    }
+    case 'balance': {
+      const recur = t.recurring ? ' (recurring)' : ' (once)';
+      const chain = t.chainId ? ` (chain ${t.chainId})` : '';
+      return `When ${t.token} balance ${t.condition} ${t.threshold}${chain}${recur}`;
+    }
   }
 }
 

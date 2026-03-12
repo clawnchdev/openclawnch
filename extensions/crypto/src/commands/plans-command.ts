@@ -35,6 +35,8 @@ function describeTrigger(plan: Plan): string {
     case 'condition': return 'when condition met';
     case 'cron': return `cron: ${t.expression}${t.timezone ? ` (${t.timezone})` : ''}`;
     case 'price': return `${t.token} ${t.condition} $${t.threshold}`;
+    case 'onchain_event': return `on-chain: ${t.eventSignature} on ${t.contractAddress.slice(0, 10)}...`;
+    case 'balance': return `${t.token} balance ${t.condition} ${t.threshold}`;
   }
 }
 

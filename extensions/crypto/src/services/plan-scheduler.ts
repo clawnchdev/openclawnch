@@ -41,7 +41,9 @@ import type {
 export type SchedulerEvent =
   | { type: 'trigger_fired'; plan: Plan; executionId: string }
   | { type: 'plan_expired'; plan: Plan; reason: string }
-  | { type: 'condition_check_error'; planId: string; error: string };
+  | { type: 'condition_check_error'; planId: string; error: string }
+  | { type: 'plan_added'; plan: Plan }
+  | { type: 'plan_cancelled'; planId: string };
 
 export type SchedulerEventHandler = (event: SchedulerEvent) => void | Promise<void>;
 
@@ -424,6 +426,7 @@ export class PlanScheduler {
     if (plan.status === 'scheduled' || plan.status === 'running') {
       this.plans.set(plan.id, plan);
     }
+    this.emit({ type: 'plan_added', plan }).catch(() => {});
   }
 
   /** Cancel a plan. */
@@ -438,6 +441,7 @@ export class PlanScheduler {
     this.cronRunCounts.delete(planId);
     this.lastCronFire.delete(planId);
     this.persistState();
+    this.emit({ type: 'plan_cancelled', planId }).catch(() => {});
     return true;
   }
 
@@ -672,6 +676,11 @@ export class PlanScheduler {
     return this.plans.size;
   }
 
+  /** Get all active in-memory plans. */
+  getActivePlans(): Plan[] {
+    return Array.from(this.plans.values());
+  }
+
   /** Is the scheduler running. */
   get isRunning(): boolean {
     return this.running;
@@ -772,6 +781,16 @@ export class PlanScheduler {
         // The scheduler does not poll prices directly — the watcher emits
         // 'price_crossed' events which fire the plan through firePriceTrigger().
         return false;
+
+      case 'onchain_event':
+        // On-chain event triggers are handled by the OnChainEventListener service.
+        // The listener polls getLogs and emits 'onchain_event' events on the bus.
+        return false;
+
+      case 'balance':
+        // Balance triggers are handled by the BalanceWatcher service.
+        // The watcher polls balances and emits 'balance_changed' events on the bus.
+        return false;
     }
 
     return false;
@@ -850,6 +869,46 @@ export class PlanScheduler {
     if (!trigger || trigger.type !== 'price') return;
 
     // One-shot: mark as running
+    if (!trigger.recurring) {
+      plan.status = 'running';
+      this.store.save(plan);
+    }
+
+    const executionId = `exec_${plan.id}_${Date.now()}`;
+    await this.emit({ type: 'trigger_fired', plan, executionId });
+  }
+
+  // ─── On-Chain Event Trigger (Event-Driven) ─────────────────────────────
+  // Called by the event bus listener when OnChainEventListener detects a matching log.
+
+  async fireOnChainTrigger(planId: string): Promise<void> {
+    const plan = this.plans.get(planId);
+    if (!plan) return;
+    if (plan.status === 'paused' || plan.status === 'running') return;
+
+    const trigger = plan.trigger;
+    if (!trigger || trigger.type !== 'onchain_event') return;
+
+    if (!trigger.recurring) {
+      plan.status = 'running';
+      this.store.save(plan);
+    }
+
+    const executionId = `exec_${plan.id}_${Date.now()}`;
+    await this.emit({ type: 'trigger_fired', plan, executionId });
+  }
+
+  // ─── Balance Trigger (Event-Driven) ────────────────────────────────────
+  // Called by the event bus listener when BalanceWatcher detects a threshold cross.
+
+  async fireBalanceTrigger(planId: string): Promise<void> {
+    const plan = this.plans.get(planId);
+    if (!plan) return;
+    if (plan.status === 'paused' || plan.status === 'running') return;
+
+    const trigger = plan.trigger;
+    if (!trigger || trigger.type !== 'balance') return;
+
     if (!trigger.recurring) {
       plan.status = 'running';
       this.store.save(plan);

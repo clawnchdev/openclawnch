@@ -48,11 +48,51 @@ export interface CheckpointResumedEvent {
   timestamp: number;
 }
 
+export interface OnChainEvent {
+  type: 'onchain_event';
+  /** Chain ID where the event was detected. */
+  chainId: number;
+  /** Contract address that emitted the event. */
+  contractAddress: string;
+  /** Event signature (e.g. 'Transfer(address,address,uint256)'). */
+  eventSignature: string;
+  /** Decoded event topics. */
+  topics: string[];
+  /** Raw log data. */
+  data: string;
+  /** Block number. */
+  blockNumber: number;
+  /** Transaction hash. */
+  txHash: string;
+  timestamp: number;
+}
+
+export interface BalanceChangedEvent {
+  type: 'balance_changed';
+  /** Token symbol or address. */
+  token: string;
+  /** Chain ID. */
+  chainId: number;
+  /** Previous balance. */
+  previousBalance: number;
+  /** Current balance. */
+  currentBalance: number;
+  /** Absolute change. */
+  change: number;
+  /** Direction of change. */
+  direction: 'increased' | 'decreased';
+  /** Wallet address. */
+  walletAddress: string;
+  timestamp: number;
+}
+
 export type BusEvent =
   | PriceCrossedEvent
   | CronTickEvent
   | PlanCompletedEvent
-  | CheckpointResumedEvent;
+  | CheckpointResumedEvent
+  | OnChainEvent
+  | BalanceChangedEvent;
 
 export type BusEventType = BusEvent['type'];
 

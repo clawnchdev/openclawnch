@@ -69,5 +69,5 @@ jobs:
           context: .
           push: true
           tags: |
-            ghcr.io/openclawnch/telegram:latest
-            ghcr.io/openclawnch/telegram:${{ github.ref_name }}
+            ghcr.io/clawnch/openclawnch:latest
+            ghcr.io/clawnch/openclawnch:${{ github.ref_name }}

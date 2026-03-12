@@ -1,8 +1,12 @@
 # OpenClawnch
 
+[![CI](https://github.com/clawnch/openclawnch/actions/workflows/ci.yml/badge.svg)](https://github.com/clawnch/openclawnch/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/@clawnch/openclawnch)](https://www.npmjs.com/package/@clawnch/openclawnch)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 Your personal crypto agent. AI assistant with direct access to blockchain protocols, market data, and transaction execution.
 
-A crypto-native fork of [OpenClaw](https://github.com/openclaw/openclaw). 42 tools. 87 commands. 47 services. Works on Telegram, Discord, Slack, Signal, WhatsApp, iMessage, and LINE.
+A crypto-native fork of [OpenClaw](https://github.com/openclaw/openclaw). 42 tools. 95 commands. 50 services. Works on Telegram, Discord, Slack, Signal, WhatsApp, iMessage, and LINE.
 
 ## Quick Start
 
@@ -91,9 +95,13 @@ Details: **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**
 pnpm install
 pnpm build
 pnpm typecheck
-pnpm test         # 958 pass, 11 skip
+pnpm test         # 1054 pass, 17 skip, 0 fail
 ```
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines, testing patterns, and how to add new tools.
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE) for details.

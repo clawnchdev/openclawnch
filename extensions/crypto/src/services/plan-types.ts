@@ -240,7 +240,37 @@ export interface PriceTrigger {
   recurring?: boolean;
 }
 
-export type Trigger = TimeTrigger | IntervalTrigger | ConditionTrigger | ImmediateTrigger | CronTrigger | PriceTrigger;
+/** Execute when an on-chain event is detected (contract log). */
+export interface OnChainEventTrigger {
+  type: 'onchain_event';
+  /** Chain ID to monitor. */
+  chainId: number;
+  /** Contract address to watch. */
+  contractAddress: string;
+  /** Event signature to filter (e.g. 'Transfer(address,address,uint256)'). */
+  eventSignature: string;
+  /** Optional topic filters (indexed params). null = any value. */
+  topicFilters?: (string | null)[];
+  /** If true, trigger fires on every matching event. Default: false (one-shot). */
+  recurring?: boolean;
+}
+
+/** Execute when a token balance crosses a threshold. */
+export interface BalanceTrigger {
+  type: 'balance';
+  /** Token symbol or contract address. */
+  token: string;
+  /** Chain ID. Default: 8453 (Base). */
+  chainId?: number;
+  /** Condition: balance drops below or rises above threshold. */
+  condition: 'above' | 'below';
+  /** Balance threshold (in token units, not wei). */
+  threshold: number;
+  /** If true, trigger fires repeatedly. Default: false. */
+  recurring?: boolean;
+}
+
+export type Trigger = TimeTrigger | IntervalTrigger | ConditionTrigger | ImmediateTrigger | CronTrigger | PriceTrigger | OnChainEventTrigger | BalanceTrigger;
 
 // ─── Plan ───────────────────────────────────────────────────────────────
 

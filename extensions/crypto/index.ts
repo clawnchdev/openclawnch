@@ -705,11 +705,96 @@ const plugin = {
         scheduler.start();
         api.logger?.info?.(`[crypto] Plan scheduler started (${scheduler.activeCount} active plans)`);
 
+        // ── Price Watcher + Event Bus Wiring ─────────────────────
+        // Start the PriceWatcher, register watches for price-triggered plans,
+        // and subscribe to price_crossed events to fire plan triggers.
+        try {
+          const { getPriceWatcher } = await import('./src/services/price-watcher.js');
+          const { getEventBus } = await import('./src/services/event-bus.js');
+
+          const priceWatcher = getPriceWatcher();
+          const eventBus = getEventBus();
+
+          // Scan active plans for price triggers and register watches
+          const activePlans = scheduler.getActivePlans();
+          let priceWatchCount = 0;
+          for (const plan of activePlans) {
+            if (plan.trigger?.type === 'price') {
+              priceWatcher.addFromTrigger(plan.id, plan.trigger);
+              priceWatchCount++;
+            }
+          }
+
+          // Subscribe: when PriceWatcher detects a threshold cross, fire the plan
+          eventBus.on('price_crossed', async (event) => {
+            // Find which watch(es) this event corresponds to
+            // PriceWatcher emits with the watch ID = planId, but the event
+            // contains token + condition + threshold. We iterate active watches
+            // and match by token.
+            for (const watch of priceWatcher.getWatches()) {
+              if (
+                watch.token.toUpperCase() === event.token.toUpperCase() &&
+                watch.condition === event.condition &&
+                watch.threshold === event.threshold
+              ) {
+                try {
+                  await scheduler.firePriceTrigger(watch.id);
+                  api.logger?.info?.(
+                    `[crypto] Price trigger fired: plan=${watch.id} token=${event.token} ` +
+                    `price=$${event.currentPrice.toFixed(2)} condition=${event.condition} threshold=$${event.threshold}`
+                  );
+                } catch (err) {
+                  api.logger?.warn?.(
+                    `[crypto] Failed to fire price trigger for plan ${watch.id}: ${err instanceof Error ? err.message : String(err)}`
+                  );
+                }
+              }
+            }
+          });
+
+          // Subscribe: when plans are added/cancelled, manage watches dynamically
+          scheduler.on(async (event: any) => {
+            if (event.type === 'plan_added' && event.plan?.trigger?.type === 'price') {
+              priceWatcher.addFromTrigger(event.plan.id, event.plan.trigger);
+              // Auto-start watcher if it's not running and we now have watches
+              if (!priceWatcher.isRunning && priceWatcher.watchCount > 0) {
+                priceWatcher.start();
+                api.logger?.info?.(`[crypto] Price watcher auto-started for plan ${event.plan.id}`);
+              }
+            } else if (event.type === 'plan_cancelled') {
+              priceWatcher.removeWatch(event.planId);
+              // Auto-stop if no more watches (save resources)
+              if (priceWatcher.isRunning && priceWatcher.watchCount === 0) {
+                priceWatcher.stop();
+                api.logger?.info?.('[crypto] Price watcher stopped (no active watches)');
+              }
+            }
+          });
+
+          // Start the watcher (30s tick by default)
+          if (priceWatchCount > 0) {
+            priceWatcher.start();
+            api.logger?.info?.(`[crypto] Price watcher started (${priceWatchCount} active watches)`);
+          } else {
+            api.logger?.info?.('[crypto] Price watcher ready (no active price triggers — will start on first price-triggered plan)');
+          }
+        } catch (err) {
+          api.logger?.warn?.(
+            `[crypto] Price watcher/event bus failed to start: ${err instanceof Error ? err.message : String(err)}`
+          );
+        }
+
         // Register as a managed service so OpenClaw can stop it on shutdown
         api.registerService?.({
           id: 'crypto-plan-scheduler',
           start: () => { /* already started above */ },
-          stop: () => { scheduler.stop(); },
+          stop: () => {
+            scheduler.stop();
+            // Also stop price watcher
+            import('./src/services/price-watcher.js')
+              .then(({ getPriceWatcher }) => getPriceWatcher().stop())
+              .catch(() => {});
+          },
         });
       } catch (err) {
         api.logger?.warn?.(
