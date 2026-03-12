@@ -494,3 +494,359 @@ describe('PaymentRequestService types', () => {
     expect(mod.resetPaymentRequestService).toBeDefined();
   });
 });
+
+// ─── RecurringPaymentService Tests ──────────────────────────────────────
+
+describe('RecurringPaymentService', () => {
+  let RecurringPaymentService: any;
+  let resetRecurringPaymentService: any;
+  let stateDir: string;
+
+  beforeEach(async () => {
+    const mod = await import('../extensions/crypto/src/services/recurring-payment.js');
+    RecurringPaymentService = mod.RecurringPaymentService;
+    resetRecurringPaymentService = mod.resetRecurringPaymentService;
+    stateDir = '/tmp/test-recurring-' + Date.now();
+    resetRecurringPaymentService();
+  });
+
+  afterEach(() => {
+    resetRecurringPaymentService();
+  });
+
+  it('exports service class and helpers', async () => {
+    const mod = await import('../extensions/crypto/src/services/recurring-payment.js');
+    expect(mod.RecurringPaymentService).toBeDefined();
+    expect(mod.getRecurringPaymentService).toBeDefined();
+    expect(mod.resetRecurringPaymentService).toBeDefined();
+  });
+
+  it('creates a recurring payment with correct fields', () => {
+    const svc = new RecurringPaymentService({ stateDir });
+    const { payment, plan } = svc.create({
+      label: 'Vercel monthly',
+      recipient: 'Vercel',
+      recipientAddress: '0xDEF456',
+      amount: '50',
+      currency: 'USDC',
+      frequency: 'monthly',
+      createdBy: '0xABC123',
+    });
+
+    expect(payment.id).toMatch(/^rp_/);
+    expect(payment.label).toBe('Vercel monthly');
+    expect(payment.recipient).toBe('Vercel');
+    expect(payment.amount).toBe('50');
+    expect(payment.currency).toBe('USDC');
+    expect(payment.status).toBe('active');
+    expect(payment.paymentsMade).toBe(0);
+    expect(payment.method).toBe('crypto');
+    expect(payment.chainId).toBe(8453);
+
+    // Plan should be a valid Plan IR
+    expect(plan.id).toContain('recurring_');
+    expect(plan.trigger).toBeDefined();
+    expect((plan.trigger as any).type).toBe('cron');
+    expect(plan.root).toBeDefined();
+    expect(plan.tags).toContain('recurring-payment');
+  });
+
+  it('creates plan with correct cron for weekly frequency', () => {
+    const svc = new RecurringPaymentService({ stateDir });
+    const { plan } = svc.create({
+      label: 'Weekly pay',
+      recipient: 'Alice',
+      recipientAddress: '0xALICE',
+      amount: '100',
+      currency: 'USDC',
+      frequency: 'weekly',
+      createdBy: '0xBOB',
+    });
+
+    expect((plan.trigger as any).type).toBe('cron');
+    expect((plan.trigger as any).expression).toBe('0 9 * * 1'); // Monday 9am UTC
+  });
+
+  it('creates plan with custom cron expression', () => {
+    const svc = new RecurringPaymentService({ stateDir });
+    const { plan } = svc.create({
+      label: 'Custom schedule',
+      recipient: 'Charlie',
+      recipientAddress: '0xCHARLIE',
+      amount: '25',
+      currency: 'ETH',
+      frequency: { cronExpression: '30 14 * * 5', timezone: 'America/New_York' },
+      createdBy: '0xDAVE',
+    });
+
+    expect((plan.trigger as any).type).toBe('cron');
+    expect((plan.trigger as any).expression).toBe('30 14 * * 5');
+    expect((plan.trigger as any).timezone).toBe('America/New_York');
+  });
+
+  it('creates plan with interval trigger', () => {
+    const svc = new RecurringPaymentService({ stateDir });
+    const { plan } = svc.create({
+      label: 'Hourly drip',
+      recipient: 'Pool',
+      recipientAddress: '0xPOOL',
+      amount: '0.1',
+      currency: 'ETH',
+      frequency: { intervalMs: 3_600_000 },
+      createdBy: '0xSENDER',
+    });
+
+    expect((plan.trigger as any).type).toBe('interval');
+    expect((plan.trigger as any).everyMs).toBe(3_600_000);
+  });
+
+  it('pauses a recurring payment', () => {
+    const svc = new RecurringPaymentService({ stateDir });
+    const { payment } = svc.create({
+      label: 'Test',
+      recipient: 'Test',
+      recipientAddress: '0xTEST',
+      amount: '1',
+      currency: 'ETH',
+      frequency: 'daily',
+      createdBy: '0xUSER',
+    });
+
+    const paused = svc.pause(payment.id);
+    expect(paused!.status).toBe('paused');
+  });
+
+  it('resumes a paused payment and returns new plan', () => {
+    const svc = new RecurringPaymentService({ stateDir });
+    const { payment } = svc.create({
+      label: 'Test',
+      recipient: 'Test',
+      recipientAddress: '0xTEST',
+      amount: '1',
+      currency: 'ETH',
+      frequency: 'daily',
+      createdBy: '0xUSER',
+    });
+
+    svc.pause(payment.id);
+    const result = svc.resume(payment.id);
+    expect(result).not.toBeNull();
+    expect(result!.payment.status).toBe('active');
+    expect(result!.plan).toBeDefined();
+  });
+
+  it('cancels a recurring payment', () => {
+    const svc = new RecurringPaymentService({ stateDir });
+    const { payment } = svc.create({
+      label: 'Test',
+      recipient: 'Test',
+      recipientAddress: '0xTEST',
+      amount: '1',
+      currency: 'ETH',
+      frequency: 'daily',
+      createdBy: '0xUSER',
+    });
+
+    const cancelled = svc.cancel(payment.id);
+    expect(cancelled!.status).toBe('cancelled');
+  });
+
+  it('records payments and completes when max reached', () => {
+    const svc = new RecurringPaymentService({ stateDir });
+    const { payment } = svc.create({
+      label: 'Limited',
+      recipient: 'Test',
+      recipientAddress: '0xTEST',
+      amount: '10',
+      currency: 'USDC',
+      frequency: 'daily',
+      maxPayments: 3,
+      createdBy: '0xUSER',
+    });
+
+    svc.recordPayment(payment.id);
+    expect(svc.get(payment.id)!.paymentsMade).toBe(1);
+    expect(svc.get(payment.id)!.status).toBe('active');
+
+    svc.recordPayment(payment.id);
+    svc.recordPayment(payment.id);
+    expect(svc.get(payment.id)!.paymentsMade).toBe(3);
+    expect(svc.get(payment.id)!.status).toBe('completed');
+  });
+
+  it('finds payment by plan ID', () => {
+    const svc = new RecurringPaymentService({ stateDir });
+    const { payment } = svc.create({
+      label: 'Test',
+      recipient: 'Test',
+      recipientAddress: '0xTEST',
+      amount: '1',
+      currency: 'ETH',
+      frequency: 'daily',
+      createdBy: '0xUSER',
+    });
+
+    const found = svc.getByPlanId(payment.planId!);
+    expect(found).not.toBeNull();
+    expect(found!.id).toBe(payment.id);
+  });
+
+  it('lists payments with filters', () => {
+    const svc = new RecurringPaymentService({ stateDir });
+    svc.create({ label: 'A', recipient: 'A', recipientAddress: '0xA', amount: '1', currency: 'ETH', frequency: 'daily', createdBy: '0xUSER1' });
+    svc.create({ label: 'B', recipient: 'B', recipientAddress: '0xB', amount: '2', currency: 'USDC', frequency: 'weekly', createdBy: '0xUSER2' });
+
+    expect(svc.list().length).toBe(2);
+    expect(svc.list({ createdBy: '0xUSER1' }).length).toBe(1);
+    expect(svc.list({ status: 'active' }).length).toBe(2);
+  });
+
+  it('creates fiat payment plan when method is fiat', () => {
+    const svc = new RecurringPaymentService({ stateDir });
+    const { plan } = svc.create({
+      label: 'Rent',
+      recipient: 'Landlord',
+      recipientAddress: '0xLANDLORD',
+      amount: '2000',
+      currency: 'USDC',
+      method: 'fiat',
+      frequency: 'monthly',
+      createdBy: '0xTENANT',
+    });
+
+    // The root sequence should contain a fiat_payment action
+    const root = plan.root as any;
+    expect(root.type).toBe('sequence');
+    expect(root.steps[0].tool).toBe('fiat_payment');
+    expect(plan.tags).toContain('fiat');
+  });
+
+  it('singleton getRecurringPaymentService returns same instance', async () => {
+    const mod = await import('../extensions/crypto/src/services/recurring-payment.js');
+    const a = mod.getRecurringPaymentService({ stateDir });
+    const b = mod.getRecurringPaymentService();
+    expect(a).toBe(b);
+  });
+});
+
+// ─── MultiCurrencyAccountingService Tests ───────────────────────────────
+
+describe('MultiCurrencyAccountingService', () => {
+  let MultiCurrencyAccountingService: any;
+  let resetAccountingService: any;
+
+  beforeEach(async () => {
+    const mod = await import('../extensions/crypto/src/services/multicurrency-accounting.js');
+    MultiCurrencyAccountingService = mod.MultiCurrencyAccountingService;
+    resetAccountingService = mod.resetAccountingService;
+    resetAccountingService();
+  });
+
+  afterEach(() => {
+    resetAccountingService();
+  });
+
+  it('exports service class and helpers', async () => {
+    const mod = await import('../extensions/crypto/src/services/multicurrency-accounting.js');
+    expect(mod.MultiCurrencyAccountingService).toBeDefined();
+    expect(mod.getAccountingService).toBeDefined();
+    expect(mod.resetAccountingService).toBeDefined();
+  });
+
+  it('getPortfolio returns empty snapshot when nothing connected', async () => {
+    const svc = new MultiCurrencyAccountingService();
+    const portfolio = await svc.getPortfolio();
+
+    expect(portfolio.totalUsd).toBe(0);
+    expect(portfolio.cryptoUsd).toBe(0);
+    expect(portfolio.fiatUsd).toBe(0);
+    expect(portfolio.pendingUsd).toBe(0);
+    expect(portfolio.assets).toEqual([]);
+    expect(portfolio.snapshotAt).toBeDefined();
+    expect(portfolio.displayCurrency).toBe('USD');
+  });
+
+  it('getPortfolio uses custom display currency', async () => {
+    const svc = new MultiCurrencyAccountingService();
+    const portfolio = await svc.getPortfolio({ displayCurrency: 'EUR' });
+    expect(portfolio.displayCurrency).toBe('EUR');
+  });
+
+  it('getPortfolio includes crypto balances from provider', async () => {
+    const svc = new MultiCurrencyAccountingService();
+    svc.setCryptoBalanceProvider(async () => [
+      { asset: 'ETH', type: 'crypto' as const, balance: 2.5, usdValue: 5000, source: 'wallet', chainId: 1, updatedAt: Date.now() },
+      { asset: 'USDC', type: 'crypto' as const, balance: 1000, usdValue: 1000, source: 'wallet', chainId: 8453, updatedAt: Date.now() },
+    ]);
+
+    const portfolio = await svc.getPortfolio();
+    expect(portfolio.cryptoUsd).toBe(6000);
+    expect(portfolio.assets.length).toBe(2);
+    expect(portfolio.assets[0].asset).toBe('ETH'); // Sorted by USD value desc
+  });
+
+  it('recordEntry creates accounting entries', () => {
+    const svc = new MultiCurrencyAccountingService();
+    const entry = svc.recordEntry({
+      type: 'crypto_in',
+      asset: 'ETH',
+      amount: 1.5,
+      usdValue: 3000,
+      reference: '0xTXHASH',
+      counterparty: '0xSENDER',
+    });
+
+    expect(entry.id).toMatch(/^acc_/);
+    expect(entry.type).toBe('crypto_in');
+    expect(entry.asset).toBe('ETH');
+    expect(entry.amount).toBe(1.5);
+  });
+
+  it('getEntries filters by asset and type', () => {
+    const svc = new MultiCurrencyAccountingService();
+    svc.recordEntry({ type: 'crypto_in', asset: 'ETH', amount: 1, usdValue: 2000 });
+    svc.recordEntry({ type: 'crypto_out', asset: 'ETH', amount: -0.5, usdValue: 1000 });
+    svc.recordEntry({ type: 'fiat_in', asset: 'USD', amount: 500, usdValue: 500 });
+
+    expect(svc.getEntries().length).toBe(3);
+    expect(svc.getEntries({ asset: 'ETH' }).length).toBe(2);
+    expect(svc.getEntries({ type: 'fiat_in' }).length).toBe(1);
+  });
+
+  it('getEntries respects limit', () => {
+    const svc = new MultiCurrencyAccountingService();
+    for (let i = 0; i < 10; i++) {
+      svc.recordEntry({ type: 'crypto_in', asset: 'ETH', amount: 1, usdValue: 2000 });
+    }
+    expect(svc.getEntries({ limit: 5 }).length).toBe(5);
+  });
+
+  it('getNetFlow calculates inflows and outflows', () => {
+    const svc = new MultiCurrencyAccountingService();
+    svc.recordEntry({ type: 'crypto_in', asset: 'ETH', amount: 2, usdValue: 4000 });
+    svc.recordEntry({ type: 'crypto_out', asset: 'ETH', amount: -0.5, usdValue: 1000 });
+    svc.recordEntry({ type: 'fiat_in', asset: 'USD', amount: 500, usdValue: 500 });
+
+    const flow = svc.getNetFlow();
+    expect(flow.totalInUsd).toBe(4500);
+    expect(flow.totalOutUsd).toBe(1000);
+    expect(flow.netUsd).toBe(3500);
+    expect(flow.byAsset.ETH).toBeDefined();
+    expect(flow.byAsset.ETH.inflow).toBe(2);
+    expect(flow.byAsset.ETH.outflow).toBe(0.5);
+  });
+
+  it('clear empties all entries', () => {
+    const svc = new MultiCurrencyAccountingService();
+    svc.recordEntry({ type: 'crypto_in', asset: 'ETH', amount: 1, usdValue: 2000 });
+    svc.clear();
+    expect(svc.getEntries().length).toBe(0);
+  });
+
+  it('singleton getAccountingService returns same instance', async () => {
+    const mod = await import('../extensions/crypto/src/services/multicurrency-accounting.js');
+    const a = mod.getAccountingService();
+    const b = mod.getAccountingService();
+    expect(a).toBe(b);
+  });
+});
