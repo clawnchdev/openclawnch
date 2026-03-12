@@ -251,6 +251,34 @@ async function main() {
     process.exit(0);
   }
 
+  if (args[0] === 'help' || args[0] === '--help' || args[0] === '-h') {
+    const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
+    const ocVersion = getOpenClawVersion();
+    console.log('');
+    console.log(`  OpenClawnch v${pkg.version}${ocVersion ? ` (OpenClaw v${ocVersion})` : ''}`);
+    console.log('  OpenClaw for crypto. Same assistant. Now it handles real money.');
+    console.log('');
+    console.log('  Usage:');
+    console.log('    openclawnch              Start the agent (requires LLM key + channel token)');
+    console.log('    openclawnch init         Interactive setup wizard — creates your .env');
+    console.log('    openclawnch deploy       Deploy to Fly.io as a Telegram bot');
+    console.log('    openclawnch version      Show version info');
+    console.log('    openclawnch help         Show this help');
+    console.log('');
+    console.log('  In-chat commands:');
+    console.log('    /setup                   Show tool status (X/42 tools ready)');
+    console.log('    /doctor                  Run 13 diagnostic checks');
+    console.log('    /connect                 Connect a mobile wallet via WalletConnect');
+    console.log('    /wallet                  Show wallet status and balances');
+    console.log('    /policy <rules>          Set spending policies');
+    console.log('    /help                    Full command reference');
+    console.log('');
+    console.log('  Docs:   https://openclawn.ch/docs');
+    console.log('  GitHub: https://github.com/clawnch/openclawnch');
+    console.log('');
+    process.exit(0);
+  }
+
   // Init command — interactive setup wizard
   if (args[0] === 'init' || args[0] === 'setup') {
     const { initCli } = await import('../dist/init.js');

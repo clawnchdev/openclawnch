@@ -42,6 +42,7 @@
     "test:e2e": "OPENCLAWNCH_E2E=1 vitest run tests/e2e-scaffold.test.ts",
     "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit",
+    "prebuild": "rm -rf dist extensions/crypto/dist",
     "clean": "rm -rf dist extensions/crypto/dist",
     "prepublishOnly": "pnpm typecheck && pnpm test && pnpm build",
     "prepack": "pnpm build",

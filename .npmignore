@@ -1,0 +1,24 @@
+# Source maps (not needed by consumers)
+**/*.js.map
+
+# TypeScript source (only ship compiled)
+extensions/crypto/src/
+extensions/crypto/index.ts
+extensions/crypto/tsconfig.json
+src/
+
+# Tests
+tests/
+vitest.config.ts
+
+# Dev / internal docs
+PLAN.md
+AUDIT.md
+CONTRIBUTING.md
+FEATURE_PARITY.md
+.github/
+
+# Config
+.gitignore
+tsconfig.json
+tsdown.config.ts
