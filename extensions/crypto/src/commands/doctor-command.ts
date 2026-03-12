@@ -110,22 +110,22 @@ async function runDiagnostics(userId: string): Promise<DiagnosticResult[]> {
     const criticalMissing = critical.filter(s => !s.configured);
     if (criticalMissing.length > 0) {
       results.push({
-        label: 'Critical Secrets',
+        label: 'Secrets',
         status: 'warn',
         detail: `Missing: ${criticalMissing.map(s => s.envVar).join(', ')}`,
       });
     } else {
       results.push({
-        label: 'Critical Secrets',
+        label: 'Secrets',
         status: 'ok',
-        detail: `All ${critical.length} critical secrets configured`,
+        detail: `All ${critical.length} required secrets configured`,
       });
     }
 
     results.push({
       label: 'API Keys',
       status: configured.length > summary.length / 2 ? 'ok' : 'warn',
-      detail: `${configured.length}/${summary.length} secrets configured (${high.filter(s => s.configured).length}/${high.length} high-priority)`,
+      detail: `${configured.length}/${summary.length} configured`,
     });
   } catch {
     results.push({ label: 'API Keys', status: 'skip', detail: 'Could not check credential vault' });
@@ -296,6 +296,22 @@ const STATUS_ICONS: Record<string, string> = {
   skip: '[--]',
 };
 
+/** Section groupings for diagnostics output. */
+const SECTIONS: Array<{ title: string; labels: string[] }> = [
+  {
+    title: 'Infrastructure',
+    labels: ['Wallet', 'RPC (Base)', 'RPC Providers', 'Channel: Telegram', 'Channel: Discord', 'Channel: Slack', 'Channels'],
+  },
+  {
+    title: 'Security',
+    labels: ['Safety Mode', 'Endpoint Allowlist', 'API Keys', 'Secrets'],
+  },
+  {
+    title: 'Services',
+    labels: ['Tools', 'Plan Scheduler', 'Heartbeat Monitor', 'Market Cache', 'Transaction Ledger', 'Budget Tracker'],
+  },
+];
+
 export const doctorCommand = {
   name: 'doctor',
   description: 'Run diagnostics — check wallet, RPC, API keys, channels, security, and scheduler health',
@@ -305,23 +321,47 @@ export const doctorCommand = {
     const userId = getSenderId(ctx);
     const results = await runDiagnostics(userId);
 
-    const lines = ['**OpenClawnch Diagnostics**', ''];
+    const lines = ['**Diagnostics**', ''];
 
-    for (const r of results) {
-      lines.push(`${STATUS_ICONS[r.status]} **${r.label}**: ${r.detail}`);
+    // Build a lookup by label for sectioned output
+    const byLabel = new Map(results.map(r => [r.label, r]));
+    const rendered = new Set<string>();
+
+    for (const section of SECTIONS) {
+      const sectionResults = section.labels
+        .map(l => byLabel.get(l))
+        .filter((r): r is DiagnosticResult => r != null);
+
+      if (sectionResults.length > 0) {
+        lines.push(`**${section.title}**`);
+        for (const r of sectionResults) {
+          lines.push(`  ${STATUS_ICONS[r.status]} ${r.label}: ${r.detail}`);
+          rendered.add(r.label);
+        }
+        lines.push('');
+      }
+    }
+
+    // Any results not in a section (future-proofing)
+    const ungrouped = results.filter(r => !rendered.has(r.label));
+    if (ungrouped.length > 0) {
+      lines.push('**Other**');
+      for (const r of ungrouped) {
+        lines.push(`  ${STATUS_ICONS[r.status]} ${r.label}: ${r.detail}`);
+      }
+      lines.push('');
     }
 
     const okCount = results.filter(r => r.status === 'ok').length;
     const warnCount = results.filter(r => r.status === 'warn').length;
     const failCount = results.filter(r => r.status === 'fail').length;
 
-    lines.push('');
-    lines.push(`Summary: ${okCount} ok, ${warnCount} warnings, ${failCount} failures`);
+    lines.push(`${okCount} ok, ${warnCount} warnings, ${failCount} failures`);
 
     if (failCount > 0) {
       lines.push('', 'Fix failures above to ensure proper operation.');
     } else if (warnCount > 0) {
-      lines.push('', 'Warnings are non-critical but should be reviewed.');
+      lines.push('', 'Warnings are non-critical but worth reviewing.');
     } else {
       lines.push('', 'All checks passed.');
     }

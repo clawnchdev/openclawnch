@@ -135,6 +135,12 @@ async function doConnect(wallet: WalletOption, ctx: any): Promise<{ text: string
         })
         .catch((err) => {
           console.log(`[/connect] Session wait failed: ${err instanceof Error ? err.message : String(err)}`);
+          // Notify user if we have a channel to send to
+          if (_api && chatId) {
+            const sender = createChannelSender(_api);
+            sender.send(channel, String(chatId), 'Connection timed out. Run /connect to try again.')
+              .catch((sendErr: any) => console.log(`[/connect] Failed to send timeout msg: ${sendErr}`));
+          }
         })
         .finally(() => { _pendingSessionWait = false; });
       } // end else (_pendingSessionWait guard)

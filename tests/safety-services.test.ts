@@ -849,7 +849,7 @@ describe('/doctor Command', () => {
     });
 
     expect(result.text).toBeDefined();
-    expect(result.text).toContain('OpenClawnch Diagnostics');
+    expect(result.text).toContain('**Diagnostics**');
     // Should contain at least some status icons
     const hasStatusIcon = result.text.includes('[OK]') ||
       result.text.includes('[!!]') ||
@@ -867,7 +867,6 @@ describe('/doctor Command', () => {
       senderId: 'test-doctor-user-2',
     });
 
-    expect(result.text).toContain('Summary:');
     // Should have counts for ok/warnings/failures
     expect(result.text).toMatch(/\d+ ok/);
     expect(result.text).toMatch(/\d+ warnings/);
@@ -922,7 +921,7 @@ describe('/doctor Command', () => {
 
     expect(result.text).toContain('API Keys');
     // Should mention how many are configured
-    expect(result.text).toMatch(/\d+\/\d+ secrets configured/);
+    expect(result.text).toMatch(/\d+\/\d+ configured/);
   });
 
   it('/doctor warns about danger+autosign combo', async () => {
