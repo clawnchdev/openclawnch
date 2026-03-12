@@ -9,12 +9,42 @@
  * - 10.7: Persistent scheduler state (interval counts, condition check times)
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
 import { PlanCompiler, type Intent, type IntentStep } from '../extensions/crypto/src/services/plan-compiler.js';
 import { PlanValidator } from '../extensions/crypto/src/services/plan-validator.js';
 import { PlanExecutor, type ToolDispatcher } from '../extensions/crypto/src/services/plan-executor.js';
-import { PlanScheduler, FilePlanStore, NULL_RESOLVER } from '../extensions/crypto/src/services/plan-scheduler.js';
+import { PlanScheduler, FilePlanStore, NULL_RESOLVER, resetScheduler } from '../extensions/crypto/src/services/plan-scheduler.js';
 import type { Plan, PlanNode, ActionNode, ParallelNode, SequenceNode, WaitNode, LoopNode, IfNode, Condition } from '../extensions/crypto/src/services/plan-types.js';
+
+// ── Global Cleanup ──────────────────────────────────────────────────────
+// Tests that use the compound_action tool write plans to the global
+// FilePlanStore on disk. Clean up plan files so other test files
+// (e.g. beta-audit-phase7) start with a clean slate.
+
+afterAll(async () => {
+  const { join } = await import('node:path');
+  const { existsSync, readdirSync, rmSync } = await import('node:fs');
+
+  // Delete all plan files from the default store directory
+  const plansDir = join(process.env.HOME ?? '/tmp', '.openclawnch', 'plans');
+  try {
+    if (existsSync(plansDir)) {
+      const files = readdirSync(plansDir).filter(f => f.endsWith('.json'));
+      for (const f of files) {
+        rmSync(join(plansDir, f), { force: true });
+      }
+      // Also clean templates subdirectory
+      const templatesDir = join(plansDir, 'templates');
+      if (existsSync(templatesDir)) {
+        const tplFiles = readdirSync(templatesDir).filter(f => f.endsWith('.json'));
+        for (const f of tplFiles) {
+          rmSync(join(templatesDir, f), { force: true });
+        }
+      }
+    }
+  } catch { /* ignore cleanup errors */ }
+  resetScheduler();
+});
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
@@ -644,6 +674,10 @@ describe('PlanCompiler + Validator — complex workflow', () => {
 // ── 10.6: Multi-user plan ownership ────────────────────────────────────
 
 describe('multi-user plan ownership', () => {
+  beforeEach(() => {
+    resetScheduler();
+  });
+
   it('execute() extracts userId from ctx.senderId', async () => {
     const { createCompoundActionTool } = await import('../extensions/crypto/src/tools/compound-action.js');
     const tool = createCompoundActionTool();
@@ -917,6 +951,10 @@ describe('scheduler state persistence', () => {
 // ── 10.5: Plan editing + templates ─────────────────────────────────────
 
 describe('plan update action', () => {
+  beforeEach(() => {
+    resetScheduler();
+  });
+
   it('update replaces steps in a draft plan', async () => {
     const { createCompoundActionTool } = await import('../extensions/crypto/src/tools/compound-action.js');
     const tool = createCompoundActionTool();
@@ -1001,6 +1039,10 @@ describe('plan update action', () => {
 });
 
 describe('template actions', () => {
+  beforeEach(() => {
+    resetScheduler();
+  });
+
   it('save_template + list_templates', async () => {
     const { createCompoundActionTool } = await import('../extensions/crypto/src/tools/compound-action.js');
     const tool = createCompoundActionTool();

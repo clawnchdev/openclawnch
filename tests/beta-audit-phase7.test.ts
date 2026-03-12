@@ -91,6 +91,18 @@ describe('Phase 4 commands', () => {
 
 describe('Plans commands', () => {
   beforeEach(async () => {
+    // Clean plan files FIRST so the fresh scheduler loads an empty store
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const plansDir = path.join(process.env.HOME ?? '/tmp', '.openclawnch', 'plans');
+    try {
+      if (fs.existsSync(plansDir)) {
+        for (const f of fs.readdirSync(plansDir).filter((f: string) => f.endsWith('.json'))) {
+          fs.rmSync(path.join(plansDir, f), { force: true });
+        }
+      }
+    } catch { /* ignore */ }
+    // Reset scheduler AFTER files are cleaned so loadAll() finds nothing
     const { resetScheduler } = await import(
       '../extensions/crypto/src/services/plan-scheduler.js'
     );
@@ -161,6 +173,18 @@ describe('Plans commands', () => {
 
 describe('Plan scheduler with plans', () => {
   it('can add a plan, list it, and cancel it', async () => {
+    // Clean plan files FIRST so the fresh scheduler loads an empty store
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const plansDir = path.join(process.env.HOME ?? '/tmp', '.openclawnch', 'plans');
+    try {
+      if (fs.existsSync(plansDir)) {
+        for (const f of fs.readdirSync(plansDir).filter((f: string) => f.endsWith('.json'))) {
+          fs.rmSync(path.join(plansDir, f), { force: true });
+        }
+      }
+    } catch { /* ignore */ }
+    // Reset scheduler AFTER files are cleaned
     const { getScheduler, resetScheduler } = await import(
       '../extensions/crypto/src/services/plan-scheduler.js'
     );
