@@ -68,7 +68,11 @@ export interface ToolDispatcher {
 // ─── Confirmation Callback ──────────────────────────────────────────────
 // For steps that require user confirmation before execution.
 
-export type ConfirmationCallback = (step: ActionNode, resolvedParams: Record<string, unknown>) => Promise<boolean>;
+export type ConfirmationCallback = (
+  step: ActionNode,
+  resolvedParams: Record<string, unknown>,
+  userId: string,
+) => Promise<boolean>;
 
 // ─── Execution Context ──────────────────────────────────────────────────
 
@@ -208,7 +212,7 @@ export class PlanExecutor {
 
     // Confirmation check
     if (node.requireConfirmation && this.confirmCallback) {
-      const confirmed = await this.confirmCallback(node, resolvedParams);
+      const confirmed = await this.confirmCallback(node, resolvedParams, ctx.userId);
       if (!confirmed) {
         step.status = 'skipped';
         step.completedAt = Date.now();

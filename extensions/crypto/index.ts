@@ -95,6 +95,7 @@ import {
 import { setupCommand } from './src/commands/setup-command.js';
 import { recoverCommand, exportWalletCommand, walletBackupCommand } from './src/commands/wallet-manage-commands.js';
 import { plansCommand, plansActiveCommand, plansCancelCommand, plansClearCommand } from './src/commands/plans-command.js';
+import { approveCommand, denyCommand } from './src/commands/confirm-commands.js';
 import { helpCommand, portfolioCommand, balanceCommand, chainCommand } from './src/commands/help-command.js';
 import { isReadonly } from './src/services/mode-service.js';
 
@@ -104,6 +105,7 @@ import { getOnboardingFlow, type OnboardingMessage } from './src/services/onboar
 import { getCredentialVault } from './src/services/credential-vault.js';
 import { getHeartbeatMonitor } from './src/services/heartbeat-monitor.js';
 import { getScheduler } from './src/services/plan-scheduler.js';
+import { createPendingConfirmation } from './src/services/confirmation-store.js';
 import { persistForumTopics, restoreForumTopics } from './src/services/forum-topics.js';
 import { persistThreadBindings, restoreThreadBindings } from './src/services/thread-bindings.js';
 import { persistOrders, restoreOrders } from './src/tools/manage-orders.js';
@@ -369,6 +371,8 @@ const plugin = {
     api.registerCommand(plansActiveCommand);
     api.registerCommand(plansCancelCommand);
     api.registerCommand(plansClearCommand);
+    api.registerCommand(approveCommand);
+    api.registerCommand(denyCommand);
 
     // Help, portfolio, balance, chain, diagnostics
     api.registerCommand(helpCommand);
@@ -563,6 +567,42 @@ const plugin = {
         const executor = new PlanExecutor({
           dispatcher: toolDispatcher,
           scheduler,
+          onConfirmRequired: async (step, resolvedParams, planUserId) => {
+
+            // Send confirmation request to user
+            if (planUserId && planUserId !== 'owner') {
+              try {
+                const parsed = parseSessionKey(planUserId);
+                const paramLines = Object.entries(resolvedParams)
+                  .filter(([, v]) => v !== undefined && v !== null)
+                  .slice(0, 6)
+                  .map(([k, v]) => `  ${k}: ${String(v)}`)
+                  .join('\n');
+
+                const msg = `**Confirmation required**\n\n` +
+                  `Step: **${step.label}**\n` +
+                  `Tool: ${step.tool}\n` +
+                  (paramLines ? `Params:\n${paramLines}\n\n` : '\n') +
+                  `Reply /approve to continue or /deny to skip.`;
+
+                if (parsed) {
+                  await sender.send(parsed.channel, parsed.userId, msg);
+                } else {
+                  await sender.send('telegram', planUserId, msg);
+                }
+              } catch { /* best effort */ }
+            }
+
+            // Wait for user response (or timeout after 5 min)
+            return createPendingConfirmation({
+              executionId: `${step.id}-${Date.now()}`,
+              planName: step.label,
+              stepLabel: step.label,
+              tool: step.tool,
+              params: resolvedParams,
+              userId: planUserId,
+            });
+          },
         });
 
         // ── Scheduler Event Handler: channel-agnostic notifications ──

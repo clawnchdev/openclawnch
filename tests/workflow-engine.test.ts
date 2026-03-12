@@ -1083,6 +1083,36 @@ describe('template actions', () => {
     expect(data.error).toContain('not found');
   });
 
+  it('from_template without params reuses template directly', async () => {
+    const { createCompoundActionTool } = await import('../extensions/crypto/src/tools/compound-action.js');
+    const tool = createCompoundActionTool();
+
+    // Create and save template
+    const createResult = await tool.execute('call1', {
+      action: 'create',
+      intent: {
+        natural_language: 'simple swap',
+        steps: [{ action: 'swap', token_in: 'ETH', token_out: 'USDC', amount: '1' }],
+      },
+    });
+    const planId = (createResult as any).details.plan_id;
+
+    const saveResult = await tool.execute('call2', {
+      action: 'save_template',
+      plan_id: planId,
+    });
+    const templateId = (saveResult as any).details.template_id;
+
+    // Instantiate without params
+    const fromResult = await tool.execute('call3', {
+      action: 'from_template',
+      template_id: templateId,
+    });
+    const fromData = (fromResult as any).details;
+    expect(fromData.plan_id).toMatch(/^plan_/);
+    expect(fromData.from_template).toBe(templateId);
+  });
+
   it('template storage on FilePlanStore', async () => {
     const { mkdtempSync, rmSync } = await import('node:fs');
     const { tmpdir } = await import('node:os');
@@ -1113,5 +1143,137 @@ describe('template actions', () => {
     } finally {
       rmSync(tmpDir, { recursive: true, force: true });
     }
+  });
+});
+
+// ── 10.4: Confirmation callback ────────────────────────────────────────
+
+describe('confirmation store', () => {
+  it('creates and resolves a pending confirmation', async () => {
+    const {
+      createPendingConfirmation,
+      respondToConfirmation,
+      getPendingConfirmation,
+      pendingCount,
+    } = await import('../extensions/crypto/src/services/confirmation-store.js');
+
+    // Create a pending confirmation
+    const promise = createPendingConfirmation({
+      executionId: 'exec_test_1',
+      planName: 'Test Plan',
+      stepLabel: 'Swap 1 ETH → USDC',
+      tool: 'defi_swap',
+      params: { token_in: 'ETH', token_out: 'USDC', amount: '1' },
+      userId: 'user-confirm-test',
+    });
+
+    // Should be pending
+    expect(pendingCount()).toBeGreaterThanOrEqual(1);
+    const pending = getPendingConfirmation('user-confirm-test');
+    expect(pending).not.toBeNull();
+    expect(pending!.stepLabel).toBe('Swap 1 ETH → USDC');
+
+    // Approve it
+    const result = respondToConfirmation('user-confirm-test', true);
+    expect(result).not.toBeNull();
+    expect(result!.stepLabel).toBe('Swap 1 ETH → USDC');
+
+    // Promise should resolve to true
+    const approved = await promise;
+    expect(approved).toBe(true);
+  });
+
+  it('deny resolves to false', async () => {
+    const {
+      createPendingConfirmation,
+      respondToConfirmation,
+    } = await import('../extensions/crypto/src/services/confirmation-store.js');
+
+    const promise = createPendingConfirmation({
+      executionId: 'exec_deny_1',
+      planName: 'Test Plan',
+      stepLabel: 'Transfer 100 USDC',
+      tool: 'transfer',
+      params: {},
+      userId: 'user-deny-test',
+    });
+
+    respondToConfirmation('user-deny-test', false);
+    const approved = await promise;
+    expect(approved).toBe(false);
+  });
+
+  it('returns null when no pending confirmation', async () => {
+    const {
+      respondToConfirmation,
+      getPendingConfirmation,
+    } = await import('../extensions/crypto/src/services/confirmation-store.js');
+
+    expect(getPendingConfirmation('nonexistent-user')).toBeNull();
+    expect(respondToConfirmation('nonexistent-user', true)).toBeNull();
+  });
+
+  it('newer confirmation auto-denies the old one', async () => {
+    const {
+      createPendingConfirmation,
+      respondToConfirmation,
+    } = await import('../extensions/crypto/src/services/confirmation-store.js');
+
+    // First confirmation
+    const promise1 = createPendingConfirmation({
+      executionId: 'exec_old',
+      planName: 'Old Plan',
+      stepLabel: 'Old Step',
+      tool: 'defi_swap',
+      params: {},
+      userId: 'user-replace-test',
+    });
+
+    // Second confirmation replaces the first (auto-denies it)
+    const promise2 = createPendingConfirmation({
+      executionId: 'exec_new',
+      planName: 'New Plan',
+      stepLabel: 'New Step',
+      tool: 'defi_swap',
+      params: {},
+      userId: 'user-replace-test',
+    });
+
+    // First should be auto-denied
+    const result1 = await promise1;
+    expect(result1).toBe(false);
+
+    // Second is still pending — approve it
+    respondToConfirmation('user-replace-test', true);
+    const result2 = await promise2;
+    expect(result2).toBe(true);
+  });
+});
+
+describe('approve and deny commands', () => {
+  it('approve command has correct shape', async () => {
+    const { approveCommand } = await import('../extensions/crypto/src/commands/confirm-commands.js');
+    expect(approveCommand.name).toBe('approve');
+    expect(approveCommand.requireAuth).toBe(true);
+    expect(typeof approveCommand.handler).toBe('function');
+  });
+
+  it('deny command has correct shape', async () => {
+    const { denyCommand } = await import('../extensions/crypto/src/commands/confirm-commands.js');
+    expect(denyCommand.name).toBe('deny');
+    expect(denyCommand.requireAuth).toBe(true);
+    expect(typeof denyCommand.handler).toBe('function');
+  });
+
+  it('approve with no pending returns helpful message', async () => {
+    const { approveCommand } = await import('../extensions/crypto/src/commands/confirm-commands.js');
+    const result = await approveCommand.handler({ senderId: 'no-pending-user' });
+    expect(result.text).toContain('No pending');
+  });
+
+  it('deny with no pending returns message', async () => {
+    const { denyCommand } = await import('../extensions/crypto/src/commands/confirm-commands.js');
+    const result = await denyCommand.handler({ senderId: 'no-pending-user-2' });
+    expect(result.text).toContain('No pending');
   });
 });
