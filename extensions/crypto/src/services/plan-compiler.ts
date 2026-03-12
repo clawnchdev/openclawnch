@@ -34,6 +34,7 @@ import type {
   PlanNode,
   ActionNode,
   SequenceNode,
+  ParallelNode,
   IfNode,
   WaitNode,
   LoopNode,
@@ -64,9 +65,21 @@ export interface IntentTrigger {
   expires?: string;
 }
 
+/** Step type discriminator — 'action' is the default for backward compatibility. */
+export type IntentStepType = 'action' | 'parallel' | 'wait' | 'loop';
+
 export interface IntentStep {
-  /** The action to perform. */
-  action: 'swap' | 'transfer' | 'bridge' | 'check_price' | 'check_balance'
+  /**
+   * Step type. Defaults to 'action' if omitted (backward compatible).
+   *   - 'action' — call a tool (swap, transfer, bridge, etc.)
+   *   - 'parallel' — run nested steps concurrently
+   *   - 'wait' — pause until a condition or duration
+   *   - 'loop' — repeat nested steps with exit condition
+   */
+  type?: IntentStepType;
+
+  /** The action to perform (required when type is 'action' or omitted). */
+  action?: 'swap' | 'transfer' | 'bridge' | 'check_price' | 'check_balance'
     | 'set_order' | 'approve' | 'launch' | 'claim' | 'custom';
 
   // ── Swap params
@@ -111,6 +124,48 @@ export interface IntentStep {
 
   /** Label override. */
   label?: string;
+
+  // ── Step-output data flow (10.2)
+  /** Assign a ref name to this step's output so downstream steps can reference it. */
+  outputRef?: string;
+  /** Map param names to "refName.path" strings referencing prior step outputs. */
+  inputRefs?: Record<string, string>;
+
+  // ── Parallel step params
+  /** Nested steps for 'parallel' and 'loop' types. */
+  steps?: IntentStep[];
+  /** Whether to continue if some parallel steps fail (default false). */
+  allowPartialFailure?: boolean;
+
+  // ── Wait step params
+  /** Duration string for 'wait' type (e.g., "30s", "5m", "1h"). */
+  duration?: string;
+  /** ISO 8601 time to wait until. */
+  untilTime?: string;
+  /** Condition to wait for (same format as step condition). */
+  until?: {
+    token?: string;
+    field?: 'price' | 'balance' | 'gas_price';
+    op: CompareOp;
+    value: number;
+  };
+  /** Max wait time for condition waits (e.g., "24h"). Default: 24h. */
+  maxWait?: string;
+  /** Poll interval for condition waits (e.g., "1m"). Default: 1m. */
+  pollInterval?: string;
+
+  // ── Loop step params
+  /** Exit condition for 'loop' type. */
+  exitWhen?: {
+    token?: string;
+    field?: 'price' | 'balance' | 'gas_price';
+    op: CompareOp;
+    value: number;
+  };
+  /** Max iterations for 'loop' type (default 10). */
+  maxIterations?: number;
+  /** Delay between loop iterations (e.g., "5s"). */
+  delayBetween?: string;
 }
 
 export interface Intent {
@@ -130,6 +185,8 @@ export interface Intent {
 
 export class PlanCompiler {
   private idCounter = 0;
+  /** Maps outputRef names to generated node IDs for step_output resolution. */
+  private outputRefToId = new Map<string, string>();
 
   /**
    * Compile an intent into a Plan IR.
@@ -137,24 +194,22 @@ export class PlanCompiler {
    */
   compile(intent: Intent, userId: string): Plan {
     this.idCounter = 0;
+    this.outputRefToId = new Map();
 
     if (!intent.steps || intent.steps.length === 0) {
       throw new CompilationError('Intent has no steps.');
     }
 
     const trigger = intent.trigger ? this.compileTrigger(intent.trigger) : undefined;
-    const rootSteps = intent.steps.map(step => this.compileStep(step));
+    const rootSteps = intent.steps.map(step => this.compileNode(step));
 
-    // Wrap conditional steps in if-nodes
-    const processedSteps = this.processConditionalSteps(rootSteps, intent.steps);
-
-    const root: PlanNode = processedSteps.length === 1
-      ? processedSteps[0]!
+    const root: PlanNode = rootSteps.length === 1
+      ? rootSteps[0]!
       : {
         id: this.nextId('seq'),
         label: 'Main sequence',
         type: 'sequence',
-        steps: processedSteps,
+        steps: rootSteps,
       } as SequenceNode;
 
     const plan: Plan = {
@@ -239,15 +294,57 @@ export class PlanCompiler {
     };
   }
 
-  // ─── Step Compilation ───────────────────────────────────────────────
+  // ─── Node Compilation (recursive) ───────────────────────────────────
+  // Compiles an IntentStep into a PlanNode. Handles all step types:
+  // action (default), parallel, wait, loop.
 
-  private compileStep(step: IntentStep): ActionNode {
-    const id = this.nextId(step.action);
+  private compileNode(step: IntentStep): PlanNode {
+    const stepType = step.type ?? 'action';
+
+    switch (stepType) {
+      case 'parallel':
+        return this.compileParallel(step);
+      case 'wait':
+        return this.compileWait(step);
+      case 'loop':
+        return this.compileLoop(step);
+      case 'action':
+      default:
+        return this.compileAction(step);
+    }
+  }
+
+  // ─── Action Step ─────────────────────────────────────────────────────
+
+  private compileAction(step: IntentStep): PlanNode {
+    const action = step.action ?? 'custom';
+    const id = step.outputRef ?? this.nextId(action);
     const failurePolicy = this.compileFailurePolicy(step);
 
-    switch (step.action) {
+    // Register outputRef → id mapping for step_output resolution
+    if (step.outputRef) {
+      this.outputRefToId.set(step.outputRef, id);
+    }
+
+    // Resolve inputRefs → step_output ValueRefs in params
+    const extraParams: Record<string, ValueRef> = {};
+    if (step.inputRefs) {
+      for (const [paramName, refStr] of Object.entries(step.inputRefs)) {
+        const dotIdx = refStr.indexOf('.');
+        if (dotIdx < 0) throw new CompilationError(`inputRef "${refStr}" must be "refName.path" (e.g., "swap1.amountOut").`);
+        const refName = refStr.slice(0, dotIdx);
+        const path = refStr.slice(dotIdx + 1);
+        const stepId = this.outputRefToId.get(refName);
+        if (!stepId) throw new CompilationError(`inputRef "${refStr}" references unknown outputRef "${refName}". Ensure the step with outputRef="${refName}" appears earlier.`);
+        extraParams[paramName] = { type: 'step_output', stepId, path };
+      }
+    }
+
+    let actionNode: ActionNode;
+
+    switch (action) {
       case 'swap':
-        return {
+        actionNode = {
           id,
           type: 'action',
           label: step.label ?? `Swap ${step.amountPct ? step.amountPct + '% ' : ''}${step.tokenIn ?? '?'} → ${step.tokenOut ?? '?'}`,
@@ -260,13 +357,15 @@ export class PlanCompiler {
             ...(step.amountPct !== undefined && { amount_pct: step.amountPct }),
             ...(step.slippageBps !== undefined && { slippage_bps: step.slippageBps }),
             ...(step.chainId !== undefined && { chain_id: step.chainId }),
+            ...extraParams,
           },
           requireConfirmation: step.confirm ?? true,
           onFailure: failurePolicy,
         };
+        break;
 
       case 'transfer':
-        return {
+        actionNode = {
           id,
           type: 'action',
           label: step.label ?? `Transfer ${step.amount ?? '?'} ${step.token ?? 'ETH'} to ${step.to ? truncateAddr(step.to) : '?'}`,
@@ -276,13 +375,15 @@ export class PlanCompiler {
             ...(step.token && { token: step.token }),
             ...(step.amount && { amount: step.amount }),
             ...(step.to && { to: step.to }),
+            ...extraParams,
           },
           requireConfirmation: step.confirm ?? true,
           onFailure: failurePolicy,
         };
+        break;
 
       case 'bridge':
-        return {
+        actionNode = {
           id,
           type: 'action',
           label: step.label ?? `Bridge ${step.amount ?? '?'} ${step.token ?? '?'} to chain ${step.toChain ?? '?'}`,
@@ -293,13 +394,15 @@ export class PlanCompiler {
             ...(step.amount && { amount: step.amount }),
             ...(step.toChain !== undefined && { to_chain_id: step.toChain }),
             ...(step.fromChain !== undefined && { from_chain_id: step.fromChain }),
+            ...extraParams,
           },
           requireConfirmation: step.confirm ?? true,
           onFailure: failurePolicy,
         };
+        break;
 
       case 'check_price':
-        return {
+        actionNode = {
           id,
           type: 'action',
           label: step.label ?? `Check ${step.token ?? 'ETH'} price`,
@@ -307,26 +410,30 @@ export class PlanCompiler {
           params: {
             action: 'lookup',
             ...(step.token && { token: step.token }),
+            ...extraParams,
           },
           requireConfirmation: false,
           onFailure: failurePolicy,
         };
+        break;
 
       case 'check_balance':
-        return {
+        actionNode = {
           id,
           type: 'action',
           label: step.label ?? `Check ${step.token ?? 'all'} balance`,
           tool: 'defi_balance',
           params: {
             ...(step.token && { token: step.token }),
+            ...extraParams,
           },
           requireConfirmation: false,
           onFailure: failurePolicy,
         };
+        break;
 
       case 'set_order':
-        return {
+        actionNode = {
           id,
           type: 'action',
           label: step.label ?? `Set ${step.orderType ?? 'limit'} order for ${step.token ?? step.tokenOut ?? '?'}`,
@@ -339,13 +446,15 @@ export class PlanCompiler {
             ...(step.tokenOut && { token_out: step.tokenOut }),
             ...(step.amount && { amount: step.amount }),
             ...(step.triggerPrice !== undefined && { trigger_price: step.triggerPrice }),
+            ...extraParams,
           },
           requireConfirmation: step.confirm ?? false,
           onFailure: failurePolicy,
         };
+        break;
 
       case 'approve':
-        return {
+        actionNode = {
           id,
           type: 'action',
           label: step.label ?? `Approve ${step.token ?? '?'}`,
@@ -353,24 +462,27 @@ export class PlanCompiler {
           params: {
             action: 'approve',
             ...(step.token && { token: step.token }),
+            ...extraParams,
           },
           requireConfirmation: step.confirm ?? true,
           onFailure: failurePolicy,
         };
+        break;
 
       case 'launch':
-        return {
+        actionNode = {
           id,
           type: 'action',
           label: step.label ?? 'Launch token',
           tool: 'clawnch_launch',
-          params: (step.params ?? {}) as Record<string, string | number | boolean | ValueRef>,
+          params: { ...(step.params ?? {}), ...extraParams } as Record<string, string | number | boolean | ValueRef>,
           requireConfirmation: step.confirm ?? true,
           onFailure: failurePolicy,
         };
+        break;
 
       case 'claim':
-        return {
+        actionNode = {
           id,
           type: 'action',
           label: step.label ?? 'Claim fees/rewards',
@@ -378,56 +490,122 @@ export class PlanCompiler {
           params: {
             action: 'claim',
             ...(step.token && { token: step.token }),
+            ...extraParams,
           },
           requireConfirmation: step.confirm ?? false,
           onFailure: failurePolicy,
         };
+        break;
 
       case 'custom':
         if (!step.tool) throw new CompilationError('custom action requires a "tool" field.');
-        return {
+        actionNode = {
           id,
           type: 'action',
           label: step.label ?? `Run ${step.tool}`,
           tool: step.tool,
-          params: (step.params ?? {}) as Record<string, string | number | boolean | ValueRef>,
+          params: { ...(step.params ?? {}), ...extraParams } as Record<string, string | number | boolean | ValueRef>,
           requireConfirmation: step.confirm ?? false,
           onFailure: failurePolicy,
         };
+        break;
 
       default:
-        throw new CompilationError(`Unknown action: "${step.action}".`);
+        throw new CompilationError(`Unknown action: "${action}".`);
     }
+
+    // Wrap in IfNode if step has an inline condition
+    if (step.condition) {
+      const cond = this.buildStepCondition(step.condition);
+      return {
+        id: this.nextId('if'),
+        type: 'if',
+        label: `If ${step.condition.field ?? 'price'}(${step.condition.token ?? '?'}) ${opSymbol(step.condition.op)} ${step.condition.value}`,
+        condition: cond,
+        then: actionNode,
+      } as IfNode;
+    }
+
+    return actionNode;
   }
 
-  /**
-   * Process steps that have inline conditions — wrap them in if-nodes.
-   * E.g., step with condition "if USDC balance > 1000" becomes:
-   *   IfNode { condition: balance(USDC) > 1000, then: actionNode }
-   */
-  private processConditionalSteps(actions: ActionNode[], intents: IntentStep[]): PlanNode[] {
-    const result: PlanNode[] = [];
+  // ─── Parallel Step ───────────────────────────────────────────────────
 
-    for (let i = 0; i < actions.length; i++) {
-      const step = intents[i]!;
-      const action = actions[i]!;
+  private compileParallel(step: IntentStep): PlanNode {
+    if (!step.steps || step.steps.length === 0) {
+      throw new CompilationError('parallel step requires a non-empty "steps" array.');
+    }
+    const children = step.steps.map(s => this.compileNode(s));
+    return {
+      id: this.nextId('par'),
+      type: 'parallel',
+      label: step.label ?? `Parallel (${children.length} steps)`,
+      steps: children,
+      allowPartialFailure: step.allowPartialFailure ?? false,
+      onFailure: this.compileFailurePolicy(step),
+    } as ParallelNode;
+  }
 
-      if (step.condition) {
-        const cond = this.buildStepCondition(step.condition);
-        const ifNode: IfNode = {
-          id: this.nextId('if'),
-          type: 'if',
-          label: `If ${step.condition.field ?? 'price'}(${step.condition.token ?? '?'}) ${opSymbol(step.condition.op)} ${step.condition.value}`,
-          condition: cond,
-          then: action,
-        };
-        result.push(ifNode);
-      } else {
-        result.push(action);
-      }
+  // ─── Wait Step ───────────────────────────────────────────────────────
+
+  private compileWait(step: IntentStep): PlanNode {
+    const id = this.nextId('wait');
+    const node: WaitNode = {
+      id,
+      type: 'wait',
+      label: step.label ?? 'Wait',
+      onFailure: this.compileFailurePolicy(step),
+    };
+
+    if (step.duration) {
+      node.durationMs = parseIntervalToMs(step.duration);
+      node.label = step.label ?? `Wait ${step.duration}`;
+    } else if (step.untilTime) {
+      const parsed = new Date(step.untilTime);
+      if (isNaN(parsed.getTime())) throw new CompilationError(`Invalid untilTime: "${step.untilTime}". Use ISO 8601.`);
+      node.untilTime = parsed.toISOString();
+      node.label = step.label ?? `Wait until ${step.untilTime}`;
+    } else if (step.until) {
+      node.until = this.buildStepCondition(step.until);
+      node.pollIntervalMs = step.pollInterval ? parseIntervalToMs(step.pollInterval) : 60_000;
+      node.maxWaitMs = step.maxWait ? parseIntervalToMs(step.maxWait) : 86_400_000;
+      const field = step.until.field ?? 'price';
+      node.label = step.label ?? `Wait until ${step.until.token ?? '?'} ${field} ${opSymbol(step.until.op)} ${step.until.value}`;
+    } else {
+      throw new CompilationError('wait step requires "duration", "untilTime", or "until" condition.');
     }
 
-    return result;
+    return node;
+  }
+
+  // ─── Loop Step ───────────────────────────────────────────────────────
+
+  private compileLoop(step: IntentStep): PlanNode {
+    if (!step.steps || step.steps.length === 0) {
+      throw new CompilationError('loop step requires a non-empty "steps" array.');
+    }
+    const bodySteps = step.steps.map(s => this.compileNode(s));
+    const body: PlanNode = bodySteps.length === 1
+      ? bodySteps[0]!
+      : { id: this.nextId('seq'), type: 'sequence', label: 'Loop body', steps: bodySteps } as SequenceNode;
+
+    const node: LoopNode = {
+      id: this.nextId('loop'),
+      type: 'loop',
+      label: step.label ?? `Loop (max ${step.maxIterations ?? 10} iterations)`,
+      body,
+      maxIterations: step.maxIterations ?? 10,
+      onFailure: this.compileFailurePolicy(step),
+    };
+
+    if (step.exitWhen) {
+      node.exitWhen = this.buildStepCondition(step.exitWhen);
+    }
+    if (step.delayBetween) {
+      node.delayMs = parseIntervalToMs(step.delayBetween);
+    }
+
+    return node;
   }
 
   private buildStepCondition(c: NonNullable<IntentStep['condition']>): Condition {

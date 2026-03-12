@@ -30,7 +30,7 @@
 
 import { Type } from '@sinclair/typebox';
 import { stringEnum, jsonResult, errorResult, readStringParam } from '../lib/tool-helpers.js';
-import { PlanCompiler, type Intent, type IntentStep, type IntentTrigger } from '../services/plan-compiler.js';
+import { PlanCompiler, type Intent, type IntentStep, type IntentStepType, type IntentTrigger } from '../services/plan-compiler.js';
 import type { CompareOp, PlanNode, Trigger } from '../services/plan-types.js';
 import { PlanValidator } from '../services/plan-validator.js';
 import { getScheduler } from '../services/plan-scheduler.js';
@@ -62,7 +62,9 @@ interface RawTrigger {
 }
 
 interface RawStep {
-  action: string;
+  /** Step type: 'action' (default), 'parallel', 'wait', 'loop'. */
+  type?: string;
+  action?: string;
   token_in?: string;
   tokenIn?: string;
   token_out?: string;
@@ -93,6 +95,31 @@ interface RawStep {
   retry_count?: number;
   retryCount?: number;
   label?: string;
+  // Step-output data flow
+  output_ref?: string;
+  outputRef?: string;
+  input_refs?: Record<string, string>;
+  inputRefs?: Record<string, string>;
+  // Parallel/loop nested steps
+  steps?: RawStep[];
+  allow_partial_failure?: boolean;
+  allowPartialFailure?: boolean;
+  // Wait params
+  duration?: string;
+  until_time?: string;
+  untilTime?: string;
+  until?: RawCondition;
+  max_wait?: string;
+  maxWait?: string;
+  poll_interval?: string;
+  pollInterval?: string;
+  // Loop params
+  exit_when?: RawCondition;
+  exitWhen?: RawCondition;
+  max_iterations?: number;
+  maxIterations?: number;
+  delay_between?: string;
+  delayBetween?: string;
 }
 
 const ACTIONS = [
@@ -133,10 +160,13 @@ const CompoundActionSchema = Type.Object({
       expires: Type.Optional(Type.String({ description: 'Expiry for condition watch, e.g., "24h"' })),
     })),
     steps: Type.Array(Type.Object({
-      action: stringEnum([
+      type: Type.Optional(stringEnum(['action', 'parallel', 'wait', 'loop'], {
+        description: 'Step type. Defaults to "action". Use "parallel" for concurrent steps, "wait" to pause, "loop" to repeat.',
+      })),
+      action: Type.Optional(stringEnum([
         'swap', 'transfer', 'bridge', 'check_price', 'check_balance',
         'set_order', 'approve', 'launch', 'claim', 'custom',
-      ]),
+      ], { description: 'Action to perform (required when type is "action" or omitted).' })),
       token_in: Type.Optional(Type.String()),
       token_out: Type.Optional(Type.String()),
       amount: Type.Optional(Type.String()),
@@ -161,6 +191,32 @@ const CompoundActionSchema = Type.Object({
       on_failure: Type.Optional(stringEnum(['abort', 'skip', 'retry'])),
       retry_count: Type.Optional(Type.Number()),
       label: Type.Optional(Type.String()),
+      // Step-output data flow
+      output_ref: Type.Optional(Type.String({ description: 'Assign a ref name so downstream steps can use this step\'s output.' })),
+      input_refs: Type.Optional(Type.Record(Type.String(), Type.String(), { description: 'Map param names to "refName.path" (e.g., {"amount": "swap1.amountOut"}).' })),
+      // Nested steps for parallel/loop
+      steps: Type.Optional(Type.Array(Type.Object({}, { additionalProperties: true }), { description: 'Nested steps for parallel or loop types.' })),
+      allow_partial_failure: Type.Optional(Type.Boolean({ description: 'For parallel: continue if some steps fail.' })),
+      // Wait params
+      duration: Type.Optional(Type.String({ description: 'Wait duration (e.g., "30s", "5m").' })),
+      until_time: Type.Optional(Type.String({ description: 'Wait until ISO 8601 time.' })),
+      until: Type.Optional(Type.Object({
+        token: Type.Optional(Type.String()),
+        field: Type.Optional(stringEnum(['price', 'balance', 'gas_price'])),
+        op: stringEnum(['gt', 'gte', 'lt', 'lte', 'eq', 'neq']),
+        value: Type.Number(),
+      }, { description: 'Wait until condition is met.' })),
+      max_wait: Type.Optional(Type.String({ description: 'Max wait time (e.g., "24h").' })),
+      poll_interval: Type.Optional(Type.String({ description: 'Poll interval for condition waits (e.g., "1m").' })),
+      // Loop params
+      exit_when: Type.Optional(Type.Object({
+        token: Type.Optional(Type.String()),
+        field: Type.Optional(stringEnum(['price', 'balance', 'gas_price'])),
+        op: stringEnum(['gt', 'gte', 'lt', 'lte', 'eq', 'neq']),
+        value: Type.Number(),
+      }, { description: 'Exit condition for loop.' })),
+      max_iterations: Type.Optional(Type.Number({ description: 'Max loop iterations (default 10).' })),
+      delay_between: Type.Optional(Type.String({ description: 'Delay between iterations (e.g., "5s").' })),
     })),
     tags: Type.Optional(Type.Array(Type.String())),
   })),
@@ -433,9 +489,30 @@ function handleHistory(args: Record<string, unknown>) {
 /**
  * Normalize the intent from snake_case params to camelCase for the compiler.
  */
-function normalizeIntent(raw: Record<string, unknown>): Intent {
-  const rawSteps = (raw.steps ?? []) as RawStep[];
-  const steps: IntentStep[] = rawSteps.map((s) => ({
+function normalizeStep(s: RawStep): IntentStep {
+  const condition = s.condition ? {
+    token: s.condition.token,
+    field: s.condition.field as 'price' | 'balance' | 'gas_price' | undefined,
+    op: s.condition.op as CompareOp,
+    value: s.condition.value as number,
+  } : undefined;
+
+  const until = s.until ? {
+    token: s.until.token,
+    field: s.until.field as 'price' | 'balance' | 'gas_price' | undefined,
+    op: s.until.op as CompareOp,
+    value: s.until.value as number,
+  } : undefined;
+
+  const exitWhen = (s.exit_when ?? s.exitWhen) ? {
+    token: (s.exit_when ?? s.exitWhen)!.token,
+    field: (s.exit_when ?? s.exitWhen)!.field as 'price' | 'balance' | 'gas_price' | undefined,
+    op: (s.exit_when ?? s.exitWhen)!.op as CompareOp,
+    value: (s.exit_when ?? s.exitWhen)!.value as number,
+  } : undefined;
+
+  return {
+    type: (s.type as IntentStep['type']) ?? undefined,
     action: s.action as IntentStep['action'],
     tokenIn: s.token_in ?? s.tokenIn,
     tokenOut: s.token_out ?? s.tokenOut,
@@ -451,17 +528,33 @@ function normalizeIntent(raw: Record<string, unknown>): Intent {
     triggerPrice: s.trigger_price ?? s.triggerPrice,
     tool: s.tool,
     params: s.params,
-    condition: s.condition ? {
-      token: s.condition.token,
-      field: s.condition.field as IntentStep['condition'] extends { field?: infer F } ? F : never,
-      op: s.condition.op as CompareOp,
-      value: s.condition.value as number,
-    } : undefined,
+    condition,
     confirm: s.confirm,
     onFailure: (s.on_failure ?? s.onFailure) as IntentStep['onFailure'],
     retryCount: s.retry_count ?? s.retryCount,
     label: s.label,
-  }));
+    // Step-output data flow
+    outputRef: s.output_ref ?? s.outputRef,
+    inputRefs: s.input_refs ?? s.inputRefs,
+    // Nested steps (recurse)
+    steps: s.steps ? s.steps.map(normalizeStep) : undefined,
+    allowPartialFailure: s.allow_partial_failure ?? s.allowPartialFailure,
+    // Wait params
+    duration: s.duration,
+    untilTime: s.until_time ?? s.untilTime,
+    until,
+    maxWait: s.max_wait ?? s.maxWait,
+    pollInterval: s.poll_interval ?? s.pollInterval,
+    // Loop params
+    exitWhen,
+    maxIterations: s.max_iterations ?? s.maxIterations,
+    delayBetween: s.delay_between ?? s.delayBetween,
+  };
+}
+
+function normalizeIntent(raw: Record<string, unknown>): Intent {
+  const rawSteps = (raw.steps ?? []) as RawStep[];
+  const steps: IntentStep[] = rawSteps.map(normalizeStep);
 
   const rawTrigger = raw.trigger as RawTrigger | undefined;
   const trigger: IntentTrigger | undefined = rawTrigger ? {

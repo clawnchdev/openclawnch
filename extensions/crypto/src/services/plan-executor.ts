@@ -42,6 +42,7 @@ import type {
   StepStatus,
   ValueRef,
   Condition,
+  CompareOp,
   FailurePolicy,
 } from './plan-types.js';
 import type { PlanScheduler } from './plan-scheduler.js';
@@ -294,7 +295,7 @@ export class PlanExecutor {
   // ─── If ─────────────────────────────────────────────────────────────
 
   private async executeIf(node: IfNode, ctx: ExecutionContext): Promise<void> {
-    const conditionMet = await this.scheduler.evaluateCondition(node.condition);
+    const conditionMet = await this.evaluateCondition(node.condition, ctx);
     if (conditionMet) {
       await this.executeNode(node.then, ctx);
     } else if (node.else) {
@@ -342,7 +343,7 @@ export class PlanExecutor {
         while (Date.now() < deadline) {
           if (ctx.cancelled) throw new ExecutionCancelledError();
 
-          const met = await this.scheduler.evaluateCondition(node.until);
+          const met = await this.evaluateCondition(node.until, ctx);
           if (met) {
             step.status = 'completed';
             step.completedAt = Date.now();
@@ -378,7 +379,7 @@ export class PlanExecutor {
 
       // Check exit condition
       if (node.exitWhen) {
-        const shouldExit = await this.scheduler.evaluateCondition(node.exitWhen);
+        const shouldExit = await this.evaluateCondition(node.exitWhen, ctx);
         if (shouldExit) return;
       }
 
@@ -388,6 +389,71 @@ export class PlanExecutor {
       if (node.delayMs && i < node.maxIterations - 1) {
         await this.waitDuration(node.delayMs, ctx);
       }
+    }
+  }
+
+  // ─── Condition Evaluation ────────────────────────────────────────
+  // The executor evaluates conditions using ctx.stepResults for step_output refs,
+  // falling back to the scheduler's resolver for runtime refs (price, balance, etc.).
+  // This fixes the bug where the scheduler's evaluateCondition returns 0 for step_output.
+
+  private async evaluateCondition(cond: Condition, ctx: ExecutionContext): Promise<boolean> {
+    if (cond.type === 'compare') {
+      const left = await this.resolveConditionValue(cond.left, ctx);
+      const right = await this.resolveConditionValue(cond.right, ctx);
+      return this.compare(left, cond.op, right);
+    } else if (cond.type === 'logic') {
+      switch (cond.op) {
+        case 'and': {
+          for (const sub of cond.conditions) {
+            if (!await this.evaluateCondition(sub, ctx)) return false;
+          }
+          return true;
+        }
+        case 'or': {
+          for (const sub of cond.conditions) {
+            if (await this.evaluateCondition(sub, ctx)) return true;
+          }
+          return false;
+        }
+        case 'not': {
+          return !await this.evaluateCondition(cond.conditions[0]!, ctx);
+        }
+      }
+    }
+    return false;
+  }
+
+  private async resolveConditionValue(ref: ValueRef, ctx: ExecutionContext): Promise<number> {
+    switch (ref.type) {
+      case 'literal':
+        return typeof ref.value === 'number' ? ref.value : parseFloat(String(ref.value)) || 0;
+      case 'step_output': {
+        // Resolve from executor's step results (the fix for the WaitNode bug)
+        const result = ctx.stepResults.get(ref.stepId);
+        if (result === undefined) return 0;
+        const val = getNestedValue(result, ref.path);
+        return typeof val === 'number' ? val : parseFloat(String(val)) || 0;
+      }
+      case 'env': {
+        const v = process.env[ref.key];
+        return v ? parseFloat(v) || 0 : 0;
+      }
+      case 'runtime':
+        // Runtime refs need the scheduler's RuntimeResolver
+        return this.scheduler.resolveValue(ref);
+    }
+  }
+
+  private compare(left: number, op: CompareOp, right: number): boolean {
+    switch (op) {
+      case 'gt': return left > right;
+      case 'gte': return left >= right;
+      case 'lt': return left < right;
+      case 'lte': return left <= right;
+      case 'eq': return Math.abs(left - right) < Number.EPSILON;
+      case 'neq': return Math.abs(left - right) >= Number.EPSILON;
+      default: return false;
     }
   }
 
