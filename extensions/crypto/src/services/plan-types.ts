@@ -82,7 +82,7 @@ export type Condition = CompareCondition | LogicCondition;
 export type FailurePolicy =
   | { strategy: 'abort' }                                    // stop the entire plan
   | { strategy: 'skip'; reason?: string }                    // skip this step, continue
-  | { strategy: 'retry'; maxAttempts: number; delayMs: number }; // retry with backoff
+  | { strategy: 'retry'; maxAttempts: number; delayMs: number; backoffMultiplier?: number }; // retry with exponential backoff
 
 /** Base fields shared by all plan nodes. */
 interface PlanNodeBase {
@@ -108,6 +108,12 @@ export interface ActionNode extends PlanNodeBase {
    * Use for high-value or irreversible operations.
    */
   requireConfirmation?: boolean;
+  /**
+   * Fallback branch executed when this action fails after all retries are exhausted.
+   * If present, the executor runs this sub-tree instead of propagating the failure up.
+   * Use for graceful degradation (e.g., swap fails → skip bridge, notify user).
+   */
+  onError?: PlanNode;
 }
 
 /** Run child nodes in order. The output of each node is available to the next. */
@@ -206,7 +212,35 @@ export interface ImmediateTrigger {
   type: 'immediate';
 }
 
-export type Trigger = TimeTrigger | IntervalTrigger | ConditionTrigger | ImmediateTrigger;
+/** Execute on a cron schedule (e.g., "0 9 * * 1" for every Monday at 9am). */
+export interface CronTrigger {
+  type: 'cron';
+  /** Standard 5-field cron expression: minute hour day-of-month month day-of-week. */
+  expression: string;
+  /** IANA timezone (e.g., "America/New_York"). Default: UTC. */
+  timezone?: string;
+  /** Max total executions. */
+  maxRuns?: number;
+}
+
+/** Execute when a price threshold is breached. */
+export interface PriceTrigger {
+  type: 'price';
+  /** Token symbol to watch (e.g., "ETH", "BTC"). */
+  token: string;
+  /** Trigger when price is above, below, or crosses the threshold. */
+  condition: 'above' | 'below' | 'crosses';
+  /** Price threshold in USD. */
+  threshold: number;
+  /** Hysteresis: price must move this % past threshold before re-triggering. Default: 1. */
+  hysteresisPercent?: number;
+  /** Minimum cooldown between triggers in ms. Default: 300_000 (5 min). */
+  cooldownMs?: number;
+  /** If true, trigger fires every time condition is met (not just first). Default: false. */
+  recurring?: boolean;
+}
+
+export type Trigger = TimeTrigger | IntervalTrigger | ConditionTrigger | ImmediateTrigger | CronTrigger | PriceTrigger;
 
 // ─── Plan ───────────────────────────────────────────────────────────────
 
@@ -340,6 +374,54 @@ export interface PlanStore {
   delete(planId: string): boolean;
   saveExecution(exec: PlanExecution): void;
   loadExecutions(planId: string): PlanExecution[];
+}
+
+// ─── Dead-Letter Log ────────────────────────────────────────────────────
+// Records terminal failures after all retries + fallbacks are exhausted.
+
+export interface DeadLetterEntry {
+  /** The plan that failed. */
+  planId: string;
+  /** The node that failed. */
+  nodeId: string;
+  /** The execution ID. */
+  executionId: string;
+  /** The user who owns the plan. */
+  userId: string;
+  /** Error message from the final attempt. */
+  error: string;
+  /** Number of retry attempts made. */
+  retryCount: number;
+  /** Tool name (for action nodes). */
+  tool?: string;
+  /** Resolved params at time of failure. */
+  params?: Record<string, unknown>;
+  /** When the failure occurred. */
+  timestamp: number;
+}
+
+// ─── Execution Checkpoints ──────────────────────────────────────────────
+// Persisted state for durable execution — survives process restarts.
+
+export interface ExecutionCheckpoint {
+  /** The execution ID. */
+  executionId: string;
+  /** The plan being executed. */
+  planId: string;
+  /** The user who owns the plan. */
+  userId: string;
+  /** ID of the node currently being executed (or next to execute). */
+  currentNodeId: string;
+  /** Results from completed steps, serialized as [nodeId, result] tuples. */
+  stepResults: Array<[string, unknown]>;
+  /** Step execution records so far. */
+  steps: StepExecution[];
+  /** Execution status. */
+  status: 'running' | 'paused';
+  /** When execution started. */
+  startedAt: number;
+  /** When this checkpoint was written. */
+  updatedAt: number;
 }
 
 // ─── Contradiction Codes ────────────────────────────────────────────────

@@ -33,6 +33,8 @@ function describeTrigger(plan: Plan): string {
     case 'time': return `at ${new Date(t.at).toLocaleString()}`;
     case 'interval': return `every ${formatMs(t.everyMs)}`;
     case 'condition': return 'when condition met';
+    case 'cron': return `cron: ${t.expression}${t.timezone ? ` (${t.timezone})` : ''}`;
+    case 'price': return `${t.token} ${t.condition} $${t.threshold}`;
   }
 }
 

@@ -96,6 +96,7 @@ import {
 import { setupCommand } from './src/commands/setup-command.js';
 import { recoverCommand, exportWalletCommand, walletBackupCommand } from './src/commands/wallet-manage-commands.js';
 import { plansCommand, plansActiveCommand, plansCancelCommand, plansClearCommand } from './src/commands/plans-command.js';
+import { triggersCommand, triggersPriceCommand, triggersCronCommand, deadLetterCommand } from './src/commands/trigger-commands.js';
 import { approveCommand, denyCommand } from './src/commands/confirm-commands.js';
 import { helpCommand, portfolioCommand, balanceCommand, chainCommand } from './src/commands/help-command.js';
 import { isReadonly } from './src/services/mode-service.js';
@@ -375,6 +376,12 @@ const plugin = {
     api.registerCommand(approveCommand);
     api.registerCommand(denyCommand);
 
+    // Trigger management
+    api.registerCommand(triggersCommand);
+    api.registerCommand(triggersPriceCommand);
+    api.registerCommand(triggersCronCommand);
+    api.registerCommand(deadLetterCommand);
+
     // Help, portfolio, balance, chain, diagnostics
     api.registerCommand(helpCommand);
     api.registerCommand(portfolioCommand);
@@ -604,6 +611,29 @@ const plugin = {
               params: resolvedParams,
               userId: planUserId,
             });
+          },
+          onDeadLetter: (entry) => {
+            // Persist terminal failure to disk
+            scheduler.saveDeadLetter(entry);
+            api.logger?.warn?.(`[crypto] Dead-letter: plan=${entry.planId} node=${entry.nodeId} error=${entry.error}`);
+
+            // Notify user
+            if (entry.userId && entry.userId !== 'owner') {
+              const parsed = parseSessionKey(entry.userId);
+              const msg = `**Plan step failed permanently**\n` +
+                `Plan: \`${entry.planId}\`\n` +
+                `Step: \`${entry.nodeId}\`${entry.tool ? ` (${entry.tool})` : ''}\n` +
+                `Error: ${entry.error}\n` +
+                `Retries: ${entry.retryCount}\n` +
+                `Use \`/plans dead_letter\` to view all failures.`;
+              try {
+                if (parsed) {
+                  sender.send(parsed.channel, parsed.userId, msg).catch(() => {});
+                } else {
+                  sender.send('telegram', entry.userId, msg).catch(() => {});
+                }
+              } catch { /* best effort */ }
+            }
           },
         });
 

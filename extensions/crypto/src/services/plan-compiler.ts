@@ -121,6 +121,13 @@ export interface IntentStep {
   /** Failure policy for this step. */
   onFailure?: 'abort' | 'skip' | 'retry';
   retryCount?: number;
+  /** Delay between retries in ms. Default: 5000. */
+  retryDelayMs?: number;
+  /** Backoff multiplier for exponential retry delay. Default: 2. */
+  backoffMultiplier?: number;
+
+  /** Fallback steps to execute if this step fails after all retries. */
+  onError?: IntentStep[];
 
   /** Label override. */
   label?: string;
@@ -514,6 +521,12 @@ export class PlanCompiler {
         throw new CompilationError(`Unknown action: "${action}".`);
     }
 
+    // Compile onError fallback branch
+    const onErrorNode = this.compileOnError(step);
+    if (onErrorNode) {
+      actionNode.onError = onErrorNode;
+    }
+
     // Wrap in IfNode if step has an inline condition
     if (step.condition) {
       const cond = this.buildStepCondition(step.condition);
@@ -630,9 +643,29 @@ export class PlanCompiler {
     if (!step.onFailure || step.onFailure === 'abort') return undefined; // default
     if (step.onFailure === 'skip') return { strategy: 'skip' as const };
     if (step.onFailure === 'retry') {
-      return { strategy: 'retry' as const, maxAttempts: step.retryCount ?? 3, delayMs: 5_000 };
+      return {
+        strategy: 'retry' as const,
+        maxAttempts: step.retryCount ?? 3,
+        delayMs: step.retryDelayMs ?? 5_000,
+        backoffMultiplier: step.backoffMultiplier ?? 2,
+      };
     }
     return undefined;
+  }
+
+  /** Compile onError fallback steps into a PlanNode sub-tree. */
+  private compileOnError(step: IntentStep): PlanNode | undefined {
+    if (!step.onError || step.onError.length === 0) return undefined;
+    if (step.onError.length === 1) {
+      return this.compileNode(step.onError[0]!);
+    }
+    // Multiple fallback steps → wrap in sequence
+    return {
+      id: this.nextId('err_seq'),
+      type: 'sequence',
+      label: 'Error fallback',
+      steps: step.onError.map(s => this.compileNode(s)),
+    };
   }
 
   // ─── Helpers ────────────────────────────────────────────────────────

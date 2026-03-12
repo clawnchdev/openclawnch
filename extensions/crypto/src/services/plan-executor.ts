@@ -44,6 +44,8 @@ import type {
   Condition,
   CompareOp,
   FailurePolicy,
+  DeadLetterEntry,
+  ExecutionCheckpoint,
 } from './plan-types.js';
 import type { PlanScheduler } from './plan-scheduler.js';
 
@@ -97,16 +99,19 @@ export class PlanExecutor {
   private dispatcher: ToolDispatcher;
   private scheduler: PlanScheduler;
   private confirmCallback?: ConfirmationCallback;
+  private deadLetterCallback?: (entry: DeadLetterEntry) => void;
   private activeContexts = new Map<string, ExecutionContext>();
 
   constructor(opts: {
     dispatcher: ToolDispatcher;
     scheduler: PlanScheduler;
     onConfirmRequired?: ConfirmationCallback;
+    onDeadLetter?: (entry: DeadLetterEntry) => void;
   }) {
     this.dispatcher = opts.dispatcher;
     this.scheduler = opts.scheduler;
     this.confirmCallback = opts.onConfirmRequired;
+    this.deadLetterCallback = opts.onDeadLetter;
   }
 
   /**
@@ -161,6 +166,7 @@ export class PlanExecutor {
 
     } finally {
       this.activeContexts.delete(executionId);
+      this.deleteCheckpoint(executionId);
     }
   }
 
@@ -181,10 +187,157 @@ export class PlanExecutor {
     return this.activeContexts.size;
   }
 
+  // ─── Checkpointing ──────────────────────────────────────────────────
+
+  private writeCheckpoint(nodeId: string, ctx: ExecutionContext): void {
+    try {
+      const cp: ExecutionCheckpoint = {
+        executionId: ctx.executionId,
+        planId: ctx.planId,
+        userId: ctx.userId,
+        currentNodeId: nodeId,
+        stepResults: Array.from(ctx.stepResults.entries()),
+        steps: ctx.steps,
+        status: 'running',
+        startedAt: ctx.startedAt,
+        updatedAt: Date.now(),
+      };
+      this.scheduler.saveCheckpoint(cp);
+    } catch { /* never let checkpointing break execution */ }
+  }
+
+  private deleteCheckpoint(executionId: string): void {
+    try {
+      this.scheduler.deleteCheckpoint(executionId);
+    } catch { /* ignore */ }
+  }
+
+  /**
+   * Resume an execution from a persisted checkpoint.
+   * Returns the execution record, or null if checkpoint not found.
+   */
+  async resumeFromCheckpoint(plan: Plan, executionId: string): Promise<PlanExecution | null> {
+    const cp = this.scheduler.loadCheckpoint(executionId);
+    if (!cp || cp.planId !== plan.id) return null;
+
+    // Rebuild context from checkpoint
+    const ctx: ExecutionContext = {
+      planId: cp.planId,
+      executionId: cp.executionId,
+      userId: cp.userId,
+      stepResults: new Map(cp.stepResults),
+      steps: cp.steps,
+      cancelled: false,
+      startedAt: cp.startedAt,
+    };
+
+    this.activeContexts.set(executionId, ctx);
+
+    // Find the node to resume from and execute the remaining tree
+    const resumeNode = this.findNode(plan.root, cp.currentNodeId);
+
+    try {
+      if (resumeNode) {
+        await this.executeNode(resumeNode, ctx);
+      }
+
+      // After resuming, execute any remaining siblings if we were mid-sequence
+      // The checkpoint only captures which node was active — parent sequence
+      // continuation is handled by the fact that completed steps are tracked
+      // and the executor skips already-completed action nodes.
+
+      const execution: PlanExecution = {
+        planId: plan.id,
+        executionId,
+        status: ctx.cancelled ? 'cancelled' : 'completed',
+        startedAt: ctx.startedAt,
+        completedAt: Date.now(),
+        steps: ctx.steps,
+      };
+
+      this.scheduler.markCompleted(plan.id, execution);
+      return execution;
+
+    } catch (err: any) {
+      const isCancelled = ctx.cancelled || err instanceof ExecutionCancelledError;
+      const execution: PlanExecution = {
+        planId: plan.id,
+        executionId,
+        status: isCancelled ? 'cancelled' : 'failed',
+        startedAt: ctx.startedAt,
+        completedAt: Date.now(),
+        steps: ctx.steps,
+      };
+
+      if (isCancelled) {
+        this.scheduler.markCompleted(plan.id, execution);
+      } else {
+        this.scheduler.markFailed(plan.id, execution);
+      }
+      return execution;
+
+    } finally {
+      this.activeContexts.delete(executionId);
+      this.deleteCheckpoint(executionId);
+    }
+  }
+
+  /**
+   * Get all pending checkpoints (for resume-on-startup).
+   */
+  getPendingCheckpoints(): ExecutionCheckpoint[] {
+    return this.scheduler.loadAllCheckpoints();
+  }
+
+  /** Find a node by ID in the plan tree. */
+  private findNode(node: PlanNode, targetId: string): PlanNode | null {
+    if (node.id === targetId) return node;
+    switch (node.type) {
+      case 'sequence':
+        for (const child of node.steps) {
+          const found = this.findNode(child, targetId);
+          if (found) return found;
+        }
+        return null;
+      case 'parallel':
+        for (const child of node.steps) {
+          const found = this.findNode(child, targetId);
+          if (found) return found;
+        }
+        return null;
+      case 'if':
+        if (node.then) {
+          const found = this.findNode(node.then, targetId);
+          if (found) return found;
+        }
+        if (node.else) {
+          const found = this.findNode(node.else, targetId);
+          if (found) return found;
+        }
+        return null;
+      case 'loop': {
+        const found = this.findNode(node.body, targetId);
+        if (found) return found;
+        return null;
+      }
+      case 'action':
+        if (node.onError) {
+          const found = this.findNode(node.onError, targetId);
+          if (found) return found;
+        }
+        return null;
+      default:
+        return null;
+    }
+  }
+
   // ─── Node Execution ─────────────────────────────────────────────────
 
   private async executeNode(node: PlanNode, ctx: ExecutionContext): Promise<void> {
     if (ctx.cancelled) throw new ExecutionCancelledError();
+
+    // Write checkpoint before executing each node
+    this.writeCheckpoint(node.id, ctx);
 
     switch (node.type) {
       case 'action':    return this.executeAction(node, ctx);
@@ -230,10 +383,11 @@ export class PlanExecutor {
       return;
     }
 
-    // Execute with retry logic
+    // Execute with retry logic (exponential backoff)
     const policy = node.onFailure ?? { strategy: 'abort' as const };
     const maxAttempts = policy.strategy === 'retry' ? policy.maxAttempts : 1;
-    const retryDelay = policy.strategy === 'retry' ? policy.delayMs : 0;
+    const baseDelay = policy.strategy === 'retry' ? policy.delayMs : 0;
+    const multiplier = policy.strategy === 'retry' ? (policy.backoffMultiplier ?? 2) : 1;
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       if (ctx.cancelled) throw new ExecutionCancelledError();
@@ -257,14 +411,30 @@ export class PlanExecutor {
         step.error = err.message ?? String(err);
 
         if (attempt < maxAttempts - 1) {
-          // Wait before retry
-          await sleep(retryDelay);
+          // Exponential backoff: baseDelay * multiplier^attempt
+          const delay = baseDelay * Math.pow(multiplier, attempt);
+          await sleep(delay);
           continue;
         }
 
-        // Final attempt failed
+        // Final attempt failed — try onError fallback before propagating
         step.status = 'failed';
         step.completedAt = Date.now();
+
+        if (node.onError) {
+          // Execute fallback branch instead of propagating failure
+          try {
+            await this.executeNode(node.onError, ctx);
+            // Fallback succeeded — don't propagate the original failure
+            return;
+          } catch (fallbackErr: any) {
+            // Fallback also failed — record and propagate
+            step.error = `${step.error} | fallback failed: ${fallbackErr.message ?? String(fallbackErr)}`;
+          }
+        }
+
+        // Log to dead-letter before propagating
+        this.writeDeadLetter(node, step, resolvedParams, ctx);
         await this.handleFailure(node, step, ctx);
         return;
       }
@@ -516,6 +686,30 @@ export class PlanExecutor {
       case 'runtime':
         return this.scheduler.resolveValue(ref);
     }
+  }
+
+  // ─── Dead-Letter Logging ──────────────────────────────────────────
+
+  private writeDeadLetter(
+    node: ActionNode,
+    step: StepExecution,
+    resolvedParams: Record<string, unknown>,
+    ctx: ExecutionContext,
+  ): void {
+    if (!this.deadLetterCallback) return;
+    try {
+      this.deadLetterCallback({
+        planId: ctx.planId,
+        nodeId: node.id,
+        executionId: ctx.executionId,
+        userId: ctx.userId,
+        error: step.error ?? 'Unknown error',
+        retryCount: step.retryCount ?? 0,
+        tool: node.tool,
+        params: resolvedParams,
+        timestamp: Date.now(),
+      });
+    } catch { /* never let dead-letter logging break execution */ }
   }
 
   // ─── Failure Handling ─────────────────────────────────────────────

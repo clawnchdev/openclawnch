@@ -26,6 +26,8 @@ import type {
   PlanStore,
   PlanExecution,
   PlanTemplate,
+  DeadLetterEntry,
+  ExecutionCheckpoint,
   Trigger,
   Condition,
   CompareCondition,
@@ -85,6 +87,10 @@ function sanitizeId(id: string): string {
 interface SchedulerState {
   intervalRunCounts: Record<string, number>;
   lastConditionCheck: Record<string, number>;
+  /** Cron: number of times each cron plan has fired. */
+  cronRunCounts?: Record<string, number>;
+  /** Cron: timestamp (floored to minute) of the last fire for each plan. */
+  lastCronFire?: Record<string, number>;
 }
 
 export class FilePlanStore implements PlanStore {
@@ -233,6 +239,106 @@ export class FilePlanStore implements PlanStore {
     return false;
   }
 
+  // ── Dead-Letter Storage ────────────────────────────────────────────────
+
+  private get deadLetterDir(): string {
+    return join(this.dir, 'dead-letter');
+  }
+
+  saveDeadLetter(entry: DeadLetterEntry): void {
+    this.ensureDir(this.deadLetterDir);
+    const filename = `${sanitizeId(entry.planId)}_${sanitizeId(entry.nodeId)}_${entry.timestamp}.json`;
+    const path = join(this.deadLetterDir, filename);
+    writeFileSync(path, JSON.stringify(entry, null, 2), 'utf8');
+  }
+
+  loadDeadLetters(planId?: string): DeadLetterEntry[] {
+    try {
+      if (!existsSync(this.deadLetterDir)) return [];
+      return readdirSync(this.deadLetterDir)
+        .filter(f => f.endsWith('.json'))
+        .map(f => {
+          try {
+            return JSON.parse(readFileSync(join(this.deadLetterDir, f), 'utf8')) as DeadLetterEntry;
+          } catch { return null; }
+        })
+        .filter((e): e is DeadLetterEntry => e !== null)
+        .filter(e => !planId || e.planId === planId)
+        .sort((a, b) => b.timestamp - a.timestamp);
+    } catch {
+      return [];
+    }
+  }
+
+  clearDeadLetters(planId?: string): number {
+    try {
+      if (!existsSync(this.deadLetterDir)) return 0;
+      const files = readdirSync(this.deadLetterDir).filter(f => f.endsWith('.json'));
+      let removed = 0;
+      for (const f of files) {
+        if (planId) {
+          try {
+            const entry = JSON.parse(readFileSync(join(this.deadLetterDir, f), 'utf8')) as DeadLetterEntry;
+            if (entry.planId !== planId) continue;
+          } catch { continue; }
+        }
+        try { rmSync(join(this.deadLetterDir, f)); removed++; } catch { /* ignore */ }
+      }
+      return removed;
+    } catch {
+      return 0;
+    }
+  }
+
+  // ── Execution Checkpoint Storage ──────────────────────────────────────
+
+  private get checkpointsDir(): string {
+    return join(this.dir, 'checkpoints');
+  }
+
+  saveCheckpoint(cp: ExecutionCheckpoint): void {
+    this.ensureDir(this.checkpointsDir);
+    const path = join(this.checkpointsDir, `${sanitizeId(cp.executionId)}.json`);
+    writeFileSync(path, JSON.stringify(cp, null, 2), 'utf8');
+  }
+
+  loadCheckpoint(executionId: string): ExecutionCheckpoint | null {
+    const path = join(this.checkpointsDir, `${sanitizeId(executionId)}.json`);
+    try {
+      if (!existsSync(path)) return null;
+      return JSON.parse(readFileSync(path, 'utf8')) as ExecutionCheckpoint;
+    } catch {
+      return null;
+    }
+  }
+
+  loadAllCheckpoints(): ExecutionCheckpoint[] {
+    try {
+      if (!existsSync(this.checkpointsDir)) return [];
+      return readdirSync(this.checkpointsDir)
+        .filter(f => f.endsWith('.json'))
+        .map(f => {
+          try {
+            return JSON.parse(readFileSync(join(this.checkpointsDir, f), 'utf8')) as ExecutionCheckpoint;
+          } catch { return null; }
+        })
+        .filter((cp): cp is ExecutionCheckpoint => cp !== null);
+    } catch {
+      return [];
+    }
+  }
+
+  deleteCheckpoint(executionId: string): boolean {
+    const path = join(this.checkpointsDir, `${sanitizeId(executionId)}.json`);
+    try {
+      if (existsSync(path)) {
+        rmSync(path);
+        return true;
+      }
+    } catch { /* ignore */ }
+    return false;
+  }
+
   private ensureDir(dir: string): void {
     if (!existsSync(dir)) {
       mkdirSync(dir, { recursive: true });
@@ -250,6 +356,8 @@ export class PlanScheduler {
   private plans = new Map<string, Plan>();
   private lastConditionCheck = new Map<string, number>(); // planId → last check time
   private intervalRunCounts = new Map<string, number>();   // planId → executions so far
+  private cronRunCounts = new Map<string, number>();       // planId → cron executions so far
+  private lastCronFire = new Map<string, number>();        // planId → last fire timestamp (minute-floored)
   private tickMs: number;
   private running = false;
   private stateDirty = false;                             // debounce state persistence
@@ -327,6 +435,8 @@ export class PlanScheduler {
     this.plans.delete(planId);
     this.lastConditionCheck.delete(planId);
     this.intervalRunCounts.delete(planId);
+    this.cronRunCounts.delete(planId);
+    this.lastCronFire.delete(planId);
     this.persistState();
     return true;
   }
@@ -394,6 +504,57 @@ export class PlanScheduler {
     return false;
   }
 
+  // ── Dead-Letter Proxy Methods ────────────────────────────────────────
+
+  saveDeadLetter(entry: DeadLetterEntry): void {
+    if (typeof (this.store as FilePlanStore).saveDeadLetter === 'function') {
+      (this.store as FilePlanStore).saveDeadLetter(entry);
+    }
+  }
+
+  loadDeadLetters(planId?: string): DeadLetterEntry[] {
+    if (typeof (this.store as FilePlanStore).loadDeadLetters === 'function') {
+      return (this.store as FilePlanStore).loadDeadLetters(planId);
+    }
+    return [];
+  }
+
+  clearDeadLetters(planId?: string): number {
+    if (typeof (this.store as FilePlanStore).clearDeadLetters === 'function') {
+      return (this.store as FilePlanStore).clearDeadLetters(planId);
+    }
+    return 0;
+  }
+
+  // ── Checkpoint Proxy Methods ─────────────────────────────────────────
+
+  saveCheckpoint(cp: ExecutionCheckpoint): void {
+    if (typeof (this.store as FilePlanStore).saveCheckpoint === 'function') {
+      (this.store as FilePlanStore).saveCheckpoint(cp);
+    }
+  }
+
+  loadCheckpoint(executionId: string): ExecutionCheckpoint | null {
+    if (typeof (this.store as FilePlanStore).loadCheckpoint === 'function') {
+      return (this.store as FilePlanStore).loadCheckpoint(executionId);
+    }
+    return null;
+  }
+
+  loadAllCheckpoints(): ExecutionCheckpoint[] {
+    if (typeof (this.store as FilePlanStore).loadAllCheckpoints === 'function') {
+      return (this.store as FilePlanStore).loadAllCheckpoints();
+    }
+    return [];
+  }
+
+  deleteCheckpoint(executionId: string): boolean {
+    if (typeof (this.store as FilePlanStore).deleteCheckpoint === 'function') {
+      return (this.store as FilePlanStore).deleteCheckpoint(executionId);
+    }
+    return false;
+  }
+
   /** Mark a plan execution as complete (called by executor). */
   markCompleted(planId: string, execution: PlanExecution): void {
     const plan = this.plans.get(planId);
@@ -411,8 +572,12 @@ export class PlanScheduler {
       plan.status = 'completed';
       this.store.save(plan);
       this.plans.delete(planId);
+    } else if (trigger.type === 'price' && !trigger.recurring) {
+      plan.status = 'completed';
+      this.store.save(plan);
+      this.plans.delete(planId);
     }
-    // Interval triggers and recurring conditions stay scheduled
+    // Interval, cron, recurring conditions, and recurring price triggers stay scheduled
   }
 
   /** Mark a plan execution as failed (called by executor). */
@@ -425,6 +590,10 @@ export class PlanScheduler {
     // Non-recurring plans go to failed status
     const trigger = plan.trigger;
     if (!trigger || trigger.type === 'immediate' || trigger.type === 'time') {
+      plan.status = 'failed';
+      this.store.save(plan);
+      this.plans.delete(planId);
+    } else if (trigger.type === 'price' && !trigger.recurring) {
       plan.status = 'failed';
       this.store.save(plan);
       this.plans.delete(planId);
@@ -455,6 +624,20 @@ export class PlanScheduler {
         }
       }
     }
+    if (state.cronRunCounts) {
+      for (const [k, v] of Object.entries(state.cronRunCounts)) {
+        if (this.plans.has(k)) {
+          this.cronRunCounts.set(k, v);
+        }
+      }
+    }
+    if (state.lastCronFire) {
+      for (const [k, v] of Object.entries(state.lastCronFire)) {
+        if (this.plans.has(k)) {
+          this.lastCronFire.set(k, v);
+        }
+      }
+    }
   }
 
   /** Mark state as dirty; it will be flushed within 5s or at next tick boundary. */
@@ -478,6 +661,8 @@ export class PlanScheduler {
     const state: SchedulerState = {
       intervalRunCounts: Object.fromEntries(this.intervalRunCounts),
       lastConditionCheck: Object.fromEntries(this.lastConditionCheck),
+      cronRunCounts: Object.fromEntries(this.cronRunCounts),
+      lastCronFire: Object.fromEntries(this.lastCronFire),
     };
     (this.store as FilePlanStore).saveState(state);
   }
@@ -577,6 +762,16 @@ export class PlanScheduler {
 
         return await this.evaluateCondition(trigger.when);
       }
+
+      case 'cron':
+        // Cron evaluation handled in its own tick path (see evaluateCronTrigger)
+        return this.evaluateCronTrigger(plan, trigger, now);
+
+      case 'price':
+        // Price triggers are handled by the PriceWatcher service via events.
+        // The scheduler does not poll prices directly — the watcher emits
+        // 'price_crossed' events which fire the plan through firePriceTrigger().
+        return false;
     }
 
     return false;
@@ -603,6 +798,64 @@ export class PlanScheduler {
       this.store.save(plan);
     }
 
+    await this.emit({ type: 'trigger_fired', plan, executionId });
+  }
+
+  // ─── Cron Trigger Evaluation ─────────────────────────────────────────
+
+  private evaluateCronTrigger(
+    plan: Plan,
+    trigger: { type: 'cron'; expression: string; timezone?: string; maxRuns?: number },
+    now: number,
+  ): boolean {
+    // Check max runs
+    const runCount = this.cronRunCounts.get(plan.id) ?? 0;
+    if (trigger.maxRuns && runCount >= trigger.maxRuns) {
+      plan.status = 'completed';
+      this.store.save(plan);
+      this.plans.delete(plan.id);
+      return false;
+    }
+
+    // Floor current time to minute boundary
+    const minuteFloor = Math.floor(now / 60_000) * 60_000;
+
+    // Don't fire twice in the same minute
+    const lastFire = this.lastCronFire.get(plan.id) ?? 0;
+    if (minuteFloor <= lastFire) return false;
+
+    // Parse and evaluate the cron expression against current time
+    const date = trigger.timezone
+      ? dateInTimezone(now, trigger.timezone)
+      : new Date(now);
+
+    if (!matchesCron(trigger.expression, date)) return false;
+
+    // Record the fire
+    this.cronRunCounts.set(plan.id, runCount + 1);
+    this.lastCronFire.set(plan.id, minuteFloor);
+    this.persistState();
+    return true;
+  }
+
+  // ─── Price Trigger (Event-Driven) ──────────────────────────────────────
+  // Called by the event bus listener when PriceWatcher detects a threshold cross.
+
+  async firePriceTrigger(planId: string): Promise<void> {
+    const plan = this.plans.get(planId);
+    if (!plan) return;
+    if (plan.status === 'paused' || plan.status === 'running') return;
+
+    const trigger = plan.trigger;
+    if (!trigger || trigger.type !== 'price') return;
+
+    // One-shot: mark as running
+    if (!trigger.recurring) {
+      plan.status = 'running';
+      this.store.save(plan);
+    }
+
+    const executionId = `exec_${plan.id}_${Date.now()}`;
     await this.emit({ type: 'trigger_fired', plan, executionId });
   }
 
@@ -698,6 +951,87 @@ export class PlanScheduler {
       }
     }
   }
+}
+
+// ─── Cron Helpers ───────────────────────────────────────────────────────
+// Minimal 5-field cron parser: minute hour day-of-month month day-of-week.
+// Supports: *, ranges (1-5), lists (1,3,5), steps (*/5, 1-10/2).
+// No named days/months to keep it small.
+
+/** Convert a Date to the equivalent time in a different timezone. */
+function dateInTimezone(epochMs: number, tz: string): Date {
+  try {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+      hour12: false,
+    });
+    const parts = formatter.formatToParts(new Date(epochMs));
+    const get = (type: string) => parseInt(parts.find(p => p.type === type)?.value ?? '0', 10);
+    return new Date(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'), get('second'));
+  } catch {
+    // Invalid timezone — fall back to UTC
+    return new Date(epochMs);
+  }
+}
+
+/** Check if a date matches a 5-field cron expression. */
+export function matchesCron(expression: string, date: Date): boolean {
+  const fields = expression.trim().split(/\s+/);
+  if (fields.length !== 5) return false;
+
+  const minute = date.getMinutes();
+  const hour = date.getHours();
+  const dayOfMonth = date.getDate();
+  const month = date.getMonth() + 1; // 1-12
+  const dayOfWeek = date.getDay();    // 0=Sun, 6=Sat
+
+  return (
+    matchesField(fields[0]!, minute, 0, 59) &&
+    matchesField(fields[1]!, hour, 0, 23) &&
+    matchesField(fields[2]!, dayOfMonth, 1, 31) &&
+    matchesField(fields[3]!, month, 1, 12) &&
+    matchesField(fields[4]!, dayOfWeek, 0, 7) // 0 and 7 both = Sunday
+  );
+}
+
+/** Check if a single cron field matches a value. */
+function matchesField(field: string, value: number, min: number, max: number): boolean {
+  // Handle Sunday normalization: 7 → 0
+  if (max === 7 && value === 7) value = 0;
+
+  for (const part of field.split(',')) {
+    if (matchesPart(part.trim(), value, min, max)) return true;
+  }
+  return false;
+}
+
+// Check if a single cron part (e.g., star-slash-5, 1-10/2, star, 5) matches.
+function matchesPart(part: string, value: number, min: number, _max: number): boolean {
+  const slashIdx = part.indexOf('/');
+  const rangePart = slashIdx >= 0 ? part.slice(0, slashIdx) : part;
+  const step = slashIdx >= 0 ? parseInt(part.slice(slashIdx + 1), 10) : 1;
+  if (isNaN(step) || step < 1) return false;
+
+  if (rangePart === '*') {
+    return (value - min) % step === 0;
+  }
+
+  // Handle range: 1-5
+  const dashIdx = rangePart.indexOf('-');
+  if (dashIdx >= 0) {
+    const start = parseInt(rangePart.slice(0, dashIdx), 10);
+    const end = parseInt(rangePart.slice(dashIdx + 1), 10);
+    if (isNaN(start) || isNaN(end)) return false;
+    if (value < start || value > end) return false;
+    return (value - start) % step === 0;
+  }
+
+  // Single value
+  const num = parseInt(rangePart, 10);
+  if (isNaN(num)) return false;
+  return value === num;
 }
 
 // ─── Singleton ──────────────────────────────────────────────────────────

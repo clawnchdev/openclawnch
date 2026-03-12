@@ -126,6 +126,7 @@ const ACTIONS = [
   'create', 'execute', 'schedule', 'list', 'status',
   'cancel', 'pause', 'resume', 'history',
   'update', 'save_template', 'from_template', 'list_templates',
+  'dead_letter',
 ] as const;
 
 const CompoundActionSchema = Type.Object({
@@ -141,7 +142,8 @@ const CompoundActionSchema = Type.Object({
       'update: modify a draft/paused plan. ' +
       'save_template: save plan as reusable template. ' +
       'from_template: create plan from template. ' +
-      'list_templates: list saved templates.',
+      'list_templates: list saved templates. ' +
+      'dead_letter: view/clear terminal failures (pass plan_id to filter, clear=true to purge).',
   }),
 
   // ── create action: the intent object
@@ -258,7 +260,7 @@ export function createCompoundActionTool() {
       'or set up conditional triggers (e.g., "when ETH hits $4000, sell half and bridge to Arbitrum"). ' +
       'Actions: create, execute, schedule, list, status, cancel, pause, resume, history, ' +
       'update (modify draft/paused plan), save_template (save as reusable template), ' +
-      'from_template (instantiate template), list_templates.',
+      'from_template (instantiate template), list_templates, dead_letter (view/clear terminal failures).',
     parameters: CompoundActionSchema,
 
     async execute(_toolCallId: string, rawArgs: unknown, ctx?: Record<string, unknown>) {
@@ -285,6 +287,7 @@ export function createCompoundActionTool() {
           case 'save_template':   return handleSaveTemplate(args, userId);
           case 'from_template':   return handleFromTemplate(args, userId);
           case 'list_templates':  return handleListTemplates(args, userId);
+          case 'dead_letter':     return handleDeadLetter(args, userId);
           default:
             return errorResult(`Unknown action: "${action}". Use: ${ACTIONS.join(', ')}`);
         }
@@ -752,6 +755,50 @@ function handleListTemplates(_args: Record<string, unknown>, userId: string) {
   });
 }
 
+// ─── Dead-Letter Handler ─────────────────────────────────────────────────
+
+function handleDeadLetter(args: Record<string, unknown>, _userId: string) {
+  const scheduler = getScheduler();
+  const planId = args.plan_id as string | undefined;
+  const clear = args.clear === true || args.clear === 'true';
+
+  if (clear) {
+    const removed = scheduler.clearDeadLetters(planId);
+    return jsonResult({
+      cleared: removed,
+      message: planId
+        ? `Cleared ${removed} dead-letter entries for plan ${planId}.`
+        : `Cleared ${removed} dead-letter entries.`,
+    });
+  }
+
+  const entries = scheduler.loadDeadLetters(planId);
+
+  if (entries.length === 0) {
+    return jsonResult({
+      entries: [],
+      message: planId
+        ? `No dead-letter entries for plan ${planId}.`
+        : 'No dead-letter entries. All plans completed successfully or are still running.',
+    });
+  }
+
+  return jsonResult({
+    total: entries.length,
+    entries: entries.map(e => ({
+      plan_id: e.planId,
+      node_id: e.nodeId,
+      execution_id: e.executionId,
+      user_id: e.userId,
+      error: e.error,
+      retry_count: e.retryCount,
+      tool: e.tool,
+      params: e.params,
+      timestamp: new Date(e.timestamp).toISOString(),
+    })),
+  });
+}
+
 // ─── Template Extraction Helpers ────────────────────────────────────────
 
 /** Extract raw step descriptions from a compiled plan root node. */
@@ -917,6 +964,15 @@ function describeTrigger(t: Trigger): string {
       return `Every ${interval}${runs}`;
     }
     case 'condition': return `When condition met (polling every ${formatMs(t.pollIntervalMs ?? 60_000)})`;
+    case 'cron': {
+      const tz = t.timezone ? ` (${t.timezone})` : '';
+      const runs = t.maxRuns ? ` (max ${t.maxRuns} runs)` : '';
+      return `Cron: ${t.expression}${tz}${runs}`;
+    }
+    case 'price': {
+      const recur = t.recurring ? ' (recurring)' : ' (once)';
+      return `When ${t.token} ${t.condition} $${t.threshold}${recur}`;
+    }
   }
 }
 
