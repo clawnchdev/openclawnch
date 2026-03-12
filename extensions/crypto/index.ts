@@ -84,6 +84,7 @@ import {
   safemodeCommand, dangermodeCommand, walletsignCommand, autosignCommand, modeCommand, readonlyCommand,
 } from './src/commands/mode-commands.js';
 import { doctorCommand } from './src/commands/doctor-command.js';
+import { rpcCommand } from './src/commands/rpc-command.js';
 import { connectCommand, walletConnectCommands, setConnectCommandApi, connectBankrCommand, disconnectCommand } from './src/commands/connect-command.js';
 import { modelCommand, llmShortcutCommands } from './src/commands/model-command.js';
 import { moltenCommand } from './src/commands/molten-command.js';
@@ -380,6 +381,7 @@ const plugin = {
     api.registerCommand(balanceCommand);
     api.registerCommand(chainCommand);
     api.registerCommand(doctorCommand);
+    api.registerCommand(rpcCommand);
 
     // Self-improvement mode
     api.registerCommand(evolveCommand);

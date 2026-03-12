@@ -498,14 +498,22 @@ describe('Feature 5 deep: Gas Estimator logic', () => {
   it('estimateCost accepts numeric gas as operation', async () => {
     const { GasEstimator } = await import('../extensions/crypto/src/services/gas-estimator.js');
     const est = new GasEstimator();
-    // Should accept a raw number — will fail on RPC but shouldn't throw type error
-    try {
-      await est.estimateCost(100000, 8453);
-    } catch (e: any) {
-      // RPC error expected — but it should NOT be a type error
-      expect(e.message).not.toContain('is not a function');
-    }
-  }, 15_000);
+
+    // Mock getGasPrice to avoid real RPC calls
+    vi.spyOn(est, 'getGasPrice').mockResolvedValue({
+      baseFee: 0.05, slow: 0.01, standard: 0.05, fast: 0.1,
+      totalSlow: 0.06, totalStandard: 0.1, totalFast: 0.15,
+      nativeTokenPriceUsd: 2500, chain: 'base', chainId: 8453, timestamp: Date.now(),
+    });
+
+    // Should accept a raw number and return a valid GasCostEstimate
+    const result = await est.estimateCost(100000, 8453);
+    expect(result.gasUnits).toBe(100000);
+    expect(result.operation).toContain('100000');
+    expect(result.costStandardUsd).toBeGreaterThan(0);
+    expect(result.costSlowUsd).toBeLessThanOrEqual(result.costStandardUsd);
+    expect(result.costFastUsd).toBeGreaterThanOrEqual(result.costStandardUsd);
+  });
 
   it('compareSwapsGasInclusive ranks by netOutputUsd', async () => {
     // We need to test the ranking logic without RPC. Let's verify the source code logic.
@@ -799,10 +807,19 @@ describe('Feature 8 deep: Tx Monitor logic', () => {
   });
 
   it('checkStatus returns proper TxStatus shape on RPC failure', async () => {
+    // Mock the RPC manager to return a client that simulates "tx not found"
+    const { getRpcManager, resetRpcManager } = await import('../extensions/crypto/src/services/rpc-provider.js');
+    resetRpcManager();
+    const rpc = getRpcManager();
+    const mockClient = {
+      getTransactionReceipt: vi.fn().mockRejectedValue(new Error('not found')),
+      getTransaction: vi.fn().mockRejectedValue(new Error('not found')),
+      getBlockNumber: vi.fn().mockResolvedValue(12345678n),
+    };
+    vi.spyOn(rpc, 'getClient').mockResolvedValue(mockClient as any);
+
     const { TxMonitor } = await import('../extensions/crypto/src/services/tx-monitor.js');
     const m = new TxMonitor();
-    // This will fail because we don't have a real RPC for a random hash,
-    // but it should return a TxStatus object (not throw)
     const status = await m.checkStatus(
       '0x0000000000000000000000000000000000000000000000000000000000000001',
       8453,
@@ -813,7 +830,11 @@ describe('Feature 8 deep: Tx Monitor logic', () => {
     expect(status.explorerUrl).toContain('basescan.org');
     expect(['pending', 'confirmed', 'failed', 'dropped', 'unknown']).toContain(status.status);
     expect(typeof status.timestamp).toBe('number');
-  }, 30_000);
+
+    // Cleanup
+    vi.restoreAllMocks();
+    resetRpcManager();
+  });
 
   it('waitForConfirmation respects timeout', async () => {
     const fs = await import('node:fs');

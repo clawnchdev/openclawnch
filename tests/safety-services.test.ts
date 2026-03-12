@@ -825,6 +825,26 @@ describe('Readonly Mode', () => {
 
 // ── 5. /doctor Command ──────────────────────────────────────────────────────
 
+// Mock the RPC provider so /doctor doesn't hit real endpoints
+vi.mock('../extensions/crypto/src/services/rpc-provider.js', async () => {
+  const actual = await vi.importActual('../extensions/crypto/src/services/rpc-provider.js') as any;
+  const mockClient = {
+    getBlockNumber: vi.fn().mockResolvedValue(12345678n),
+  };
+  return {
+    ...actual,
+    getRpcManager: vi.fn(() => ({
+      getClient: vi.fn().mockResolvedValue(mockClient),
+      getHealthReport: vi.fn().mockReturnValue([
+        { name: 'LlamaNodes', url: 'https://base.llamarpc.com', available: true, failures: 0, circuitOpen: false },
+        { name: 'Base Public', url: 'https://mainnet.base.org', available: true, failures: 0, circuitOpen: false },
+      ]),
+      getSupportedChains: vi.fn().mockReturnValue([8453, 1, 42161, 10, 137]),
+      isMevProtectionEnabled: vi.fn().mockReturnValue(true),
+    })),
+  };
+});
+
 describe('/doctor Command', () => {
   it('doctorCommand has correct shape', async () => {
     const { doctorCommand } = await import(

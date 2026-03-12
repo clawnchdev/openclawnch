@@ -19,6 +19,7 @@ export interface RpcProviderConfig {
   name: string;
   priority: number; // lower = higher priority
   apiKeyEnv?: string; // env var name for API key (appended to URL)
+  fullUrlEnv?: string; // env var that provides the complete URL (e.g. QuickNode endpoints)
 }
 
 interface ProviderHealth {
@@ -46,48 +47,80 @@ export interface RpcManagerConfig {
 
 // ── Default Providers ───────────────────────────────────────────────────────
 
+// ── Custom & QuickNode RPC env vars ─────────────────────────────────────────
+// Users can set these env vars to override RPC endpoints:
+//   RPC_URL               — custom RPC for all chains (lowest priority custom)
+//   RPC_URL_BASE          — custom RPC for Base (overrides RPC_URL for Base)
+//   RPC_URL_ETH           — custom RPC for Ethereum
+//   RPC_URL_ARB           — custom RPC for Arbitrum
+//   RPC_URL_OP            — custom RPC for Optimism
+//   RPC_URL_POLYGON       — custom RPC for Polygon
+//   QUICKNODE_ENDPOINT    — QuickNode endpoint URL for all chains
+//   QUICKNODE_ENDPOINT_BASE, _ETH, _ARB, _OP, _POLYGON — per-chain QuickNode
+
+const CUSTOM_RPC_ENV: Record<number, string> = {
+  8453: 'RPC_URL_BASE',
+  1: 'RPC_URL_ETH',
+  42161: 'RPC_URL_ARB',
+  10: 'RPC_URL_OP',
+  137: 'RPC_URL_POLYGON',
+};
+
+const QUICKNODE_ENV: Record<number, string> = {
+  8453: 'QUICKNODE_ENDPOINT_BASE',
+  1: 'QUICKNODE_ENDPOINT_ETH',
+  42161: 'QUICKNODE_ENDPOINT_ARB',
+  10: 'QUICKNODE_ENDPOINT_OP',
+  137: 'QUICKNODE_ENDPOINT_POLYGON',
+};
+
 const DEFAULT_PROVIDERS: Record<number, RpcProviderConfig[]> = {
   // Base (8453)
   [8453]: [
-    { url: 'https://base-mainnet.g.alchemy.com/v2/', name: 'Alchemy', priority: 1, apiKeyEnv: 'ALCHEMY_API_KEY' },
-    { url: 'https://base.llamarpc.com', name: 'LlamaNodes', priority: 2 },
-    { url: 'https://mainnet.base.org', name: 'Base Public', priority: 3 },
-    { url: 'https://base.drpc.org', name: 'dRPC', priority: 4 },
-    { url: 'https://base.meowrpc.com', name: 'MeowRPC', priority: 5 },
-    { url: 'https://1rpc.io/base', name: '1RPC', priority: 6 },
+    { url: '', name: 'QuickNode', priority: 1, fullUrlEnv: 'QUICKNODE_ENDPOINT_BASE' },
+    { url: 'https://base-mainnet.g.alchemy.com/v2/', name: 'Alchemy', priority: 2, apiKeyEnv: 'ALCHEMY_API_KEY' },
+    { url: 'https://base.llamarpc.com', name: 'LlamaNodes', priority: 3 },
+    { url: 'https://mainnet.base.org', name: 'Base Public', priority: 4 },
+    { url: 'https://base.drpc.org', name: 'dRPC', priority: 5 },
+    { url: 'https://base.meowrpc.com', name: 'MeowRPC', priority: 6 },
+    { url: 'https://1rpc.io/base', name: '1RPC', priority: 7 },
   ],
   // Ethereum (1)
   [1]: [
-    { url: 'https://eth-mainnet.g.alchemy.com/v2/', name: 'Alchemy', priority: 1, apiKeyEnv: 'ALCHEMY_API_KEY' },
-    { url: 'https://eth.llamarpc.com', name: 'LlamaNodes', priority: 2 },
-    { url: 'https://ethereum.publicnode.com', name: 'PublicNode', priority: 3 },
-    { url: 'https://eth.drpc.org', name: 'dRPC', priority: 4 },
-    { url: 'https://1rpc.io/eth', name: '1RPC', priority: 5 },
-    { url: 'https://rpc.ankr.com/eth', name: 'Ankr', priority: 6 },
+    { url: '', name: 'QuickNode', priority: 1, fullUrlEnv: 'QUICKNODE_ENDPOINT_ETH' },
+    { url: 'https://eth-mainnet.g.alchemy.com/v2/', name: 'Alchemy', priority: 2, apiKeyEnv: 'ALCHEMY_API_KEY' },
+    { url: 'https://eth.llamarpc.com', name: 'LlamaNodes', priority: 3 },
+    { url: 'https://ethereum.publicnode.com', name: 'PublicNode', priority: 4 },
+    { url: 'https://eth.drpc.org', name: 'dRPC', priority: 5 },
+    { url: 'https://1rpc.io/eth', name: '1RPC', priority: 6 },
+    { url: 'https://rpc.ankr.com/eth', name: 'Ankr', priority: 7 },
   ],
   // Arbitrum (42161)
   [42161]: [
-    { url: 'https://arb-mainnet.g.alchemy.com/v2/', name: 'Alchemy', priority: 1, apiKeyEnv: 'ALCHEMY_API_KEY' },
-    { url: 'https://arbitrum.llamarpc.com', name: 'LlamaNodes', priority: 2 },
-    { url: 'https://arb1.arbitrum.io/rpc', name: 'Arbitrum Public', priority: 3 },
-    { url: 'https://arbitrum.drpc.org', name: 'dRPC', priority: 4 },
-    { url: 'https://1rpc.io/arb', name: '1RPC', priority: 5 },
+    { url: '', name: 'QuickNode', priority: 1, fullUrlEnv: 'QUICKNODE_ENDPOINT_ARB' },
+    { url: 'https://arb-mainnet.g.alchemy.com/v2/', name: 'Alchemy', priority: 2, apiKeyEnv: 'ALCHEMY_API_KEY' },
+    { url: 'https://arbitrum.llamarpc.com', name: 'LlamaNodes', priority: 3 },
+    { url: 'https://arb1.arbitrum.io/rpc', name: 'Arbitrum Public', priority: 4 },
+    { url: 'https://arbitrum.drpc.org', name: 'dRPC', priority: 5 },
+    { url: 'https://1rpc.io/arb', name: '1RPC', priority: 6 },
   ],
   // Optimism (10)
   [10]: [
-    { url: 'https://opt-mainnet.g.alchemy.com/v2/', name: 'Alchemy', priority: 1, apiKeyEnv: 'ALCHEMY_API_KEY' },
-    { url: 'https://optimism.llamarpc.com', name: 'LlamaNodes', priority: 2 },
-    { url: 'https://mainnet.optimism.io', name: 'OP Public', priority: 3 },
-    { url: 'https://optimism.drpc.org', name: 'dRPC', priority: 4 },
-    { url: 'https://1rpc.io/op', name: '1RPC', priority: 5 },
+    { url: '', name: 'QuickNode', priority: 1, fullUrlEnv: 'QUICKNODE_ENDPOINT_OP' },
+    { url: 'https://opt-mainnet.g.alchemy.com/v2/', name: 'Alchemy', priority: 2, apiKeyEnv: 'ALCHEMY_API_KEY' },
+    { url: 'https://optimism.llamarpc.com', name: 'LlamaNodes', priority: 3 },
+    { url: 'https://mainnet.optimism.io', name: 'OP Public', priority: 4 },
+    { url: 'https://optimism.drpc.org', name: 'dRPC', priority: 5 },
+    { url: 'https://1rpc.io/op', name: '1RPC', priority: 6 },
   ],
   // Polygon (137)
   [137]: [
-    { url: 'https://polygon-mainnet.g.alchemy.com/v2/', name: 'Alchemy', priority: 1, apiKeyEnv: 'ALCHEMY_API_KEY' },
-    { url: 'https://polygon.llamarpc.com', name: 'LlamaNodes', priority: 2 },
-    { url: 'https://polygon-rpc.com', name: 'Polygon Public', priority: 3 },
-    { url: 'https://polygon.drpc.org', name: 'dRPC', priority: 4 },
-    { url: 'https://1rpc.io/matic', name: '1RPC', priority: 5 },
+    { url: '', name: 'QuickNode', priority: 1, fullUrlEnv: 'QUICKNODE_ENDPOINT_POLYGON' },
+    { url: 'https://polygon-mainnet.g.alchemy.com/v2/', name: 'Alchemy', priority: 2, apiKeyEnv: 'ALCHEMY_API_KEY' },
+    { url: 'https://polygon.llamarpc.com', name: 'LlamaNodes', priority: 3 },
+    { url: 'https://polygon-rpc.com', name: 'Polygon Public', priority: 4 },
+    { url: 'https://polygon.drpc.org', name: 'dRPC', priority: 5 },
+    { url: 'https://1rpc.io/matic', name: '1RPC', priority: 6 },
   ],
 };
 
@@ -210,15 +243,42 @@ export class RpcManager {
 
   /** Get the ordered list of providers for a chain, filtered by health. */
   getProviders(chainId: number): RpcProviderConfig[] {
-    // User overrides take precedence
+    // 1. Custom RPC URL from env vars (highest priority)
+    const custom: RpcProviderConfig[] = [];
+
+    // Per-chain custom RPC (e.g. RPC_URL_BASE)
+    const chainEnv = CUSTOM_RPC_ENV[chainId];
+    if (chainEnv && process.env[chainEnv]) {
+      custom.push({ url: process.env[chainEnv]!, name: 'Custom', priority: 0 });
+    }
+
+    // Generic custom RPC (e.g. RPC_URL) — only if no per-chain custom set
+    if (custom.length === 0 && process.env.RPC_URL) {
+      custom.push({ url: process.env.RPC_URL, name: 'Custom', priority: 0 });
+    }
+
+    // Generic QuickNode endpoint (QUICKNODE_ENDPOINT) — used when no per-chain
+    // QuickNode env var is set. Injected at priority 0.5 (after custom, before defaults).
+    const qnChainEnv = QUICKNODE_ENV[chainId];
+    const hasPerChainQn = qnChainEnv && process.env[qnChainEnv];
+    if (!hasPerChainQn && process.env.QUICKNODE_ENDPOINT) {
+      custom.push({ url: process.env.QUICKNODE_ENDPOINT, name: 'QuickNode', priority: 0 });
+    }
+
+    // 2. User config overrides or defaults
     const userProviders = this.config.providers[String(chainId)];
     const defaults = DEFAULT_PROVIDERS[chainId] ?? [];
-    const providers = userProviders ?? defaults;
+    const base = userProviders ?? defaults;
+
+    // Merge custom + base
+    const providers = [...custom, ...base];
 
     return providers
       .filter((p) => {
         // Skip providers that need an API key we don't have
         if (p.apiKeyEnv && !process.env[p.apiKeyEnv]) return false;
+        // Skip providers with fullUrlEnv when the env var isn't set
+        if (p.fullUrlEnv && !process.env[p.fullUrlEnv]) return false;
         // Skip circuit-broken providers
         const key = `${chainId}:${p.name}`;
         return isAvailable(key);
@@ -228,6 +288,12 @@ export class RpcManager {
 
   /** Build the full RPC URL for a provider (append API key if needed). */
   buildUrl(provider: RpcProviderConfig): string {
+    // Full URL from env var (e.g. QuickNode endpoint, custom RPC)
+    if (provider.fullUrlEnv) {
+      const fullUrl = process.env[provider.fullUrlEnv];
+      if (fullUrl) return fullUrl;
+    }
+    // API key appended to base URL (e.g. Alchemy)
     if (provider.apiKeyEnv) {
       const key = process.env[provider.apiKeyEnv];
       if (key) return `${provider.url}${key}`;

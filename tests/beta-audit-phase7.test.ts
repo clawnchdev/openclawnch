@@ -102,11 +102,15 @@ describe('Plans commands', () => {
         }
       }
     } catch { /* ignore */ }
-    // Reset scheduler AFTER files are cleaned so loadAll() finds nothing
-    const { resetScheduler } = await import(
+    // Reset scheduler AFTER files are cleaned, then eagerly create the
+    // singleton so it loads from the now-empty directory. This prevents
+    // a race where parallel tests write plan files before the command
+    // handler calls getScheduler().
+    const { resetScheduler, getScheduler } = await import(
       '../extensions/crypto/src/services/plan-scheduler.js'
     );
     resetScheduler();
+    getScheduler();
   });
 
   it('/plans returns empty message when no plans', async () => {
@@ -226,12 +230,12 @@ describe('Plan scheduler with plans', () => {
     const success = scheduler.cancelPlan(planObj.id);
     expect(success).toBe(true);
 
-    // Verify /plans_active shows empty now
-    const { plansActiveCommand } = await import(
-      '../extensions/crypto/src/commands/plans-command.js'
+    // Verify the plan is cancelled on the scheduler directly (avoids
+    // race conditions from concurrent test files writing plan files)
+    const activePlans = scheduler.listPlans().filter(
+      (p: any) => p.status === 'scheduled' || p.status === 'running',
     );
-    const activeResult = await plansActiveCommand.handler();
-    expect(activeResult.text).toContain('No active plans');
+    expect(activePlans).toHaveLength(0);
 
     resetScheduler();
   });

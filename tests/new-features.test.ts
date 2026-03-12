@@ -536,21 +536,38 @@ describe('Feature 5: Gas Estimation Service', () => {
     );
     const est = new GasEstimator();
 
-    // Mock: provide pre-computed quotes to avoid RPC calls
+    // Mock getGasPrice to avoid real RPC calls
+    vi.spyOn(est, 'getGasPrice').mockResolvedValue({
+      baseFee: 0.05,
+      slow: 0.01,
+      standard: 0.05,
+      fast: 0.1,
+      totalSlow: 0.06,
+      totalStandard: 0.1,
+      totalFast: 0.15,
+      nativeTokenPriceUsd: 2500,
+      chain: 'base',
+      chainId: 8453,
+      timestamp: Date.now(),
+    });
+
     const quotes = [
       { aggregator: '0x', buyAmount: '2000000000', buyTokenPriceUsd: 1, buyTokenDecimals: 6, gasEstimate: '200000' },
       { aggregator: 'ParaSwap', buyAmount: '2010000000', buyTokenPriceUsd: 1, buyTokenDecimals: 6, gasEstimate: '300000' },
       { aggregator: 'Odos', buyAmount: '1990000000', buyTokenPriceUsd: 1, buyTokenDecimals: 6, gasEstimate: '150000' },
     ];
 
-    // This will fail trying to get gas price from RPC, but we can test the interface
-    try {
-      await est.compareSwapsGasInclusive(quotes, 8453);
-    } catch (err: any) {
-      // Expected: RPC will fail in test env
-      expect(err.message).toBeDefined();
-    }
-  }, 15_000);
+    const results = await est.compareSwapsGasInclusive(quotes, 8453);
+    expect(results).toHaveLength(3);
+    // Results should be ranked by net output (descending)
+    expect(results[0]!.rank).toBe(1);
+    expect(results[1]!.rank).toBe(2);
+    expect(results[2]!.rank).toBe(3);
+    // Each result should have the expected fields
+    expect(results[0]!.aggregator).toBeDefined();
+    expect(results[0]!.netOutputUsd).toBeGreaterThan(0);
+    expect(results[0]!.gasCostUsd).toBeGreaterThan(0);
+  });
 
   it('accepts custom config', async () => {
     const { GasEstimator } = await import(

@@ -51,7 +51,7 @@ describe('RpcManager', () => {
     const providers = mgr.getProviders(8453);
     const alchemyFound = providers.find((p) => p.name === 'Alchemy');
     expect(alchemyFound).toBeDefined();
-    expect(alchemyFound!.priority).toBe(1);
+    expect(alchemyFound!.priority).toBe(2);
     delete process.env.ALCHEMY_API_KEY;
   });
 
