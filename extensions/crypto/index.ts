@@ -1024,7 +1024,36 @@ const plugin = {
     // ─── Onboarding State Tracking ──────────────────────────────────────
     // Track which conversations are currently being handled by onboarding
     // so the message_sending hook can cancel the LLM response.
-    const onboardingHandledConversations = new Set<string>();
+    //
+    // Uses a Map<chatId, timestamp> with a 30-second TTL instead of a bare
+    // Set to prevent stale entries from permanently silencing the agent.
+    const ONBOARDING_FLAG_TTL_MS = 30_000;
+    const onboardingHandledConversations = new Map<string, number>();
+
+    /** Add a chatId flag with a TTL. */
+    function markConversationHandled(chatId: string): void {
+      onboardingHandledConversations.set(chatId, Date.now());
+    }
+
+    /** Check and consume a flag, returning true if valid (not expired). */
+    function consumeConversationFlag(chatId: string): boolean {
+      const ts = onboardingHandledConversations.get(chatId);
+      if (ts == null) return false;
+      onboardingHandledConversations.delete(chatId);
+      // Expired entries are stale — don't cancel the response
+      if (Date.now() - ts > ONBOARDING_FLAG_TTL_MS) return false;
+      return true;
+    }
+
+    /** Periodic sweep: purge expired entries to prevent unbounded Map growth. */
+    setInterval(() => {
+      const now = Date.now();
+      for (const [key, ts] of onboardingHandledConversations) {
+        if (now - ts > ONBOARDING_FLAG_TTL_MS) {
+          onboardingHandledConversations.delete(key);
+        }
+      }
+    }, 60_000); // Every 60 seconds
 
     // ── Channel-agnostic sender for onboarding + notifications ────────
     const channelSender = createChannelSender(api);
@@ -1082,7 +1111,7 @@ const plugin = {
 
         if (response) {
           // Mark this conversation as handled by onboarding
-          onboardingHandledConversations.add(chatId);
+          markConversationHandled(chatId);
 
           // Send the onboarding response directly via the detected channel
           await sendOnboardingMessage(channel, chatId, response);
@@ -1122,9 +1151,7 @@ const plugin = {
         const chatId = ctx?.conversationId ?? event?.to;
         if (!chatId) return;
 
-        if (onboardingHandledConversations.has(String(chatId))) {
-          // Clear the flag (one-shot: cancel this response only)
-          onboardingHandledConversations.delete(String(chatId));
+        if (consumeConversationFlag(String(chatId))) {
           api.logger?.info?.(`[crypto] Suppressing LLM response for onboarding chat ${chatId}`);
           return { cancel: true };
         }
@@ -1171,7 +1198,7 @@ const plugin = {
       await handleAfterToolCall(event, ctx, {
         writeToolNames: WRITE_TOOL_NAMES,
         sendOnboardingMessage,
-        onboardingHandledConversations,
+        markOnboardingHandled: markConversationHandled,
         getWalletState: getWalletStateFn,
         logger: api.logger,
       });

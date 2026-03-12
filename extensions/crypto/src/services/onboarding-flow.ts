@@ -458,7 +458,20 @@ export class OnboardingFlow {
 
   /** Is this user still in the onboarding flow? */
   get isActive(): boolean {
-    return this.state.step !== 'complete' && this.state.step !== 'skipped';
+    if (this.state.step === 'complete' || this.state.step === 'skipped') return false;
+
+    // Auto-skip onboarding if the user has been stuck for more than 7 days.
+    // Prevents permanently "active" onboarding from interfering with normal
+    // agent operation (e.g., the after_tool_call hook suppressing LLM responses).
+    const ONBOARDING_TIMEOUT_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+    if (Date.now() - this.state.startedAt > ONBOARDING_TIMEOUT_MS) {
+      this.state.step = 'skipped';
+      this.state.lastInteraction = Date.now();
+      saveState(this.state);
+      return false;
+    }
+
+    return true;
   }
 
   /** Current step name. */

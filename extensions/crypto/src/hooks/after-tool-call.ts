@@ -25,8 +25,8 @@ export interface AfterToolCallDeps {
   writeToolNames: Set<string>;
   /** Send an onboarding message to a specific channel/user. */
   sendOnboardingMessage: (channel: ChannelId, chatId: string, msg: OnboardingMessage) => Promise<void>;
-  /** Set of conversation IDs where onboarding handled the last message. */
-  onboardingHandledConversations: Set<string>;
+  /** Mark a conversation as handled by onboarding (sets flag with TTL). */
+  markOnboardingHandled: (chatId: string) => void;
   /** Get current wallet connection state. */
   getWalletState: () => {
     connected: boolean;
@@ -65,9 +65,12 @@ export async function handleAfterToolCall(
         const success = !event?.error;
         const response = flow.processToolResult(String(toolName), success);
         if (response) {
-          await deps.sendOnboardingMessage(channel, userId, response).catch((err: any) =>
+          // Derive chatId the same way message_received and message_sending do:
+          // ctx.conversationId is the canonical key, falling back to userId for DMs.
+          const chatId = ctx?.conversationId ? String(ctx.conversationId) : String(userId);
+          await deps.sendOnboardingMessage(channel, chatId, response).catch((err: any) =>
             deps.logger?.warn?.(`[crypto] Failed to send onboarding msg: ${err}`));
-          deps.onboardingHandledConversations.add(userId);
+          deps.markOnboardingHandled(chatId);
           deps.logger?.info?.(
             `[crypto] Onboarding advanced for user ${userId}: ${flow.currentStep}`
           );
