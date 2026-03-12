@@ -9,7 +9,6 @@ import { Type } from '@sinclair/typebox';
 import { stringEnum, jsonResult, errorResult, readStringParam, readNumberParam } from '../lib/tool-helpers.js';
 import {
   getWalletState,
-  getWCSigner,
   requireWalletClient,
   requirePublicClient,
   getMevWalletClient,
@@ -385,8 +384,8 @@ async function handleExecute(params: Record<string, unknown>) {
     const publicClient = requirePublicClient();
 
     const swapper = new ClawnchSwapper({
-      wallet: wallet as any,
-      publicClient: publicClient as any,
+      wallet,
+      publicClient,
       apiBaseUrl: process.env.CLAWNCHER_API_URL || 'https://clawn.ch',
     });
 

@@ -99,8 +99,8 @@ async function getTokenInfo(tokenAddress: string): Promise<{ decimals: number; s
     const publicClient = requirePublicClient();
 
     const swapper = new ClawnchSwapper({
-      wallet: wallet as any,
-      publicClient: publicClient as any,
+      wallet,
+      publicClient,
       network: 'mainnet',
     });
 

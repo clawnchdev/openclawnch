@@ -98,8 +98,8 @@ export function createClawnchLaunchTool() {
 
         const deployer = new ClawnchApiDeployer({
           apiKey,
-          wallet: wallet as any,
-          publicClient: publicClient as any,
+          wallet,
+          publicClient,
           apiBaseUrl: process.env.CLAWNCHER_API_URL || 'https://clawn.ch',
         });
 

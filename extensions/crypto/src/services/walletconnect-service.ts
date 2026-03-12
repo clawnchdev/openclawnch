@@ -25,8 +25,14 @@ import { hasKeychainWallet, loadAndDecrypt } from './keychain-wallet.js';
 // ─── Singleton State ─────────────────────────────────────────────────────
 // Using `any` for client types to avoid viem version conflicts between
 // the local install and @clawnch/sdk's bundled viem types.
+// All consumers receive the untyped client and pass it directly to
+// external SDKs (ClawnchSwapper, etc.) — no intermediate `as any` casts
+// are needed since the source is already untyped. If viem types align
+// in the future, replace `any` with `WalletClient` / `PublicClient`.
 
+/** viem WalletClient — untyped to avoid cross-package viem version conflicts */
 let _walletClient: any = null;
+/** viem PublicClient — untyped for the same reason */
 let _publicClient: any = null;
 let _wcSigner: WalletConnectSigner | null = null;
 let _connectedAddress: Address | null = null;
@@ -236,9 +242,11 @@ async function _doInitWalletService(config: WalletServiceConfig): Promise<{
     try {
       const { getBankrUserInfo } = await import('./bankr-api.js');
 
-      // Ensure BANKR_API_KEY is set before calling getBankrUserInfo.
-      // We only set it if it isn't already configured (avoid race conditions
-      // from mutating process.env in async code).
+      // KNOWN TRADE-OFF: We mutate process.env to make the Bankr API key
+      // available to getBankrApiKey() (which reads from credential vault →
+      // process.env). This is idempotent (guarded) and happens once at init.
+      // TODO: Refactor bankr-api to accept an explicit key parameter instead
+      // of reading from process.env, eliminating this env mutation.
       if (!process.env.BANKR_API_KEY) {
         process.env.BANKR_API_KEY = config.bankrApiKey;
       }

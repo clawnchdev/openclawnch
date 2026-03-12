@@ -112,7 +112,7 @@ async function handleEthBalance(address: `0x${string}`, chain: string) {
     const publicClient = await getClientForChain(chain);
     const { formatEther } = await import('viem');
 
-    const balance = await (publicClient as any).getBalance({ address });
+    const balance = await publicClient.getBalance({ address });
     const ethBalance = formatEther(balance);
 
     // Get ETH price via cross-validated oracle

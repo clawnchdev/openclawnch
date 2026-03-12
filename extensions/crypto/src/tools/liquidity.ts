@@ -116,8 +116,8 @@ export function createLiquidityTool() {
         const publicClient = requirePublicClient();
 
         const liquidity = new ClawnchLiquidity({
-          wallet: wallet as any,
-          publicClient: publicClient as any,
+          wallet,
+          publicClient,
           network: 'mainnet',
         });
 

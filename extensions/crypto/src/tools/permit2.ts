@@ -130,8 +130,8 @@ async function getPermit2Client() {
   const publicClient = requirePublicClient();
 
   return new Permit2Client({
-    wallet: wallet as any,
-    publicClient: publicClient as any,
+    wallet,
+    publicClient,
     chainId: 8453,
   });
 }

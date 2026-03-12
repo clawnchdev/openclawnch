@@ -111,7 +111,7 @@ async function handleTokenInfo(params: Record<string, unknown>) {
   const { ClawnchReader } = await import('@clawnch/clawncher-sdk');
 
   const reader = new ClawnchReader({
-    publicClient: publicClient as any,
+    publicClient,
     network: 'mainnet',
   });
 
@@ -164,7 +164,7 @@ async function handlePortfolio(params: Record<string, unknown>) {
   const { ClawnchPortfolio } = await import('@clawnch/clawncher-sdk');
 
   const portfolio = new ClawnchPortfolio({
-    publicClient: publicClient as any,
+    publicClient,
     network: 'mainnet',
   });
 
@@ -233,7 +233,7 @@ async function handleVaultClaim(params: Record<string, unknown>) {
   const { ClawnchReader } = await import('@clawnch/clawncher-sdk');
 
   const reader = new ClawnchReader({
-    publicClient: publicClient as any,
+    publicClient,
     network: 'mainnet',
   });
 
@@ -286,8 +286,8 @@ async function handleVaultClaim(params: Record<string, unknown>) {
   const { ClawncherClaimer } = await import('@clawnch/clawncher-sdk');
 
   const claimer = new ClawncherClaimer({
-    wallet: wallet as any,
-    publicClient: publicClient as any,
+    wallet,
+    publicClient,
     network: 'mainnet',
   });
 
@@ -325,8 +325,8 @@ async function handleAgentRegister(params: Record<string, unknown>) {
   const deployer = new ClawnchApiDeployer({
     apiBaseUrl: process.env.CLAWNCHER_API_URL || 'https://clawn.ch',
     apiKey,
-    wallet: wallet as any,
-    publicClient: publicClient as any,
+    wallet,
+    publicClient,
   });
 
   // register is a static method on ClawnchApiDeployer

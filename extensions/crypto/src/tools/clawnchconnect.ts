@@ -16,7 +16,6 @@ import {
   getWCSigner,
   getTransactionHistory,
   addPolicy,
-  removePolicy,
   clearPolicies,
   isBankrMode,
 } from '../services/walletconnect-service.js';

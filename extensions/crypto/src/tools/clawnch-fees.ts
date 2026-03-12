@@ -100,8 +100,8 @@ async function handleClaim(params: Record<string, unknown>, address: string) {
     const publicClient = requirePublicClient();
 
     const claimer = new ClawncherClaimer({
-      wallet: wallet as any,
-      publicClient: publicClient as any,
+      wallet,
+      publicClient,
       network: (process.env.CLAWNCHER_NETWORK as 'mainnet' | 'sepolia') || 'mainnet',
     });
 
@@ -146,8 +146,8 @@ async function handleClaimAll(address: string) {
     const wallet = requireWalletClient();
     const publicClient = requirePublicClient();
     const claimer = new ClawncherClaimer({
-      wallet: wallet as any,
-      publicClient: publicClient as any,
+      wallet,
+      publicClient,
       network: (process.env.CLAWNCHER_NETWORK as 'mainnet' | 'sepolia') || 'mainnet',
     });
 
