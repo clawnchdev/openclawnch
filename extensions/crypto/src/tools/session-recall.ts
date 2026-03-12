@@ -13,7 +13,7 @@
  */
 
 import { Type } from '@sinclair/typebox';
-import { stringEnum, jsonResult, textResult, errorResult, readStringParam } from '../lib/tool-helpers.js';
+import { stringEnum, jsonResult, textResult, errorResult, readStringParam, readNumberParam } from '../lib/tool-helpers.js';
 import { getSessionRecall } from '../services/session-recall.js';
 
 const ACTIONS = ['search', 'stats'] as const;
@@ -54,7 +54,7 @@ export function createSessionRecallTool() {
           if (!query) return errorResult('query is required for search action.');
 
           const maxResults = Math.min(
-            Math.max(1, (params.max_results as number) || 3),
+            Math.max(1, readNumberParam(params, 'max_results') ?? 3),
             10,
           );
 

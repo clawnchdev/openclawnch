@@ -16,8 +16,28 @@
  * Default: http://localhost:9222 (configurable via PINCHTAB_URL env var)
  */
 
-// PinchTab runs locally — all HTTP calls use bare fetch to localhost.
-// guardedFetch is not needed (it's for external API allowlisting).
+// PinchTab runs locally — HTTP calls use bare fetch but are restricted
+// to localhost/127.0.0.1. The constructor validates this at init time.
+
+/** Throws if the URL does not resolve to a loopback address. */
+function assertLocalhost(url: string): void {
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase();
+    if (host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host === '::1') {
+      return;
+    }
+    throw new Error(
+      `BrowserService requires a localhost URL, got "${host}". ` +
+      `Set PINCHTAB_URL to http://localhost:<port> or http://127.0.0.1:<port>.`
+    );
+  } catch (err) {
+    if (err instanceof TypeError) {
+      throw new Error(`Invalid PINCHTAB_URL: "${url}" is not a valid URL.`);
+    }
+    throw err;
+  }
+}
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -80,6 +100,7 @@ export class BrowserService {
 
   constructor(baseUrl?: string) {
     this.baseUrl = baseUrl ?? process.env.PINCHTAB_URL ?? 'http://localhost:9222';
+    assertLocalhost(this.baseUrl);
   }
 
   /**

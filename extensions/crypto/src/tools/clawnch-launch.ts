@@ -6,7 +6,7 @@
  */
 
 import { Type } from '@sinclair/typebox';
-import { jsonResult, errorResult, readStringParam } from '../lib/tool-helpers.js';
+import { jsonResult, errorResult, readStringParam, readNumberParam } from '../lib/tool-helpers.js';
 import { requireWalletClient, requirePublicClient, getWalletState } from '../services/walletconnect-service.js';
 import { validateLaunch } from '../services/safety-service.js';
 import { getCredentialVault } from '../services/credential-vault.js';
@@ -67,9 +67,12 @@ export function createClawnchLaunchTool() {
       const symbol = readStringParam(params, 'symbol', { required: true })!;
       const description = readStringParam(params, 'description');
       const image = readStringParam(params, 'image');
-      const vaultPercentage = params.vault_percentage as number | undefined;
+      const vaultPercentageRaw = readNumberParam(params, 'vault_percentage');
+      const vaultPercentage = vaultPercentageRaw !== undefined
+        ? Math.max(1, Math.min(90, Math.round(vaultPercentageRaw)))
+        : undefined;
       const devBuyEth = readStringParam(params, 'dev_buy_eth');
-      const bypassRateLimit = params.bypass_rate_limit as boolean | undefined;
+      const bypassRateLimit = params.bypass_rate_limit === true;
 
       // Validate
       if (symbol.length > 10) {
@@ -87,8 +90,9 @@ export function createClawnchLaunchTool() {
             safety.blockers.map(b => `  ✗ ${b}`).join('\n')
           );
         }
-      } catch {
-        // Safety infrastructure failure shouldn't block
+      } catch (err) {
+        // Safety check infrastructure failure — log but don't block the launch.
+        console.warn('[clawnch-launch] Safety pre-flight failed, proceeding without validation:', err instanceof Error ? err.message : String(err));
       }
 
       try {

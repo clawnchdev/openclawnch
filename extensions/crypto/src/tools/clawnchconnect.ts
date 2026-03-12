@@ -222,10 +222,12 @@ async function handleConnect(params: Record<string, unknown>, api?: any) {
           // Proactively confirm wallet pairing to the user
           if (api) {
             const sendFn = api.runtime?.channel?.telegram?.sendMessageTelegram;
-            // Try to find the chat ID from the current context
+            // Use the chat ID from the execution context (injected by the gateway,
+            // not from LLM-controlled params). Only accept numeric Telegram chat IDs.
             const chatId = params._chatId ?? params._senderId;
-            if (sendFn && chatId) {
-              sendFn(String(chatId),
+            const chatIdStr = chatId != null ? String(chatId) : '';
+            if (sendFn && chatIdStr && /^\d+$/.test(chatIdStr)) {
+              sendFn(chatIdStr,
                 `Wallet connected!\n\nAddress: ${session.address.slice(0, 6)}...${session.address.slice(-4)}\nChain: ${session.chainId}\n\nYou're ready to trade. Try: "What's the price of ETH?" or "Show my balance"`,
                 { accountId: 'default' }
               ).catch((err: any) => console.log(`[clawnchconnect] Failed to send confirmation: ${err}`));

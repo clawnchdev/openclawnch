@@ -244,7 +244,14 @@ async function handleApproveBatch(params: Record<string, unknown>) {
     return errorResult('approve_batch requires a non-empty "tokens" array of token addresses.');
   }
 
-  const tokens = tokensRaw.map((t) => String(t)) as `0x${string}`[];
+  const tokens: `0x${string}`[] = [];
+  for (const t of tokensRaw) {
+    const addr = String(t).toLowerCase();
+    if (!/^0x[0-9a-f]{40}$/.test(addr)) {
+      return errorResult(`Invalid token address: "${t}". Must be a 42-character hex address starting with 0x.`);
+    }
+    tokens.push(addr as `0x${string}`);
+  }
 
   try {
     const client = await getPermit2Client();
@@ -307,10 +314,17 @@ async function handleLockdown(params: Record<string, unknown>) {
   }
 
   try {
-    const pairs = pairsRaw.map((p: any) => ({
-      token: p.token as `0x${string}`,
-      spender: resolveSpender(String(p.spender)),
-    }));
+    const pairs: Array<{ token: `0x${string}`; spender: `0x${string}` }> = [];
+    for (const p of pairsRaw as Array<{ token?: unknown; spender?: unknown }>) {
+      const tokenAddr = String(p.token ?? '').toLowerCase();
+      if (!/^0x[0-9a-f]{40}$/.test(tokenAddr)) {
+        return errorResult(`Invalid token address in lockdown pair: "${p.token}".`);
+      }
+      pairs.push({
+        token: tokenAddr as `0x${string}`,
+        spender: resolveSpender(String(p.spender ?? '')),
+      });
+    }
 
     const client = await getPermit2Client();
     const txHash = await client.lockdown(pairs);
