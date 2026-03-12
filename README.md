@@ -6,26 +6,21 @@ A crypto-native fork of [OpenClaw](https://github.com/openclaw/openclaw). 42 too
 
 ## Quick Start
 
-**Already have OpenClaw?** Add the crypto extension:
-
-```bash
-openclaw plugins install @clawnch/openclaw-crypto
-```
-
-**Starting fresh?** Clone and run:
-
 ```bash
 git clone https://github.com/clawnch/openclawnch.git
 cd openclawnch
 pnpm install && pnpm build
 
-# Set your keys:
-export ANTHROPIC_API_KEY="sk-ant-..."
-export TELEGRAM_BOT_TOKEN="..."          # or DISCORD_TOKEN, SLACK_BOT_TOKEN
+# Interactive setup — validates your keys, writes .env:
+node bin/openclawnch.mjs init
 
-# Run:
+# Start the agent:
 node bin/openclawnch.mjs
 ```
+
+Message your bot. It walks you through onboarding. Run `/setup` in chat to see tool status, `/doctor` for diagnostics.
+
+**Already have OpenClaw?** Just install the extension: `openclaw plugins install @clawnch/openclaw-crypto`
 
 Also runs on [Docker](docs/SETUP.md#docker) and [Fly.io](docs/SETUP.md#flyio). Full setup guide: **[docs/SETUP.md](docs/SETUP.md)**
 

@@ -1,60 +1,37 @@
 # Setup Guide
 
-Four ways to run OpenClawnch, depending on what you already have and where you want to run it.
+## First 5 Minutes
 
-| Path | Best for | Requires |
-|------|----------|----------|
-| [Add to existing OpenClaw](#add-to-existing-openclaw) | Already running OpenClaw | OpenClaw installed |
-| [Bare metal](#bare-metal) | Mac mini, home server, dev machine | Node.js 22+ |
-| [Docker](#docker) | Self-hosted VPS or NAS | Docker |
-| [Fly.io](#flyio) | Managed cloud, Telegram-first | Fly account, Docker |
+No matter which path you choose, here's the fastest route to a working agent:
 
-All four paths give you the same 42 tools, 87 commands, and 47 services. The crypto extension works identically regardless of how you run it.
+1. **Get two keys** — an LLM API key and a channel token
+2. **Run `openclawnch init`** — the wizard validates both keys and writes your `.env`
+3. **Start the agent** — `node bin/openclawnch.mjs`
+4. **Message your bot** — it walks you through onboarding (persona, capabilities, wallet)
+5. **Run `/setup` in chat** — confirms which tools are ready
 
----
-
-## Prerequisites (all paths)
-
-- **Node.js 22+** — `node --version`
-- **pnpm** — `npm install -g pnpm` (or use `npx pnpm`)
-- **An LLM API key** — at least one of:
-  - [Anthropic](https://console.anthropic.com/settings/keys) (recommended, starts with `sk-ant-`)
-  - [OpenRouter](https://openrouter.ai/keys) (multi-model, starts with `sk-or-`)
-  - [OpenAI](https://platform.openai.com/api-keys) (starts with `sk-`)
-  - [Bankr Gateway](https://bankr.bot/api) (pay with crypto)
-
-### Optional keys
-
-| Key | What it unlocks |
-|-----|-----------------|
-| `WALLETCONNECT_PROJECT_ID` | WalletConnect wallet pairing ([get one](https://cloud.reown.com)) |
-| `ALCHEMY_API_KEY` | Higher-tier RPC access |
-| `ZEROX_API_KEY` | 0x DEX aggregator |
-| `BASESCAN_API_KEY` | Block explorer queries |
-| `HERD_ACCESS_TOKEN` | Token investigation/auditing |
-| `BANKR_API_KEY` | Bankr custodial wallet + automations |
-
-See [`deploy/.env.example`](../deploy/.env.example) for the full list of environment variables.
+You're done when the startup banner shows green checks for LLM and Channel, and `/setup` reports tools ready.
 
 ---
 
-## Add to existing OpenClaw
+## Choose Your Path
 
-If you already have OpenClaw running (any channel, any deploy), install the crypto extension:
+| Path | Best for | Time to first message |
+|------|----------|-----------------------|
+| [Quick start](#quick-start) | Local dev, Mac mini, home server | ~3 minutes |
+| [Add to existing OpenClaw](#add-to-existing-openclaw) | Already running OpenClaw | ~1 minute |
+| [Docker](#docker) | Self-hosted VPS or NAS | ~5 minutes |
+| [Fly.io](#flyio) | Managed cloud, zero-maintenance | ~10 minutes |
 
-```bash
-openclaw plugins install @clawnch/openclaw-crypto
-```
-
-Set your wallet and API keys as environment variables (see [Wallet Modes](#wallet-modes) and [Environment Variables](#environment-variables) below), then restart OpenClaw. The extension registers its tools, commands, and hooks automatically.
-
-This is the lightest path — no new binary, no container, no migration. Your existing channels, config, and conversation history stay intact.
+All paths give you the same 42 tools, 87 commands, and 47 services.
 
 ---
 
-## Bare metal
+## Quick Start
 
-Run directly on any machine with Node.js. No Docker, no cloud, no containers. Good for a Mac mini, a home server, or local development.
+The default path. Run directly on your machine.
+
+### 1. Clone and install
 
 ```bash
 git clone https://github.com/clawnch/openclawnch.git
@@ -62,25 +39,199 @@ cd openclawnch
 pnpm install && pnpm build
 ```
 
-Set your environment variables:
+### 2. Run the setup wizard
 
 ```bash
-export ANTHROPIC_API_KEY="sk-ant-..."
-export TELEGRAM_BOT_TOKEN="1234567890:ABC..."   # or DISCORD_TOKEN, SLACK_BOT_TOKEN
-export WALLETCONNECT_PROJECT_ID="..."            # optional
+node bin/openclawnch.mjs init
 ```
 
-Run it:
+The wizard walks you through four steps:
+
+1. **LLM provider** — pick Anthropic, OpenRouter, OpenAI, or Bankr. Paste your key; it validates against the live API.
+2. **Channel** — pick Telegram, Discord, or Slack. Paste your token; it confirms the bot exists.
+3. **Wallet mode** — WalletConnect (recommended), private key, Bankr, or skip.
+4. **Optional APIs** — Alchemy, 0x, Basescan, Herd. Press Enter to skip any.
+
+It writes a `.env` file in the current directory. You can also run `openclawnch init --print` to get export commands instead.
+
+### 3. Start the agent
 
 ```bash
 node bin/openclawnch.mjs
 ```
 
-The wrapper auto-configures OpenClaw with the crypto extension and starts the gateway. State persists to `~/.openclawnch/`.
+You should see:
 
-### Running as a background service (macOS)
+```
+  OpenClawnch v0.1.0  (OpenClaw v2026.3.8)
 
-Create a launchd plist to keep it running:
+  ✓ LLM      Anthropic
+  ✓ Channel  Telegram
+  ! Wallet   Not configured — use /connect in chat
+```
+
+If LLM or Channel show `✗`, the agent won't start. Re-run `openclawnch init` or check your `.env`.
+
+### 4. Message your bot
+
+Open your channel (e.g. Telegram) and send any message. The bot replies with a welcome screen and walks you through:
+
+- **Persona** — Professional, Degen, Chill, Technical, or Mentor
+- **Capabilities** — select which feature categories you want active
+- **Wallet** — connect via `/connect` (WalletConnect QR code to your phone wallet)
+
+### 5. Verify
+
+Run these commands in chat:
+
+| Command | What it shows |
+|---------|---------------|
+| `/setup` | X/42 tools ready, which keys are missing, where to get them |
+| `/doctor` | Full diagnostic: wallet, RPC, secrets, channels, services |
+| `/wallet` | Wallet address and balance (after connecting) |
+
+---
+
+## Add to Existing OpenClaw
+
+If you already have OpenClaw running on any channel, install the crypto extension:
+
+```bash
+openclaw plugins install @clawnch/openclaw-crypto
+```
+
+Set environment variables for your wallet and APIs (see [Environment Variables](#environment-variables) below), then restart OpenClaw. The extension registers its tools, commands, and hooks automatically.
+
+This is the lightest path — no new binary, no container, no migration. Your existing channels, config, and history stay intact.
+
+After restart, run `/setup` in chat to confirm tools are registered.
+
+---
+
+## Docker
+
+Self-hosted with Docker Compose.
+
+### 1. Build
+
+```bash
+git clone https://github.com/clawnch/openclawnch.git
+cd openclawnch
+pnpm install && pnpm build
+npm run deploy:pack
+```
+
+### 2. Configure
+
+```bash
+cd deploy
+cp .env.example .env
+```
+
+Edit `.env` — fill in your LLM key and at least one channel token. See [`deploy/.env.example`](../deploy/.env.example) for the full annotated list.
+
+### 3. Start
+
+```bash
+docker compose up -d
+```
+
+| Action | Command |
+|--------|---------|
+| View logs | `docker compose logs -f` |
+| Restart | `docker compose restart` |
+| Stop | `docker compose down` |
+
+State persists in a Docker volume. Your `.env` stays on disk — don't commit it.
+
+### 4. Verify
+
+Message your bot and run `/setup` to confirm tool registration.
+
+---
+
+## Fly.io
+
+Managed cloud deploy. Auto-suspends when idle (~$5/month), wakes on incoming messages.
+
+### Prerequisites
+
+- [flyctl](https://fly.io/docs/flyctl/install/) — `curl -L https://fly.io/install.sh | sh`
+- Docker Desktop (must be running for local image builds)
+- Fly account — `fly auth signup` or `fly auth login`
+
+### Option A: One-command deploy
+
+```bash
+git clone https://github.com/clawnch/openclawnch.git
+cd openclawnch
+pnpm install && pnpm build
+
+node bin/openclawnch.mjs deploy \
+  --telegram-token "YOUR_BOT_TOKEN" \
+  --fly-token "YOUR_FLY_TOKEN" \
+  --llm-key "YOUR_LLM_KEY"
+```
+
+The deploy command validates all tokens, provisions a Fly Machine with a persistent volume, waits for health check, and verifies the Telegram webhook. It prints the bot link when done.
+
+### Option B: Manual Fly deploy
+
+```bash
+pnpm install && pnpm build
+npm run deploy:pack
+cd deploy
+cp fly.template.toml fly.toml
+```
+
+Edit `fly.toml`:
+- Replace `YOUR_APP_NAME` with a unique name (e.g. `myname-clawnch`)
+- Replace `YOUR_REGION` with nearest region (`ewr`, `lax`, `lhr`, `nrt`)
+
+```bash
+fly apps create <your-app-name>
+fly volumes create workspace --region <your-region> --size 1 -a <your-app-name>
+
+# Set secrets:
+fly secrets set TELEGRAM_BOT_TOKEN="<your-bot-token>" -a <your-app-name>
+fly secrets set ANTHROPIC_API_KEY="<your-api-key>" -a <your-app-name>
+fly secrets set OPENCLAWNCH_LLM_PROVIDER=anthropic -a <your-app-name>
+
+# Optional:
+fly secrets set WALLETCONNECT_PROJECT_ID="<your-project-id>" -a <your-app-name>
+
+# Deploy:
+fly deploy --local-only
+```
+
+### Pairing
+
+Message your bot on Telegram. It replies with a pairing code (e.g. `ABC-1234`). Approve it:
+
+```bash
+fly ssh console -a <your-app-name> -C "openclaw pairing approve telegram <CODE>"
+```
+
+### Troubleshooting
+
+| Problem | Fix |
+|---------|-----|
+| Bot doesn't reply | Gateway takes ~60s to boot. Wait and try again. |
+| "webhook not set" in logs | Bot token is wrong. |
+| "listening" but no response | Send `/start` to the bot. |
+| Check logs | `fly logs -a <your-app-name>` |
+
+### Cost
+
+- ~$5/month with auto-suspend (pauses when idle)
+- ~$12/month always-on
+- You pay your own LLM and Fly bills
+
+---
+
+## Running as a Background Service
+
+### macOS (launchd)
 
 ```bash
 cat > ~/Library/LaunchAgents/ch.openclawn.agent.plist << 'EOF'
@@ -117,7 +268,7 @@ EOF
 launchctl load ~/Library/LaunchAgents/ch.openclawn.agent.plist
 ```
 
-### Running as a background service (Linux)
+### Linux (systemd)
 
 ```bash
 sudo cat > /etc/systemd/system/openclawnch.service << 'EOF'
@@ -142,110 +293,9 @@ sudo systemctl enable --now openclawnch
 
 ---
 
-## Docker
-
-Self-hosted with Docker Compose. Works on any machine with Docker installed.
-
-```bash
-git clone https://github.com/clawnch/openclawnch.git
-cd openclawnch
-pnpm install && pnpm build
-npm run deploy:pack
-
-cd deploy
-cp .env.example .env
-```
-
-Edit `.env` — fill in your LLM key and at least one channel token. Then:
-
-```bash
-docker compose up -d
-```
-
-Logs: `docker compose logs -f`
-Restart: `docker compose restart`
-Stop: `docker compose down`
-
-State persists in a Docker volume. Your `.env` file stays on disk — don't commit it.
-
----
-
-## Fly.io
-
-Managed cloud deploy. Best if you want a hands-off setup with auto-suspend (pauses when idle, wakes on incoming messages). Telegram-first but works with any channel.
-
-### Prerequisites (Fly-specific)
-
-- [flyctl](https://fly.io/docs/flyctl/install/) — `curl -L https://fly.io/install.sh | sh`
-- Docker Desktop (needs to be running for local image builds)
-- Fly account — `fly auth signup` or `fly auth login`
-
-### Telegram bot
-
-1. Open Telegram, message [@BotFather](https://t.me/BotFather)
-2. Send `/newbot`, pick a name and username
-3. Copy the bot token (looks like `1234567890:ABCdefGHIjklMNOpqrsTUVwxyz`)
-
-### Deploy
-
-```bash
-git clone https://github.com/clawnch/openclawnch.git
-cd openclawnch
-pnpm install && pnpm build
-npm run deploy:pack
-
-cd deploy
-cp fly.template.toml fly.toml
-```
-
-Edit `fly.toml`:
-- Replace `YOUR_APP_NAME` with a unique name (e.g. `myname-clawnch`)
-- Replace `YOUR_REGION` with nearest region (`ewr`, `lax`, `lhr`, `nrt`, etc.)
-
-```bash
-fly apps create <your-app-name>
-fly volumes create workspace --region <your-region> --size 1 -a <your-app-name>
-
-# Set secrets:
-fly secrets set TELEGRAM_BOT_TOKEN="<your-bot-token>" -a <your-app-name>
-fly secrets set ANTHROPIC_API_KEY="<your-api-key>" -a <your-app-name>
-fly secrets set OPENCLAWNCH_LLM_PROVIDER=anthropic -a <your-app-name>
-
-# Optional:
-fly secrets set WALLETCONNECT_PROJECT_ID="<your-project-id>" -a <your-app-name>
-
-# Deploy (builds locally, pushes to Fly):
-fly deploy --local-only
-```
-
-### Pair your account
-
-Message your bot on Telegram. It replies with a pairing code (e.g. `ABC-1234`). Approve it:
-
-```bash
-fly ssh console -a <your-app-name> -C "openclaw pairing approve telegram <CODE>"
-```
-
-The bot walks you through onboarding from there (persona, capabilities, wallet).
-
-### Troubleshooting
-
-- **Bot doesn't reply**: gateway takes ~60s to boot. Wait and try again.
-- **"webhook not set"** in logs: bot token is wrong.
-- **"listening" but no response**: send `/start` to the bot.
-- **Check logs**: `fly logs -a <your-app-name>`
-
-### Cost
-
-- ~$5/month with auto-suspend (pauses when idle)
-- ~$12/month always-on
-- You pay your own LLM and Fly bills
-
----
-
 ## Channels
 
-The crypto extension is channel-agnostic. All 42 tools and 87 commands work on every channel. Pick one or run multiple simultaneously.
+The crypto extension is channel-agnostic. All 42 tools and 87 commands work identically on every channel.
 
 | Channel | How to enable | Notes |
 |---------|--------------|-------|
@@ -259,17 +309,17 @@ The crypto extension is channel-agnostic. All 42 tools and 87 commands work on e
 
 ### Multi-channel
 
-You can run multiple channels at once. Each user gets isolated sessions regardless of which channel they message from. The `channel-sender.ts` abstraction routes replies, notifications, and plan alerts to the correct channel automatically.
+You can run multiple channels at once. Each user gets isolated sessions regardless of which channel they message from. The `channel-sender.ts` abstraction routes replies to the correct channel automatically.
 
 ---
 
 ## Wallet Modes
 
-Three ways to connect a wallet. Pick one (or switch at any time via commands).
+Three ways to connect a wallet. Pick one or switch at any time via commands.
 
 | Mode | Command | Key custody | Best for |
 |------|---------|------------|----------|
-| **WalletConnect** | `/connect` | Your phone wallet | Production use — agent never holds keys |
+| **WalletConnect** | `/connect` | Your phone wallet | Production — agent never holds keys |
 | **Private key** | Set `CLAWNCHER_PRIVATE_KEY` env var | Local/Keychain | Headless servers, testing, auto-sign |
 | **Bankr** | `/connect_bankr` or set `BANKR_API_KEY` | Custodial (Bankr) | Zero-friction, multi-chain |
 
@@ -277,13 +327,13 @@ Three ways to connect a wallet. Pick one (or switch at any time via commands).
 
 Every transaction goes to your phone wallet (MetaMask, Rainbow, Coinbase, etc.) for approval. The agent never holds your private keys.
 
-Shortcut commands: `/connect_metamask`, `/connect_rainbow`, `/connect_coinbase`, `/connect_trust`, `/connect_zerion`, `/connect_uniswap`, `/connect_rabby`, `/connect_other`.
-
 Requires `WALLETCONNECT_PROJECT_ID` — get one free at [cloud.reown.com](https://cloud.reown.com).
+
+Shortcut commands: `/connect_metamask`, `/connect_rainbow`, `/connect_coinbase`, `/connect_trust`, `/connect_zerion`, `/connect_uniswap`, `/connect_rabby`, `/connect_other`.
 
 ### Private key
 
-For headless or automated setups. Set:
+For headless or automated setups:
 
 ```bash
 CLAWNCHER_PRIVATE_KEY=0x...
@@ -302,14 +352,51 @@ Set `BANKR_API_KEY` and use `/connect_bankr`.
 
 ## Environment Variables
 
-See [`deploy/.env.example`](../deploy/.env.example) for the full annotated list. Key groups:
+See [`deploy/.env.example`](../deploy/.env.example) for the full annotated list.
 
 | Group | Variables | Required? |
 |-------|-----------|-----------|
 | LLM | `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, `BANKR_LLM_KEY` | At least one |
 | Channel | `TELEGRAM_BOT_TOKEN`, `DISCORD_TOKEN`, `SLACK_BOT_TOKEN` | At least one |
-| Wallet | `WALLETCONNECT_PROJECT_ID`, `CLAWNCHER_PRIVATE_KEY`, `BANKR_API_KEY` | Optional (wallet features) |
+| Wallet | `WALLETCONNECT_PROJECT_ID`, `CLAWNCHER_PRIVATE_KEY`, `BANKR_API_KEY` | Optional |
 | RPC | `CLAWNCHER_RPC_URL`, `ALCHEMY_API_KEY` | Optional (defaults to public RPCs) |
 | APIs | `ZEROX_API_KEY`, `BASESCAN_API_KEY`, `HERD_ACCESS_TOKEN`, etc. | Optional (per-tool) |
 
-Run `/setup` after starting to see which tools are configured and which need additional keys.
+The `openclawnch init` wizard configures all required variables and validates them. For optional keys, use `/setup` in chat to see which tools need what.
+
+---
+
+## Diagnostic Commands
+
+Once your bot is running, these commands help you verify and troubleshoot:
+
+| Command | What it does |
+|---------|-------------|
+| `/setup` | Shows tool readiness (X/42 ready), lists missing keys with links to get them |
+| `/doctor` | Runs 13 checks: wallet, RPC, secrets, APIs, channels, scheduler, heartbeat |
+| `/wallet` | Shows connected wallet address and balances |
+| `/flykeys` | Set API keys on Fly.io without redeploying |
+| `/flyrestart` | Restart the bot to pick up new keys |
+
+---
+
+## Prerequisites
+
+- **Node.js 22+** — `node --version`
+- **pnpm** — `npm install -g pnpm` (or `npx pnpm`)
+- **An LLM API key** — at least one of:
+  - [Anthropic](https://console.anthropic.com/settings/keys) (recommended, `sk-ant-`)
+  - [OpenRouter](https://openrouter.ai/keys) (multi-model, `sk-or-`)
+  - [OpenAI](https://platform.openai.com/api-keys) (`sk-`)
+  - [Bankr Gateway](https://bankr.bot/api) (pay with crypto)
+
+### Optional keys
+
+| Key | What it unlocks |
+|-----|-----------------|
+| `WALLETCONNECT_PROJECT_ID` | WalletConnect wallet pairing ([cloud.reown.com](https://cloud.reown.com)) |
+| `ALCHEMY_API_KEY` | Higher-tier RPC access |
+| `ZEROX_API_KEY` | 0x DEX aggregator |
+| `BASESCAN_API_KEY` | Block explorer queries |
+| `HERD_ACCESS_TOKEN` | Token investigation/auditing |
+| `BANKR_API_KEY` | Bankr custodial wallet + automations |

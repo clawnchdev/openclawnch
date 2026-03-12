@@ -34,7 +34,7 @@
   ],
   "scripts": {
     "build": "pnpm build:ext && pnpm build:wrapper",
-    "build:wrapper": "tsdown src/wrapper.ts src/deploy.ts --format esm --dts --out-dir dist",
+    "build:wrapper": "tsdown src/wrapper.ts src/deploy.ts src/init.ts --format esm --dts --out-dir dist",
     "build:ext": "tsdown extensions/crypto/index.ts extensions/crypto/src/**/*.ts --format esm --dts --out-dir extensions/crypto/dist",
     "dev": "tsx src/wrapper.ts",
     "test": "vitest run",

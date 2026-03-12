@@ -116,6 +116,127 @@ function getOpenClawVersion() {
   return null;
 }
 
+// ─── Load .env (no dependencies — simple key=value parser) ───────────────
+function loadDotEnv() {
+  // Check common .env locations: cwd, then openclawnch dir
+  const candidates = [
+    join(process.cwd(), '.env'),
+    join(OPENCLAWNCH_DIR, '.env'),
+    join(ROOT, '.env'),
+  ];
+
+  for (const envPath of candidates) {
+    if (!existsSync(envPath)) continue;
+    try {
+      const contents = readFileSync(envPath, 'utf8');
+      for (const line of contents.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) continue;
+        const eqIdx = trimmed.indexOf('=');
+        if (eqIdx < 1) continue;
+        const key = trimmed.slice(0, eqIdx).trim();
+        const value = trimmed.slice(eqIdx + 1).trim().replace(/^["']|["']$/g, '');
+        // Don't override existing env vars (explicit exports take precedence)
+        if (!process.env[key]) {
+          process.env[key] = value;
+        }
+      }
+      return; // Only load the first .env found
+    } catch {
+      // Ignore read errors
+    }
+  }
+}
+
+// ─── Startup banner ──────────────────────────────────────────────────────
+function printBanner() {
+  const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
+  const ocVersion = getOpenClawVersion();
+
+  const G = '\x1b[32m'; // green
+  const Y = '\x1b[33m'; // yellow
+  const R = '\x1b[31m'; // red
+  const D = '\x1b[2m';  // dim
+  const B = '\x1b[1m';  // bold
+  const X = '\x1b[0m';  // reset
+
+  const ok = (label, detail) => `  ${G}✓${X} ${label}  ${D}${detail}${X}`;
+  const warn = (label, detail) => `  ${Y}!${X} ${label}  ${D}${detail}${X}`;
+  const fail = (label, detail) => `  ${R}✗${X} ${label}  ${D}${detail}${X}`;
+
+  console.log('');
+  console.log(`  ${B}OpenClawnch${X} v${pkg.version}${ocVersion ? `  ${D}(OpenClaw v${ocVersion})${X}` : ''}`);
+  console.log('');
+
+  // ── LLM ──
+  const llmKey = process.env.ANTHROPIC_API_KEY || process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY || process.env.BANKR_LLM_KEY;
+  if (llmKey) {
+    let provider = 'Unknown';
+    if (process.env.ANTHROPIC_API_KEY) provider = 'Anthropic';
+    else if (process.env.OPENROUTER_API_KEY) provider = 'OpenRouter';
+    else if (process.env.OPENAI_API_KEY) provider = 'OpenAI';
+    else if (process.env.BANKR_LLM_KEY) provider = 'Bankr Gateway';
+    console.log(ok('LLM', provider));
+  } else {
+    console.log(fail('LLM', 'No API key found — run: openclawnch init'));
+  }
+
+  // ── Channel ──
+  const channels = [];
+  if (process.env.TELEGRAM_BOT_TOKEN) channels.push('Telegram');
+  if (process.env.DISCORD_TOKEN) channels.push('Discord');
+  if (process.env.SLACK_BOT_TOKEN) channels.push('Slack');
+
+  if (channels.length > 0) {
+    console.log(ok('Channel', channels.join(', ')));
+  } else {
+    console.log(fail('Channel', 'No channel token found — run: openclawnch init'));
+  }
+
+  // ── Wallet ──
+  if (process.env.WALLETCONNECT_PROJECT_ID) {
+    console.log(ok('Wallet', 'WalletConnect ready (use /connect in chat)'));
+  } else if (process.env.CLAWNCHER_PRIVATE_KEY && process.env.ALLOW_PRIVATE_KEY_MODE === 'true') {
+    console.log(warn('Wallet', 'Private key mode (auto-sign enabled)'));
+  } else if (process.env.BANKR_API_KEY) {
+    console.log(ok('Wallet', 'Bankr custodial'));
+  } else {
+    console.log(warn('Wallet', 'Not configured — use /connect in chat'));
+  }
+
+  // ── Missing essentials guard ──
+  if (!llmKey || channels.length === 0) {
+    console.log('');
+    console.log(`  ${R}Missing required configuration.${X}`);
+    console.log(`  Run ${B}openclawnch init${X} to set up, or see docs/SETUP.md`);
+    console.log('');
+    process.exit(1);
+  }
+
+  // ── Optional keys summary ──
+  const optionalKeys = [
+    ['ALCHEMY_API_KEY', 'Alchemy RPC'],
+    ['ZEROX_API_KEY', '0x DEX'],
+    ['BASESCAN_API_KEY', 'Basescan'],
+    ['HERD_ACCESS_TOKEN', 'Herd Intel'],
+    ['COINGECKO_API_KEY', 'CoinGecko'],
+    ['CMC_API_KEY', 'CoinMarketCap'],
+    ['X_API_KEY', 'ClawnX'],
+    ['HUMMINGBOT_API_URL', 'Hummingbot'],
+  ];
+  const configuredOptional = optionalKeys.filter(([k]) => process.env[k]);
+
+  if (configuredOptional.length > 0) {
+    const names = configuredOptional.map(([, n]) => n).join(', ');
+    console.log(ok('APIs', names));
+  }
+
+  console.log('');
+  console.log(`  ${D}Run /setup in chat to see all tool status${X}`);
+  console.log(`  ${D}Run /doctor for a full diagnostic check${X}`);
+  console.log('');
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────
 async function main() {
   const args = process.argv.slice(2);
@@ -130,6 +251,13 @@ async function main() {
     process.exit(0);
   }
 
+  // Init command — interactive setup wizard
+  if (args[0] === 'init' || args[0] === 'setup') {
+    const { initCli } = await import('../dist/init.js');
+    await initCli(args.slice(1));
+    return;
+  }
+
   // Deploy command — provisions a personal DeFi agent on Fly.io + Telegram
   if (args[0] === 'deploy') {
     const { deployCli } = await import('../dist/deploy.js');
@@ -140,6 +268,12 @@ async function main() {
   // Ensure config is set up
   ensureCryptoExtension();
   ensureSoul();
+
+  // Load .env if present (don't override existing env vars)
+  loadDotEnv();
+
+  // Print startup banner with config status
+  printBanner();
 
   // Find openclaw (bundled as a dependency — should always resolve)
   const openclawBin = resolveOpenClaw();
