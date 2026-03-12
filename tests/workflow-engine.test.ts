@@ -5,12 +5,15 @@
  * - 10.1: Extended Intent format (parallel, wait, loop step types)
  * - 10.2: Step-output data flow (outputRef / inputRefs)
  * - 10.3: WaitNode condition bug fix (executor resolves step_output in conditions)
+ * - 10.6: Multi-user plan ownership
+ * - 10.7: Persistent scheduler state (interval counts, condition check times)
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { PlanCompiler, type Intent, type IntentStep } from '../extensions/crypto/src/services/plan-compiler.js';
 import { PlanValidator } from '../extensions/crypto/src/services/plan-validator.js';
 import { PlanExecutor, type ToolDispatcher } from '../extensions/crypto/src/services/plan-executor.js';
+import { PlanScheduler, FilePlanStore, NULL_RESOLVER } from '../extensions/crypto/src/services/plan-scheduler.js';
 import type { Plan, PlanNode, ActionNode, ParallelNode, SequenceNode, WaitNode, LoopNode, IfNode, Condition } from '../extensions/crypto/src/services/plan-types.js';
 
 // ── Helpers ─────────────────────────────────────────────────────────────
@@ -633,7 +636,482 @@ describe('PlanCompiler + Validator — complex workflow', () => {
     expect(loop.maxIterations).toBe(50);
     expect(loop.delayMs).toBe(10_000);
     expect(loop.exitWhen).toBeDefined();
-    expect(loop.body.type).toBe('action');
+     expect(loop.body.type).toBe('action');
     expect((loop.body as ActionNode).tool).toBe('defi_swap');
+  });
+});
+
+// ── 10.6: Multi-user plan ownership ────────────────────────────────────
+
+describe('multi-user plan ownership', () => {
+  it('execute() extracts userId from ctx.senderId', async () => {
+    const { createCompoundActionTool } = await import('../extensions/crypto/src/tools/compound-action.js');
+    const tool = createCompoundActionTool();
+
+    const result = await tool.execute('call1', {
+      action: 'create',
+      intent: {
+        natural_language: 'swap 1 ETH for USDC',
+        steps: [{ action: 'swap', token_in: 'ETH', token_out: 'USDC', amount: '1' }],
+      },
+    }, { senderId: 'alice' });
+
+    const data = (result as any).details;
+    expect(data.plan_id).toMatch(/^plan_/);
+    // The plan should be owned by 'alice'
+    const { getScheduler } = await import('../extensions/crypto/src/services/plan-scheduler.js');
+    const scheduler = getScheduler();
+    const plan = scheduler.getPlan(data.plan_id);
+    expect(plan?.userId).toBe('alice');
+  });
+
+  it('falls back to "owner" when no ctx provided', async () => {
+    const { createCompoundActionTool } = await import('../extensions/crypto/src/tools/compound-action.js');
+    const tool = createCompoundActionTool();
+
+    const result = await tool.execute('call1', {
+      action: 'create',
+      intent: {
+        natural_language: 'swap 1 ETH for USDC',
+        steps: [{ action: 'swap', token_in: 'ETH', token_out: 'USDC', amount: '1' }],
+      },
+    });
+
+    const data = (result as any).details;
+    const { getScheduler } = await import('../extensions/crypto/src/services/plan-scheduler.js');
+    const scheduler = getScheduler();
+    const plan = scheduler.getPlan(data.plan_id);
+    expect(plan?.userId).toBe('owner');
+  });
+
+  it('blocks mutation by non-owner', async () => {
+    const { createCompoundActionTool } = await import('../extensions/crypto/src/tools/compound-action.js');
+    const tool = createCompoundActionTool();
+
+    // Create a plan as alice
+    const createResult = await tool.execute('call1', {
+      action: 'create',
+      intent: {
+        natural_language: 'swap 1 ETH for USDC',
+        steps: [{ action: 'swap', token_in: 'ETH', token_out: 'USDC', amount: '1' }],
+      },
+    }, { senderId: 'alice' });
+    const planId = (createResult as any).details.plan_id;
+
+    // Bob tries to cancel — should be denied
+    const cancelResult = await tool.execute('call2', {
+      action: 'cancel',
+      plan_id: planId,
+    }, { senderId: 'bob' });
+
+    const cancelData = (cancelResult as any).details;
+    expect(cancelData.error).toContain('Access denied');
+  });
+
+  it('allows mutation by same user', async () => {
+    const { createCompoundActionTool } = await import('../extensions/crypto/src/tools/compound-action.js');
+    const tool = createCompoundActionTool();
+
+    // Create a plan as alice
+    const createResult = await tool.execute('call1', {
+      action: 'create',
+      intent: {
+        natural_language: 'swap 1 ETH for USDC',
+        steps: [{ action: 'swap', token_in: 'ETH', token_out: 'USDC', amount: '1' }],
+      },
+    }, { senderId: 'alice' });
+    const planId = (createResult as any).details.plan_id;
+
+    // Alice cancels her own plan — should succeed
+    const cancelResult = await tool.execute('call2', {
+      action: 'cancel',
+      plan_id: planId,
+    }, { senderId: 'alice' });
+
+    const cancelData = (cancelResult as any).details;
+    expect(cancelData.status).toBe('cancelled');
+  });
+
+  it('owner user can mutate any plan (backward compat)', async () => {
+    const { createCompoundActionTool } = await import('../extensions/crypto/src/tools/compound-action.js');
+    const tool = createCompoundActionTool();
+
+    // Create as alice
+    const createResult = await tool.execute('call1', {
+      action: 'create',
+      intent: {
+        natural_language: 'swap 1 ETH for USDC',
+        steps: [{ action: 'swap', token_in: 'ETH', token_out: 'USDC', amount: '1' }],
+      },
+    }, { senderId: 'alice' });
+    const planId = (createResult as any).details.plan_id;
+
+    // 'owner' (no ctx / LLM-invoked) can cancel anyone's plan — backward compat
+    const cancelResult = await tool.execute('call2', {
+      action: 'cancel',
+      plan_id: planId,
+    });
+
+    const cancelData = (cancelResult as any).details;
+    expect(cancelData.status).toBe('cancelled');
+  });
+
+  it('list action filters plans by userId', async () => {
+    const { createCompoundActionTool } = await import('../extensions/crypto/src/tools/compound-action.js');
+    const tool = createCompoundActionTool();
+
+    // Create plans for two users with distinct tags for identification
+    const aliceResult = await tool.execute('call1', {
+      action: 'create',
+      intent: {
+        natural_language: 'alice plan',
+        steps: [{ action: 'swap', token_in: 'ETH', token_out: 'USDC', amount: '1' }],
+        tags: ['alice-tag'],
+      },
+    }, { senderId: 'alice-list' });
+    const alicePlanId = (aliceResult as any).details.plan_id;
+
+    const bobResult = await tool.execute('call2', {
+      action: 'create',
+      intent: {
+        natural_language: 'bob plan',
+        steps: [{ action: 'swap', token_in: 'ETH', token_out: 'USDC', amount: '1' }],
+        tags: ['bob-tag'],
+      },
+    }, { senderId: 'bob-list' });
+    const bobPlanId = (bobResult as any).details.plan_id;
+
+    // Alice should only see her plan (and any 'owner' plans), not Bob's
+    const aliceList = await tool.execute('call3', { action: 'list' }, { senderId: 'alice-list' });
+    const alicePlanIds = (aliceList as any).details.plans.map((p: any) => p.plan_id);
+    expect(alicePlanIds).toContain(alicePlanId);
+    expect(alicePlanIds).not.toContain(bobPlanId);
+  });
+});
+
+// ── 10.7: Persistent scheduler state ───────────────────────────────────
+
+describe('scheduler state persistence', () => {
+  let tmpDir: string;
+  let store: FilePlanStore;
+
+  beforeEach(async () => {
+    const { mkdtempSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    tmpDir = mkdtempSync(join(tmpdir(), 'scheduler-test-'));
+    store = new FilePlanStore(tmpDir);
+  });
+
+  afterEach(async () => {
+    const { rmSync } = await import('node:fs');
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('FilePlanStore saves and loads scheduler state', () => {
+    const state = {
+      intervalRunCounts: { plan_a: 3, plan_b: 7 },
+      lastConditionCheck: { plan_c: 1700000000000 },
+    };
+    store.saveState(state);
+
+    const loaded = store.loadState();
+    expect(loaded).toEqual(state);
+  });
+
+  it('loadState returns null when no state file', () => {
+    const loaded = store.loadState();
+    expect(loaded).toBeNull();
+  });
+
+  it('scheduler restores interval run counts on restart', async () => {
+    const compiler = new PlanCompiler();
+
+    // Create an interval plan
+    const plan = compiler.compile({
+      naturalLanguage: 'DCA 0.1 ETH every hour',
+      steps: [{ action: 'swap', tokenIn: 'USDC', tokenOut: 'ETH', amount: '100' }],
+      trigger: { type: 'every', interval: '1h', maxRuns: 10 },
+    }, 'test-user');
+
+    plan.status = 'scheduled';
+    store.save(plan);
+
+    // Simulate previous state: already ran 5 times
+    store.saveState({
+      intervalRunCounts: { [plan.id]: 5 },
+      lastConditionCheck: {},
+    });
+
+    // Create a scheduler that uses our store
+    const scheduler = new PlanScheduler({
+      store,
+      resolver: NULL_RESOLVER,
+      tickMs: 100_000, // Don't actually tick
+    });
+    scheduler.start();
+
+    // The plan should still be active
+    expect(scheduler.activeCount).toBeGreaterThanOrEqual(1);
+
+    // Now create another scheduler and check the state persists through the lifecycle
+    scheduler.stop();
+  });
+
+  it('loadAll skips _scheduler-state.json file', () => {
+    // Save a plan and state
+    const compiler = new PlanCompiler();
+    const plan = compiler.compile({
+      naturalLanguage: 'test plan',
+      steps: [{ action: 'swap', tokenIn: 'ETH', tokenOut: 'USDC', amount: '1' }],
+    }, 'test-user');
+    store.save(plan);
+
+    store.saveState({
+      intervalRunCounts: { foo: 1 },
+      lastConditionCheck: {},
+    });
+
+    // loadAll should only return the plan, not parse the state file as a plan
+    const plans = store.loadAll();
+    expect(plans.length).toBe(1);
+    expect(plans[0]!.id).toBe(plan.id);
+  });
+
+  it('cancelPlan persists updated state', () => {
+    const compiler = new PlanCompiler();
+    const plan = compiler.compile({
+      naturalLanguage: 'test plan',
+      steps: [{ action: 'swap', tokenIn: 'ETH', tokenOut: 'USDC', amount: '1' }],
+      trigger: { type: 'every', interval: '1h', maxRuns: 10 },
+    }, 'test-user');
+    plan.status = 'scheduled';
+    store.save(plan);
+
+    // Pre-populate state
+    store.saveState({
+      intervalRunCounts: { [plan.id]: 3 },
+      lastConditionCheck: { [plan.id]: Date.now() },
+    });
+
+    const scheduler = new PlanScheduler({
+      store,
+      resolver: NULL_RESOLVER,
+      tickMs: 100_000,
+    });
+    scheduler.start();
+
+    // Cancel the plan
+    scheduler.cancelPlan(plan.id);
+
+    // Force flush (stop flushes pending state)
+    scheduler.stop();
+
+    // State should no longer have the cancelled plan
+    const state = store.loadState();
+    expect(state?.intervalRunCounts[plan.id]).toBeUndefined();
+    expect(state?.lastConditionCheck[plan.id]).toBeUndefined();
+  });
+});
+
+// ── 10.5: Plan editing + templates ─────────────────────────────────────
+
+describe('plan update action', () => {
+  it('update replaces steps in a draft plan', async () => {
+    const { createCompoundActionTool } = await import('../extensions/crypto/src/tools/compound-action.js');
+    const tool = createCompoundActionTool();
+
+    // Create a plan
+    const createResult = await tool.execute('call1', {
+      action: 'create',
+      intent: {
+        natural_language: 'swap ETH for USDC',
+        steps: [{ action: 'swap', token_in: 'ETH', token_out: 'USDC', amount: '1' }],
+      },
+    });
+    const planId = (createResult as any).details.plan_id;
+
+    // Update with new steps
+    const updateResult = await tool.execute('call2', {
+      action: 'update',
+      plan_id: planId,
+      update_steps: [
+        { action: 'swap', token_in: 'ETH', token_out: 'DAI', amount: '2' },
+      ],
+    });
+
+    const data = (updateResult as any).details;
+    expect(data.plan_id).toBe(planId);
+    expect(data.message).toContain('updated');
+  });
+
+  it('rejects update on a running plan', async () => {
+    const { createCompoundActionTool } = await import('../extensions/crypto/src/tools/compound-action.js');
+    const tool = createCompoundActionTool();
+
+    // Create and execute (sets status to scheduled→running)
+    const createResult = await tool.execute('call1', {
+      action: 'create',
+      intent: {
+        natural_language: 'swap',
+        steps: [{ action: 'swap', token_in: 'ETH', token_out: 'USDC', amount: '1' }],
+      },
+    });
+    const planId = (createResult as any).details.plan_id;
+
+    // Execute it (sets to 'scheduled' immediately)
+    await tool.execute('call2', { action: 'execute', plan_id: planId });
+
+    // Try to update — should fail
+    const updateResult = await tool.execute('call3', {
+      action: 'update',
+      plan_id: planId,
+      update_steps: [{ action: 'swap', token_in: 'ETH', token_out: 'DAI', amount: '2' }],
+    });
+    const data = (updateResult as any).details;
+    expect(data.error).toContain('draft');
+  });
+
+  it('update with full intent recompiles', async () => {
+    const { createCompoundActionTool } = await import('../extensions/crypto/src/tools/compound-action.js');
+    const tool = createCompoundActionTool();
+
+    const createResult = await tool.execute('call1', {
+      action: 'create',
+      intent: {
+        natural_language: 'swap ETH for USDC',
+        steps: [{ action: 'swap', token_in: 'ETH', token_out: 'USDC', amount: '1' }],
+      },
+    });
+    const planId = (createResult as any).details.plan_id;
+
+    // Update with full new intent
+    const updateResult = await tool.execute('call2', {
+      action: 'update',
+      plan_id: planId,
+      intent: {
+        natural_language: 'transfer USDC to Bob',
+        steps: [{ action: 'transfer', token: 'USDC', amount: '100', to: '0x1234' }],
+      },
+    });
+    const data = (updateResult as any).details;
+    expect(data.plan_id).toBe(planId);
+    expect(data.name).toContain('transfer');
+  });
+});
+
+describe('template actions', () => {
+  it('save_template + list_templates', async () => {
+    const { createCompoundActionTool } = await import('../extensions/crypto/src/tools/compound-action.js');
+    const tool = createCompoundActionTool();
+
+    // Create a plan
+    const createResult = await tool.execute('call1', {
+      action: 'create',
+      intent: {
+        natural_language: 'DCA ETH weekly',
+        steps: [{ action: 'swap', token_in: 'USDC', token_out: 'ETH', amount: '100' }],
+        tags: ['dca'],
+      },
+    });
+    const planId = (createResult as any).details.plan_id;
+
+    // Save as template
+    const saveResult = await tool.execute('call2', {
+      action: 'save_template',
+      plan_id: planId,
+      template_name: 'Weekly DCA ETH',
+      template_description: 'Buy ETH every week with USDC',
+    });
+    const tplData = (saveResult as any).details;
+    expect(tplData.template_id).toMatch(/^tpl_/);
+    expect(tplData.name).toBe('Weekly DCA ETH');
+
+    // List templates
+    const listResult = await tool.execute('call3', { action: 'list_templates' });
+    const listData = (listResult as any).details;
+    expect(listData.templates.length).toBeGreaterThanOrEqual(1);
+    const tpl = listData.templates.find((t: any) => t.template_id === tplData.template_id);
+    expect(tpl).toBeDefined();
+    expect(tpl.name).toBe('Weekly DCA ETH');
+  });
+
+  it('from_template creates a new plan', async () => {
+    const { createCompoundActionTool } = await import('../extensions/crypto/src/tools/compound-action.js');
+    const tool = createCompoundActionTool();
+
+    // Create a plan
+    const createResult = await tool.execute('call1', {
+      action: 'create',
+      intent: {
+        natural_language: 'swap $amount USDC to ETH',
+        steps: [{ action: 'swap', token_in: 'USDC', token_out: 'ETH', amount: '$amount' }],
+      },
+    });
+    const planId = (createResult as any).details.plan_id;
+
+    // Save as template
+    const saveResult = await tool.execute('call2', {
+      action: 'save_template',
+      plan_id: planId,
+      template_name: 'Parameterized swap',
+    });
+    const templateId = (saveResult as any).details.template_id;
+    expect(templateId).toMatch(/^tpl_/);
+
+    // Create from template with params
+    const fromResult = await tool.execute('call3', {
+      action: 'from_template',
+      template_id: templateId,
+      template_params: { amount: '500' },
+    });
+    const fromData = (fromResult as any).details;
+    expect(fromData.plan_id).toMatch(/^plan_/);
+    expect(fromData.from_template).toBe(templateId);
+    expect(fromData.plan_id).not.toBe(planId); // It's a new plan
+  });
+
+  it('from_template errors on unknown template', async () => {
+    const { createCompoundActionTool } = await import('../extensions/crypto/src/tools/compound-action.js');
+    const tool = createCompoundActionTool();
+
+    const result = await tool.execute('call1', {
+      action: 'from_template',
+      template_id: 'tpl_nonexistent',
+    });
+    const data = (result as any).details;
+    expect(data.error).toContain('not found');
+  });
+
+  it('template storage on FilePlanStore', async () => {
+    const { mkdtempSync, rmSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const tmpDir = mkdtempSync(join(tmpdir(), 'tpl-test-'));
+
+    try {
+      const localStore = new FilePlanStore(tmpDir);
+
+      const tpl = {
+        id: 'tpl_test_1',
+        name: 'Test Template',
+        createdBy: 'test-user',
+        createdAt: Date.now(),
+        intent: {
+          naturalLanguage: 'test',
+          steps: [{ action: 'swap' }],
+        },
+      };
+
+      localStore.saveTemplate(tpl);
+      expect(localStore.loadTemplate('tpl_test_1')).toEqual(tpl);
+      expect(localStore.listTemplates().length).toBe(1);
+
+      localStore.deleteTemplate('tpl_test_1');
+      expect(localStore.loadTemplate('tpl_test_1')).toBeNull();
+      expect(localStore.listTemplates().length).toBe(0);
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
   });
 });

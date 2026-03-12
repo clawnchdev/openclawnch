@@ -25,6 +25,7 @@ import type {
   Plan,
   PlanStore,
   PlanExecution,
+  PlanTemplate,
   Trigger,
   Condition,
   CompareCondition,
@@ -80,6 +81,12 @@ function sanitizeId(id: string): string {
   return id.replace(/[^a-zA-Z0-9_\-]/g, '_').slice(0, 64);
 }
 
+/** Shape of the scheduler runtime state that survives restarts. */
+interface SchedulerState {
+  intervalRunCounts: Record<string, number>;
+  lastConditionCheck: Record<string, number>;
+}
+
 export class FilePlanStore implements PlanStore {
   private dir: string;
 
@@ -107,7 +114,7 @@ export class FilePlanStore implements PlanStore {
   loadAll(userId?: string): Plan[] {
     try {
       if (!existsSync(this.dir)) return [];
-      const files = readdirSync(this.dir).filter(f => f.endsWith('.json'));
+      const files = readdirSync(this.dir).filter(f => f.endsWith('.json') && !f.startsWith('_'));
       const plans: Plan[] = [];
       for (const f of files) {
         try {
@@ -158,6 +165,74 @@ export class FilePlanStore implements PlanStore {
     }
   }
 
+  /** Persist scheduler runtime state (interval counts, last check times). */
+  saveState(state: SchedulerState): void {
+    this.ensureDir(this.dir);
+    const path = join(this.dir, '_scheduler-state.json');
+    writeFileSync(path, JSON.stringify(state), 'utf8');
+  }
+
+  /** Restore scheduler runtime state. Returns null if no state file. */
+  loadState(): SchedulerState | null {
+    const path = join(this.dir, '_scheduler-state.json');
+    try {
+      if (!existsSync(path)) return null;
+      return JSON.parse(readFileSync(path, 'utf8')) as SchedulerState;
+    } catch {
+      return null;
+    }
+  }
+
+  // ── Template Storage ──────────────────────────────────────────────────
+
+  private get templatesDir(): string {
+    return join(this.dir, 'templates');
+  }
+
+  saveTemplate(template: PlanTemplate): void {
+    this.ensureDir(this.templatesDir);
+    const path = join(this.templatesDir, `${sanitizeId(template.id)}.json`);
+    writeFileSync(path, JSON.stringify(template, null, 2), 'utf8');
+  }
+
+  loadTemplate(templateId: string): PlanTemplate | null {
+    const path = join(this.templatesDir, `${sanitizeId(templateId)}.json`);
+    try {
+      if (!existsSync(path)) return null;
+      return JSON.parse(readFileSync(path, 'utf8')) as PlanTemplate;
+    } catch {
+      return null;
+    }
+  }
+
+  listTemplates(userId?: string): PlanTemplate[] {
+    try {
+      if (!existsSync(this.templatesDir)) return [];
+      return readdirSync(this.templatesDir)
+        .filter(f => f.endsWith('.json'))
+        .map(f => {
+          try {
+            return JSON.parse(readFileSync(join(this.templatesDir, f), 'utf8')) as PlanTemplate;
+          } catch { return null; }
+        })
+        .filter((t): t is PlanTemplate => t !== null)
+        .filter(t => !userId || t.createdBy === userId);
+    } catch {
+      return [];
+    }
+  }
+
+  deleteTemplate(templateId: string): boolean {
+    const path = join(this.templatesDir, `${sanitizeId(templateId)}.json`);
+    try {
+      if (existsSync(path)) {
+        rmSync(path);
+        return true;
+      }
+    } catch { /* ignore */ }
+    return false;
+  }
+
   private ensureDir(dir: string): void {
     if (!existsSync(dir)) {
       mkdirSync(dir, { recursive: true });
@@ -177,6 +252,8 @@ export class PlanScheduler {
   private intervalRunCounts = new Map<string, number>();   // planId → executions so far
   private tickMs: number;
   private running = false;
+  private stateDirty = false;                             // debounce state persistence
+  private stateFlushTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(opts?: {
     store?: PlanStore;
@@ -209,18 +286,27 @@ export class PlanScheduler {
       }
     }
 
+    // Restore scheduler runtime state (interval counts, last check times)
+    this.restoreState();
+
     // Start tick loop
     this.tickInterval = setInterval(() => this.tick(), this.tickMs);
     // Run an immediate first tick
     this.tick();
   }
 
-  /** Stop the tick loop. Plans remain persisted. */
+  /** Stop the tick loop. Flush pending state. Plans remain persisted. */
   stop(): void {
     this.running = false;
     if (this.tickInterval) {
       clearInterval(this.tickInterval);
       this.tickInterval = null;
+    }
+    // Flush any pending state writes
+    this.flushState();
+    if (this.stateFlushTimer) {
+      clearTimeout(this.stateFlushTimer);
+      this.stateFlushTimer = null;
     }
   }
 
@@ -241,6 +327,7 @@ export class PlanScheduler {
     this.plans.delete(planId);
     this.lastConditionCheck.delete(planId);
     this.intervalRunCounts.delete(planId);
+    this.persistState();
     return true;
   }
 
@@ -276,6 +363,35 @@ export class PlanScheduler {
   /** Get execution history for a plan. */
   getExecutions(planId: string): PlanExecution[] {
     return this.store.loadExecutions(planId);
+  }
+
+  // ── Template Proxy Methods ────────────────────────────────────────────
+
+  saveTemplate(template: PlanTemplate): void {
+    if (typeof (this.store as FilePlanStore).saveTemplate === 'function') {
+      (this.store as FilePlanStore).saveTemplate(template);
+    }
+  }
+
+  loadTemplate(templateId: string): PlanTemplate | null {
+    if (typeof (this.store as FilePlanStore).loadTemplate === 'function') {
+      return (this.store as FilePlanStore).loadTemplate(templateId);
+    }
+    return null;
+  }
+
+  listTemplates(userId?: string): PlanTemplate[] {
+    if (typeof (this.store as FilePlanStore).listTemplates === 'function') {
+      return (this.store as FilePlanStore).listTemplates(userId);
+    }
+    return [];
+  }
+
+  deleteTemplate(templateId: string): boolean {
+    if (typeof (this.store as FilePlanStore).deleteTemplate === 'function') {
+      return (this.store as FilePlanStore).deleteTemplate(templateId);
+    }
+    return false;
   }
 
   /** Mark a plan execution as complete (called by executor). */
@@ -314,6 +430,56 @@ export class PlanScheduler {
       this.plans.delete(planId);
     }
     // Recurring plans stay scheduled (they'll retry on next trigger)
+  }
+
+  // ─── State Persistence ─────────────────────────────────────────────────
+
+  /** Restore intervalRunCounts and lastConditionCheck from disk. */
+  private restoreState(): void {
+    if (typeof (this.store as FilePlanStore).loadState !== 'function') return;
+    const state = (this.store as FilePlanStore).loadState();
+    if (!state) return;
+
+    if (state.intervalRunCounts) {
+      for (const [k, v] of Object.entries(state.intervalRunCounts)) {
+        // Only restore for plans that are still active
+        if (this.plans.has(k)) {
+          this.intervalRunCounts.set(k, v);
+        }
+      }
+    }
+    if (state.lastConditionCheck) {
+      for (const [k, v] of Object.entries(state.lastConditionCheck)) {
+        if (this.plans.has(k)) {
+          this.lastConditionCheck.set(k, v);
+        }
+      }
+    }
+  }
+
+  /** Mark state as dirty; it will be flushed within 5s or at next tick boundary. */
+  private persistState(): void {
+    this.stateDirty = true;
+    // Debounce: flush after 5s of inactivity to batch rapid updates
+    if (!this.stateFlushTimer) {
+      this.stateFlushTimer = setTimeout(() => {
+        this.stateFlushTimer = null;
+        this.flushState();
+      }, 5_000);
+    }
+  }
+
+  /** Write state to disk immediately if dirty. */
+  private flushState(): void {
+    if (!this.stateDirty) return;
+    if (typeof (this.store as FilePlanStore).saveState !== 'function') return;
+    this.stateDirty = false;
+
+    const state: SchedulerState = {
+      intervalRunCounts: Object.fromEntries(this.intervalRunCounts),
+      lastConditionCheck: Object.fromEntries(this.lastConditionCheck),
+    };
+    (this.store as FilePlanStore).saveState(state);
   }
 
   /** How many plans are actively being watched. */
@@ -398,6 +564,7 @@ export class PlanScheduler {
         if (now - lastCheck < pollMs) return false;
 
         this.lastConditionCheck.set(plan.id, now);
+        this.persistState();
 
         // Check expiry
         if (trigger.expiresAfterMs && now - plan.createdAt > trigger.expiresAfterMs) {
@@ -423,6 +590,7 @@ export class PlanScheduler {
     if (trigger?.type === 'interval') {
       const count = (this.intervalRunCounts.get(plan.id) ?? 0) + 1;
       this.intervalRunCounts.set(plan.id, count);
+      this.persistState();
     }
 
     // For one-shot triggers, mark as running so we don't fire again

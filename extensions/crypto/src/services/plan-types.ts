@@ -294,6 +294,43 @@ export interface PlanExecution {
   gasSpentEth?: number;
 }
 
+// ─── Templates ──────────────────────────────────────────────────────────
+
+/** A reusable plan template with parameterizable fields. */
+export interface PlanTemplate {
+  /** Unique template ID. */
+  id: string;
+  /** Human-readable name (e.g., "DCA ETH weekly"). */
+  name: string;
+  /** Description of what this template does. */
+  description?: string;
+  /** The user who created this template. */
+  createdBy: string;
+  /** When this template was saved. */
+  createdAt: number;
+  /** Tags for organization. */
+  tags?: string[];
+  /**
+   * The intent that created this template. Stored so it can be
+   * re-compiled with different parameters.
+   */
+  intent: {
+    naturalLanguage: string;
+    steps: Record<string, unknown>[];
+    trigger?: Record<string, unknown>;
+    tags?: string[];
+  };
+  /**
+   * Parameter placeholders. Each key is a placeholder name (e.g., "amount"),
+   * and the value describes where it appears and its default.
+   */
+  params?: Record<string, {
+    description?: string;
+    default?: string | number;
+    required?: boolean;
+  }>;
+}
+
 // ─── Plan Store Interface ───────────────────────────────────────────────
 
 export interface PlanStore {

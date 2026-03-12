@@ -31,7 +31,7 @@
 import { Type } from '@sinclair/typebox';
 import { stringEnum, jsonResult, errorResult, readStringParam } from '../lib/tool-helpers.js';
 import { PlanCompiler, type Intent, type IntentStep, type IntentStepType, type IntentTrigger } from '../services/plan-compiler.js';
-import type { CompareOp, PlanNode, Trigger } from '../services/plan-types.js';
+import type { CompareOp, Plan, PlanNode, PlanTemplate, Trigger } from '../services/plan-types.js';
 import { PlanValidator } from '../services/plan-validator.js';
 import { getScheduler } from '../services/plan-scheduler.js';
 import { formatExecutionSummary } from '../services/plan-executor.js';
@@ -125,6 +125,7 @@ interface RawStep {
 const ACTIONS = [
   'create', 'execute', 'schedule', 'list', 'status',
   'cancel', 'pause', 'resume', 'history',
+  'update', 'save_template', 'from_template', 'list_templates',
 ] as const;
 
 const CompoundActionSchema = Type.Object({
@@ -136,7 +137,11 @@ const CompoundActionSchema = Type.Object({
       'list: all plans. ' +
       'status: plan details. ' +
       'cancel/pause/resume: manage scheduled plans. ' +
-      'history: execution records.',
+      'history: execution records. ' +
+      'update: modify a draft/paused plan. ' +
+      'save_template: save plan as reusable template. ' +
+      'from_template: create plan from template. ' +
+      'list_templates: list saved templates.',
   }),
 
   // ── create action: the intent object
@@ -221,8 +226,25 @@ const CompoundActionSchema = Type.Object({
     tags: Type.Optional(Type.Array(Type.String())),
   })),
 
-  // ── plan_id for status/cancel/pause/resume/execute/schedule/history
+  // ── plan_id for status/cancel/pause/resume/execute/schedule/history/update/save_template
   plan_id: Type.Optional(Type.String({ description: 'Plan ID for status/cancel/execute/etc.' })),
+
+  // ── template fields
+  template_id: Type.Optional(Type.String({ description: 'Template ID for from_template.' })),
+  template_name: Type.Optional(Type.String({ description: 'Name for saved template.' })),
+  template_description: Type.Optional(Type.String({ description: 'Description for saved template.' })),
+  template_params: Type.Optional(Type.Record(Type.String(), Type.Unknown(), {
+    description: 'Parameters to substitute when instantiating from_template.',
+  })),
+
+  // ── update fields
+  update_steps: Type.Optional(Type.Array(Type.Object({}, { additionalProperties: true }), {
+    description: 'Replacement steps for update action.',
+  })),
+  update_trigger: Type.Optional(Type.Object({}, {
+    additionalProperties: true,
+    description: 'Replacement trigger for update action.',
+  })),
 });
 
 export function createCompoundActionTool() {
@@ -234,25 +256,35 @@ export function createCompoundActionTool() {
       'Create and manage multi-step DeFi operations with scheduling, conditions, and sequencing. ' +
       'Use this tool when the user wants to chain multiple operations together, schedule future actions, ' +
       'or set up conditional triggers (e.g., "when ETH hits $4000, sell half and bridge to Arbitrum"). ' +
-      'Actions: create (compile intent), execute (run now), schedule (future trigger), list, status, ' +
-      'cancel, pause, resume, history.',
+      'Actions: create, execute, schedule, list, status, cancel, pause, resume, history, ' +
+      'update (modify draft/paused plan), save_template (save as reusable template), ' +
+      'from_template (instantiate template), list_templates.',
     parameters: CompoundActionSchema,
 
-    async execute(_toolCallId: string, rawArgs: unknown) {
+    async execute(_toolCallId: string, rawArgs: unknown, ctx?: Record<string, unknown>) {
       const args = rawArgs as Record<string, unknown>;
       const action = readStringParam(args, 'action', { required: true })!;
 
+      // Extract userId from execution context.
+      // When called via PlanExecutor, ctx = { senderId: userId }.
+      // When called directly by LLM (no ctx), fall back to 'owner'.
+      const userId = (ctx?.senderId as string) ?? 'owner';
+
       try {
         switch (action) {
-          case 'create':   return handleCreate(args);
-          case 'execute':  return handleExecute(args);
-          case 'schedule': return handleSchedule(args);
-          case 'list':     return handleList(args);
+          case 'create':   return handleCreate(args, userId);
+          case 'execute':  return handleExecute(args, userId);
+          case 'schedule': return handleSchedule(args, userId);
+          case 'list':     return handleList(args, userId);
           case 'status':   return handleStatus(args);
-          case 'cancel':   return handleCancel(args);
-          case 'pause':    return handlePause(args);
-          case 'resume':   return handleResume(args);
+          case 'cancel':   return handleCancel(args, userId);
+          case 'pause':    return handlePause(args, userId);
+          case 'resume':   return handleResume(args, userId);
           case 'history':  return handleHistory(args);
+          case 'update':   return handleUpdate(args, userId);
+          case 'save_template':   return handleSaveTemplate(args, userId);
+          case 'from_template':   return handleFromTemplate(args, userId);
+          case 'list_templates':  return handleListTemplates(args, userId);
           default:
             return errorResult(`Unknown action: "${action}". Use: ${ACTIONS.join(', ')}`);
         }
@@ -263,19 +295,28 @@ export function createCompoundActionTool() {
   };
 }
 
+// ─── Ownership ──────────────────────────────────────────────────────────
+
+/** Returns an error result if the user doesn't own the plan, or undefined if OK. */
+function checkOwnership(plan: Plan, userId: string) {
+  // In single-agent mode ('owner'), skip the check — backward compatible.
+  if (userId === 'owner' || plan.userId === 'owner') return undefined;
+  if (plan.userId !== userId) {
+    return errorResult(`Access denied: plan "${plan.id}" belongs to a different user.`);
+  }
+  return undefined;
+}
+
 // ─── Action Handlers ────────────────────────────────────────────────────
 
-function handleCreate(args: Record<string, unknown>) {
+function handleCreate(args: Record<string, unknown>, userId: string) {
   const intentRaw = args.intent as Record<string, unknown> | undefined;
   if (!intentRaw) return errorResult('Missing "intent" for create action.');
 
   const intent = normalizeIntent(intentRaw);
   const compiler = new PlanCompiler();
 
-  // Security: never accept userId from tool args (LLM-controlled).
-  // Use 'owner' as the default — in single-agent mode there is only one owner.
-  // TODO: When multi-user support is added, inject userId from execution context (ctx.senderId).
-  const userId = 'owner';
+  // Security: userId comes from execution context (ctx.senderId), never from tool args.
   const plan = compiler.compile(intent, userId);
 
   // Validate
@@ -308,13 +349,16 @@ function handleCreate(args: Record<string, unknown>) {
   });
 }
 
-function handleExecute(args: Record<string, unknown>) {
+function handleExecute(args: Record<string, unknown>, userId: string) {
   const planId = readStringParam(args, 'plan_id');
   if (!planId) return errorResult('Missing "plan_id" for execute action.');
 
   const scheduler = getScheduler();
   const plan = scheduler.getPlan(planId);
   if (!plan) return errorResult(`Plan "${planId}" not found.`);
+
+  const ownerErr = checkOwnership(plan, userId);
+  if (ownerErr) return ownerErr;
 
   if (plan.status === 'cancelled') return errorResult('This plan was cancelled.');
   if (plan.status === 'running') return errorResult('This plan is already running.');
@@ -333,13 +377,16 @@ function handleExecute(args: Record<string, unknown>) {
   });
 }
 
-function handleSchedule(args: Record<string, unknown>) {
+function handleSchedule(args: Record<string, unknown>, userId: string) {
   const planId = readStringParam(args, 'plan_id');
   if (!planId) return errorResult('Missing "plan_id" for schedule action.');
 
   const scheduler = getScheduler();
   const plan = scheduler.getPlan(planId);
   if (!plan) return errorResult(`Plan "${planId}" not found.`);
+
+  const ownerErr = checkOwnership(plan, userId);
+  if (ownerErr) return ownerErr;
 
   if (plan.status === 'cancelled') return errorResult('This plan was cancelled.');
   if (!plan.trigger || plan.trigger.type === 'immediate') {
@@ -364,9 +411,11 @@ function handleSchedule(args: Record<string, unknown>) {
   });
 }
 
-function handleList(_args: Record<string, unknown>) {
+function handleList(_args: Record<string, unknown>, userId: string) {
   const scheduler = getScheduler();
-  const plans = scheduler.listPlans();
+  // Filter plans to those owned by the requesting user (or show all for 'owner' in single-agent mode).
+  const allPlans = scheduler.listPlans();
+  const plans = userId === 'owner' ? allPlans : allPlans.filter(p => p.userId === userId || p.userId === 'owner');
 
   if (plans.length === 0) {
     return jsonResult({ plans: [], message: 'No plans found. Use action="create" to create one.' });
@@ -419,33 +468,51 @@ function handleStatus(args: Record<string, unknown>) {
   });
 }
 
-function handleCancel(args: Record<string, unknown>) {
+function handleCancel(args: Record<string, unknown>, userId: string) {
   const planId = readStringParam(args, 'plan_id');
   if (!planId) return errorResult('Missing "plan_id" for cancel action.');
 
   const scheduler = getScheduler();
+  const plan = scheduler.getPlan(planId);
+  if (!plan) return errorResult(`Plan "${planId}" not found.`);
+
+  const ownerErr = checkOwnership(plan, userId);
+  if (ownerErr) return ownerErr;
+
   const success = scheduler.cancelPlan(planId);
   if (!success) return errorResult(`Plan "${planId}" not found or already completed.`);
 
   return jsonResult({ plan_id: planId, status: 'cancelled', message: 'Plan cancelled.' });
 }
 
-function handlePause(args: Record<string, unknown>) {
+function handlePause(args: Record<string, unknown>, userId: string) {
   const planId = readStringParam(args, 'plan_id');
   if (!planId) return errorResult('Missing "plan_id" for pause action.');
 
   const scheduler = getScheduler();
+  const plan = scheduler.getPlan(planId);
+  if (!plan) return errorResult(`Plan "${planId}" not found.`);
+
+  const ownerErr = checkOwnership(plan, userId);
+  if (ownerErr) return ownerErr;
+
   const success = scheduler.pausePlan(planId);
   if (!success) return errorResult(`Plan "${planId}" not found or not in scheduled state.`);
 
   return jsonResult({ plan_id: planId, status: 'paused', message: 'Plan paused. Use resume to continue.' });
 }
 
-function handleResume(args: Record<string, unknown>) {
+function handleResume(args: Record<string, unknown>, userId: string) {
   const planId = readStringParam(args, 'plan_id');
   if (!planId) return errorResult('Missing "plan_id" for resume action.');
 
   const scheduler = getScheduler();
+  const plan = scheduler.getPlan(planId);
+  if (!plan) return errorResult(`Plan "${planId}" not found.`);
+
+  const ownerErr = checkOwnership(plan, userId);
+  if (ownerErr) return ownerErr;
+
   const success = scheduler.resumePlan(planId);
   if (!success) return errorResult(`Plan "${planId}" not found or not paused.`);
 
@@ -482,6 +549,267 @@ function handleHistory(args: Record<string, unknown>) {
       })),
     })),
   });
+}
+
+// ─── Update ─────────────────────────────────────────────────────────────
+
+function handleUpdate(args: Record<string, unknown>, userId: string) {
+  const planId = readStringParam(args, 'plan_id');
+  if (!planId) return errorResult('Missing "plan_id" for update action.');
+
+  const scheduler = getScheduler();
+  const plan = scheduler.getPlan(planId);
+  if (!plan) return errorResult(`Plan "${planId}" not found.`);
+
+  const ownerErr = checkOwnership(plan, userId);
+  if (ownerErr) return ownerErr;
+
+  if (plan.status !== 'draft' && plan.status !== 'paused' && plan.status !== 'validated') {
+    return errorResult(`Can only update plans in draft, validated, or paused state. Current: "${plan.status}".`);
+  }
+
+  const updateSteps = args.update_steps as Record<string, unknown>[] | undefined;
+  const updateTrigger = args.update_trigger as Record<string, unknown> | undefined;
+  const intentRaw = args.intent as Record<string, unknown> | undefined;
+
+  if (!updateSteps && !updateTrigger && !intentRaw) {
+    return errorResult('Provide "update_steps", "update_trigger", or a new "intent" to update.');
+  }
+
+  // If a full new intent is provided, recompile the entire plan
+  if (intentRaw) {
+    const intent = normalizeIntent(intentRaw);
+    const compiler = new PlanCompiler();
+    const newPlan = compiler.compile(intent, plan.userId);
+
+    // Preserve plan identity
+    plan.root = newPlan.root;
+    plan.trigger = newPlan.trigger;
+    plan.naturalLanguage = newPlan.naturalLanguage;
+    plan.tags = newPlan.tags ?? plan.tags;
+    plan.name = newPlan.name;
+  } else {
+    // Partial update: replace steps and/or trigger
+    if (updateSteps) {
+      const rawIntent = {
+        naturalLanguage: plan.naturalLanguage ?? 'updated plan',
+        steps: updateSteps as unknown as RawStep[],
+        tags: plan.tags,
+      };
+      const intent = normalizeIntent(rawIntent as Record<string, unknown>);
+      const compiler = new PlanCompiler();
+      const tempPlan = compiler.compile(intent, plan.userId);
+      plan.root = tempPlan.root;
+    }
+    if (updateTrigger) {
+      const rawIntent = {
+        naturalLanguage: plan.naturalLanguage ?? 'updated plan',
+        steps: [{ action: 'check_price', token: 'ETH' }], // dummy step for trigger compilation
+        trigger: updateTrigger,
+      };
+      const intent = normalizeIntent(rawIntent as Record<string, unknown>);
+      const compiler = new PlanCompiler();
+      const tempPlan = compiler.compile(intent, plan.userId);
+      plan.trigger = tempPlan.trigger;
+    }
+  }
+
+  // Re-validate
+  const validator = new PlanValidator();
+  const validation = validator.validate(plan);
+  plan.validation = validation;
+  plan.status = validation.valid ? 'validated' : 'draft';
+
+  scheduler.addPlan(plan);
+
+  return jsonResult({
+    plan_id: plan.id,
+    name: plan.name,
+    status: plan.status,
+    validation: {
+      valid: validation.valid,
+      errors: validation.issues.filter(i => i.severity === 'error').map(i => i.message),
+      warnings: validation.issues.filter(i => i.severity === 'warning').map(i => i.message),
+    },
+    message: 'Plan updated and re-validated.',
+  });
+}
+
+// ─── Templates ──────────────────────────────────────────────────────────
+
+function handleSaveTemplate(args: Record<string, unknown>, userId: string) {
+  const planId = readStringParam(args, 'plan_id');
+  if (!planId) return errorResult('Missing "plan_id" for save_template action.');
+
+  const scheduler = getScheduler();
+  const plan = scheduler.getPlan(planId);
+  if (!plan) return errorResult(`Plan "${planId}" not found.`);
+
+  const ownerErr = checkOwnership(plan, userId);
+  if (ownerErr) return ownerErr;
+
+  const templateName = readStringParam(args, 'template_name') ?? plan.name;
+  const templateDesc = readStringParam(args, 'template_description');
+
+  const template: PlanTemplate = {
+    id: `tpl_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    name: templateName,
+    description: templateDesc ?? undefined,
+    createdBy: userId,
+    createdAt: Date.now(),
+    tags: plan.tags,
+    intent: {
+      naturalLanguage: plan.naturalLanguage ?? templateName,
+      steps: extractStepsFromRoot(plan.root),
+      trigger: plan.trigger ? extractTriggerAsRaw(plan.trigger) : undefined,
+      tags: plan.tags,
+    },
+    params: (args.template_params as Record<string, { description?: string; default?: string | number; required?: boolean }>) ?? undefined,
+  };
+
+  scheduler.saveTemplate(template);
+
+  return jsonResult({
+    template_id: template.id,
+    name: template.name,
+    description: template.description,
+    message: 'Template saved. Use action="from_template" with this template_id to create new plans.',
+  });
+}
+
+function handleFromTemplate(args: Record<string, unknown>, userId: string) {
+  const templateId = readStringParam(args, 'template_id');
+  if (!templateId) return errorResult('Missing "template_id" for from_template action.');
+
+  const scheduler = getScheduler();
+  const template = scheduler.loadTemplate(templateId);
+  if (!template) return errorResult(`Template "${templateId}" not found.`);
+
+  // Merge user-supplied params into the template intent
+  const params = args.template_params as Record<string, unknown> | undefined;
+  let intentRaw: Record<string, unknown> = { ...template.intent };
+
+  if (params) {
+    // Simple parameter substitution: replace $param references in step fields
+    const stepsJson = JSON.stringify(template.intent.steps);
+    let substituted = stepsJson;
+    for (const [key, value] of Object.entries(params)) {
+      substituted = substituted.replaceAll(`$${key}`, String(value));
+    }
+    intentRaw = {
+      ...intentRaw,
+      steps: JSON.parse(substituted),
+      natural_language: template.intent.naturalLanguage,
+    };
+  }
+
+  // Compile as a new plan
+  const intent = normalizeIntent(intentRaw);
+  const compiler = new PlanCompiler();
+  const plan = compiler.compile(intent, userId);
+
+  // Validate
+  const validator = new PlanValidator();
+  const validation = validator.validate(plan);
+  plan.validation = validation;
+  plan.status = validation.valid ? 'validated' : 'draft';
+  plan.tags = [...(template.tags ?? []), `from:${template.id}`];
+
+  scheduler.addPlan(plan);
+
+  return jsonResult({
+    plan_id: plan.id,
+    name: plan.name,
+    status: plan.status,
+    from_template: template.id,
+    validation: {
+      valid: validation.valid,
+      errors: validation.issues.filter(i => i.severity === 'error').map(i => i.message),
+    },
+    message: `Plan created from template "${template.name}".`,
+  });
+}
+
+function handleListTemplates(_args: Record<string, unknown>, userId: string) {
+  const scheduler = getScheduler();
+  const templates = scheduler.listTemplates();
+
+  if (templates.length === 0) {
+    return jsonResult({ templates: [], message: 'No templates found. Use action="save_template" to save a plan as a template.' });
+  }
+
+  return jsonResult({
+    total: templates.length,
+    templates: templates.map(t => ({
+      template_id: t.id,
+      name: t.name,
+      description: t.description,
+      created_by: t.createdBy,
+      created: new Date(t.createdAt).toISOString(),
+      tags: t.tags,
+      params: t.params ? Object.keys(t.params) : [],
+    })),
+  });
+}
+
+// ─── Template Extraction Helpers ────────────────────────────────────────
+
+/** Extract raw step descriptions from a compiled plan root node. */
+function extractStepsFromRoot(node: PlanNode): Record<string, unknown>[] {
+  switch (node.type) {
+    case 'action': {
+      // Exclude 'action' from params to avoid overriding the step action name
+      const { action: _discardAction, ...cleanParams } = node.params as Record<string, unknown>;
+      return [{ action: inferAction(node.tool), tool: node.tool, ...cleanParams }];
+    }
+    case 'sequence':
+      return node.steps.flatMap(extractStepsFromRoot);
+    case 'parallel':
+      return [{ type: 'parallel', steps: node.steps.flatMap(extractStepsFromRoot) }];
+    case 'wait':
+      return [{ type: 'wait', duration: node.durationMs ? `${Math.round(node.durationMs / 1000)}s` : undefined }];
+    case 'loop':
+      return [{ type: 'loop', steps: extractStepsFromRoot(node.body), max_iterations: node.maxIterations }];
+    case 'if':
+      return [...extractStepsFromRoot(node.then), ...(node.else ? extractStepsFromRoot(node.else) : [])];
+    default:
+      return [];
+  }
+}
+
+/** Map tool names back to intent action names. */
+function inferAction(tool: string): string {
+  const map: Record<string, string> = {
+    defi_swap: 'swap',
+    transfer_token: 'transfer',
+    bridge_assets: 'bridge',
+    check_price: 'check_price',
+    check_balance: 'check_balance',
+    manage_orders: 'set_order',
+    manage_approvals: 'approve',
+    airdrop_tool: 'claim',
+  };
+  return map[tool] ?? 'custom';
+}
+
+/** Convert compiled Trigger back to raw format for template storage. */
+function extractTriggerAsRaw(trigger: Trigger): Record<string, unknown> {
+  switch (trigger.type) {
+    case 'immediate':
+      return { type: 'immediate' };
+    case 'time':
+      return { type: 'at_time', time: trigger.at };
+    case 'interval':
+      return {
+        type: 'every',
+        interval: `${Math.round(trigger.everyMs / 1000)}s`,
+        max_runs: trigger.maxRuns,
+      };
+    case 'condition':
+      return { type: 'when_condition' }; // Conditions are complex; simplified
+    default:
+      return { type: 'immediate' };
+  }
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────
