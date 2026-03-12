@@ -30,10 +30,70 @@
 
 import { Type } from '@sinclair/typebox';
 import { stringEnum, jsonResult, errorResult, readStringParam } from '../lib/tool-helpers.js';
-import { PlanCompiler, type Intent, type IntentStep } from '../services/plan-compiler.js';
+import { PlanCompiler, type Intent, type IntentStep, type IntentTrigger } from '../services/plan-compiler.js';
+import type { CompareOp, PlanNode, Trigger } from '../services/plan-types.js';
 import { PlanValidator } from '../services/plan-validator.js';
 import { getScheduler } from '../services/plan-scheduler.js';
 import { formatExecutionSummary } from '../services/plan-executor.js';
+
+// ─── Raw Input Types (from LLM tool args, snake_case) ──────────────────
+// These type the raw JSON the LLM sends, before normalizeIntent() converts
+// to camelCase. Having explicit types avoids 18+ `as any` casts.
+
+interface RawCondition {
+  token?: string;
+  field?: string;
+  op?: string;
+  value?: number;
+}
+
+interface RawTrigger {
+  type?: string;
+  time?: string;
+  interval?: string;
+  max_runs?: number;
+  maxRuns?: number;
+  token?: string;
+  op?: string;
+  value?: number;
+  logic?: string;
+  conditions?: RawCondition[];
+  expires?: string;
+}
+
+interface RawStep {
+  action: string;
+  token_in?: string;
+  tokenIn?: string;
+  token_out?: string;
+  tokenOut?: string;
+  amount?: string;
+  amount_pct?: number;
+  amountPct?: number;
+  slippage_bps?: number;
+  slippageBps?: number;
+  chain_id?: number;
+  chainId?: number;
+  to?: string;
+  token?: string;
+  to_chain?: number;
+  toChain?: number;
+  from_chain?: number;
+  fromChain?: number;
+  order_type?: string;
+  orderType?: string;
+  trigger_price?: number;
+  triggerPrice?: number;
+  tool?: string;
+  params?: Record<string, unknown>;
+  condition?: RawCondition;
+  confirm?: boolean;
+  on_failure?: string;
+  onFailure?: string;
+  retry_count?: number;
+  retryCount?: number;
+  label?: string;
+}
 
 const ACTIONS = [
   'create', 'execute', 'schedule', 'list', 'status',
@@ -156,9 +216,10 @@ function handleCreate(args: Record<string, unknown>) {
   const intent = normalizeIntent(intentRaw);
   const compiler = new PlanCompiler();
 
-  // userId comes from the execution context — for now use a placeholder
-  // The real userId is injected when the plugin wires this up
-  const userId = (args as any)._userId ?? 'owner';
+  // Security: never accept userId from tool args (LLM-controlled).
+  // Use 'owner' as the default — in single-agent mode there is only one owner.
+  // TODO: When multi-user support is added, inject userId from execution context (ctx.senderId).
+  const userId = 'owner';
   const plan = compiler.compile(intent, userId);
 
   // Validate
@@ -373,57 +434,57 @@ function handleHistory(args: Record<string, unknown>) {
  * Normalize the intent from snake_case params to camelCase for the compiler.
  */
 function normalizeIntent(raw: Record<string, unknown>): Intent {
-  const steps: IntentStep[] = (raw.steps as any[]).map((s: Record<string, any>) => ({
+  const rawSteps = (raw.steps ?? []) as RawStep[];
+  const steps: IntentStep[] = rawSteps.map((s) => ({
     action: s.action as IntentStep['action'],
-    tokenIn: (s.token_in ?? s.tokenIn) as string | undefined,
-    tokenOut: (s.token_out ?? s.tokenOut) as string | undefined,
-    amount: s.amount as string | undefined,
-    amountPct: (s.amount_pct ?? s.amountPct) as number | undefined,
-    slippageBps: (s.slippage_bps ?? s.slippageBps) as number | undefined,
-    chainId: (s.chain_id ?? s.chainId) as number | undefined,
-    to: s.to as string | undefined,
-    token: s.token as string | undefined,
-    toChain: (s.to_chain ?? s.toChain) as number | undefined,
-    fromChain: (s.from_chain ?? s.fromChain) as number | undefined,
-    orderType: (s.order_type ?? s.orderType) as string | undefined,
-    triggerPrice: (s.trigger_price ?? s.triggerPrice) as number | undefined,
-    tool: s.tool as string | undefined,
-    params: s.params as Record<string, unknown> | undefined,
+    tokenIn: s.token_in ?? s.tokenIn,
+    tokenOut: s.token_out ?? s.tokenOut,
+    amount: s.amount,
+    amountPct: s.amount_pct ?? s.amountPct,
+    slippageBps: s.slippage_bps ?? s.slippageBps,
+    chainId: s.chain_id ?? s.chainId,
+    to: s.to,
+    token: s.token,
+    toChain: s.to_chain ?? s.toChain,
+    fromChain: s.from_chain ?? s.fromChain,
+    orderType: s.order_type ?? s.orderType,
+    triggerPrice: s.trigger_price ?? s.triggerPrice,
+    tool: s.tool,
+    params: s.params,
     condition: s.condition ? {
-      token: (s.condition as any).token,
-      field: (s.condition as any).field,
-      op: (s.condition as any).op,
-      value: (s.condition as any).value,
+      token: s.condition.token,
+      field: s.condition.field as IntentStep['condition'] extends { field?: infer F } ? F : never,
+      op: s.condition.op as CompareOp,
+      value: s.condition.value as number,
     } : undefined,
-    confirm: s.confirm as boolean | undefined,
+    confirm: s.confirm,
     onFailure: (s.on_failure ?? s.onFailure) as IntentStep['onFailure'],
-    retryCount: (s.retry_count ?? s.retryCount) as number | undefined,
-    label: s.label as string | undefined,
+    retryCount: s.retry_count ?? s.retryCount,
+    label: s.label,
   }));
 
-  const trigger = raw.trigger ? {
-    type: (raw.trigger as any).type,
-    time: (raw.trigger as any).time,
-    interval: (raw.trigger as any).interval,
-    maxRuns: (raw.trigger as any).max_runs ?? (raw.trigger as any).maxRuns,
-    token: (raw.trigger as any).token,
-    op: (raw.trigger as any).op,
-    value: (raw.trigger as any).value,
-    logic: (raw.trigger as any).logic,
-    conditions: (raw.trigger as any).conditions,
-    expires: (raw.trigger as any).expires,
-  } as any : undefined;
+  const rawTrigger = raw.trigger as RawTrigger | undefined;
+  const trigger: IntentTrigger | undefined = rawTrigger ? {
+    type: rawTrigger.type as IntentTrigger['type'],
+    time: rawTrigger.time,
+    interval: rawTrigger.interval,
+    maxRuns: rawTrigger.max_runs ?? rawTrigger.maxRuns,
+    token: rawTrigger.token,
+    op: rawTrigger.op as IntentTrigger['op'],
+    value: rawTrigger.value,
+    logic: rawTrigger.logic as IntentTrigger['logic'],
+    conditions: rawTrigger.conditions as IntentTrigger['conditions'],
+    expires: rawTrigger.expires,
+  } : undefined;
 
   return {
     name: raw.name as string | undefined,
-    naturalLanguage: (raw.natural_language ?? raw.naturalLanguage ?? '') as string,
+    naturalLanguage: ((raw.natural_language ?? raw.naturalLanguage ?? '') as string),
     trigger,
     steps,
     tags: raw.tags as string[] | undefined,
   };
 }
-
-import type { PlanNode, Trigger } from '../services/plan-types.js';
 
 function describeTrigger(t: Trigger): string {
   switch (t.type) {

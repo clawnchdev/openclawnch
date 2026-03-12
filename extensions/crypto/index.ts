@@ -100,7 +100,7 @@ import { isReadonly } from './src/services/mode-service.js';
 
 // Services
 import { initWalletService, getWalletState as getWalletStateFn } from './src/services/walletconnect-service.js';
-import { getOnboardingFlow, isNewUser, type OnboardingMessage } from './src/services/onboarding-flow.js';
+import { getOnboardingFlow, type OnboardingMessage } from './src/services/onboarding-flow.js';
 import { getCredentialVault } from './src/services/credential-vault.js';
 import { getHeartbeatMonitor } from './src/services/heartbeat-monitor.js';
 import { getScheduler } from './src/services/plan-scheduler.js';
@@ -160,6 +160,10 @@ const plugin = {
       'clawnchconnect', 'molten', 'hummingbot', 'clawnx',
       'defi_lend', 'approvals', 'defi_stake', 'nft', 'privacy', 'yield', 'browser',
       'governance', 'farcaster', 'safe', 'airdrop',
+      // Added in audit: these tools have sub-actions that write on-chain
+      'wayfinder',       // execute_swap, strategy
+      'clawnch_info',    // vault_claim, agent_register
+      'crypto_workflow',  // safe_swap, launch_and_promote
     ]);
 
     /**

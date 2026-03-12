@@ -8,6 +8,7 @@
  */
 
 import { getCredentialVault } from '../services/credential-vault.js';
+import { guardedFetch } from '../services/endpoint-allowlist.js';
 
 const MOLTEN_BASE_URL = 'https://api.molten.gg/api/v1';
 
@@ -36,7 +37,7 @@ export const moltenCommand = {
 
     try {
       // Try /agents/me for profile
-      const profileRes = await fetch(`${baseUrl}/agents/me`, {
+      const profileRes = await guardedFetch(`${baseUrl}/agents/me`, {
         headers: {
           'Authorization': `Bearer ${apiKey}`,
           'Accept': 'application/json',
@@ -95,7 +96,7 @@ export const moltenCommand = {
 
       // Try to get conversation count
       try {
-        const convRes = await fetch(`${baseUrl}/conversations`, {
+        const convRes = await guardedFetch(`${baseUrl}/conversations`, {
           headers: {
             'Authorization': `Bearer ${apiKey}`,
             'Accept': 'application/json',
@@ -116,7 +117,7 @@ export const moltenCommand = {
 
       // Try to get event count
       try {
-        const eventsRes = await fetch(`${baseUrl}/events`, {
+        const eventsRes = await guardedFetch(`${baseUrl}/events`, {
           headers: {
             'Authorization': `Bearer ${apiKey}`,
             'Accept': 'application/json',

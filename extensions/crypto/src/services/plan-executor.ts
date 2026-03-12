@@ -425,8 +425,23 @@ export class PlanExecutor {
         return getNestedValue(result, ref.path);
       }
 
-      case 'env':
+      case 'env': {
+        // Security: only allow reading env vars from an explicit allowlist.
+        // Without this, an LLM-generated plan could exfiltrate secrets like
+        // CLAWNCHER_PRIVATE_KEY by referencing them as env ValueRefs.
+        const ALLOWED_ENV_KEYS = new Set([
+          'NODE_ENV',
+          'CLAWNCHER_NETWORK',
+          'CLAWNCHER_API_URL',
+          'CHAIN_ID',
+          'DEFAULT_SLIPPAGE_BPS',
+          'LOG_LEVEL',
+        ]);
+        if (!ALLOWED_ENV_KEYS.has(ref.key)) {
+          throw new Error(`Plan env ref "${ref.key}" is not in the allowed env var list.`);
+        }
         return process.env[ref.key] ?? undefined;
+      }
 
       case 'runtime':
         return this.scheduler.resolveValue(ref);
