@@ -351,6 +351,18 @@ export const TOOL_REQUIREMENTS: ToolRequirement[] = [
     walletRequired: true,
     worksWithoutKeys: true,
   },
+
+  // ── V3: Fiat & Traditional Finance Rails ─────────────────────────────
+  {
+    tool: 'fiat_payment',
+    label: 'Fiat Payment',
+    description: 'Off-ramp (sell crypto for fiat) and on-ramp (buy crypto with fiat) via Bridge.xyz or MoonPay',
+    requiredKeys: ['BRIDGE_API_KEY'],
+    optionalKeys: ['MOONPAY_API_KEY', 'FIAT_CURRENCY'],
+    walletRequired: true,
+    keySource: 'https://bridge.xyz (Bridge.xyz) or https://moonpay.com (MoonPay)',
+    setupHint: '`/flykeys set BRIDGE_API_KEY your_key` or `/flykeys set MOONPAY_API_KEY your_key`',
+  },
 ];
 
 // ─── Lookup Helpers ──────────────────────────────────────────────────────

@@ -756,11 +756,11 @@ describe('Tool config — Sprint 7+8 entries', () => {
     expect(req!.worksWithoutKeys).toBe(true);
   });
 
-  it('total tool config count is 36', async () => {
+  it('total tool config count is 37', async () => {
     const { getAllToolStatus } = await import(
       '../extensions/crypto/src/services/tool-config-service.js'
     );
     const statuses = getAllToolStatus();
-    expect(statuses.length).toBe(36);
+    expect(statuses.length).toBe(37);
   });
 });

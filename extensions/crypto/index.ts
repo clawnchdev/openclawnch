@@ -70,6 +70,9 @@ import { createAirdropTool } from './src/tools/airdrop.js';
 import { createPrivacyTool } from './src/tools/privacy.js';
 import { createBrowserTool } from './src/tools/browser.js';
 
+// Tools — V3 (Fiat & Traditional Finance Rails)
+import { createFiatPaymentTool } from './src/tools/fiat-payment.js';
+
 // Commands
 import { walletCommand } from './src/commands/wallet-command.js';
 import { policyCommand } from './src/commands/policy-command.js';
@@ -127,6 +130,9 @@ import { evolveCommand, stableCommand, evolutionCommand } from './src/commands/e
 // Forum topics + thread bindings commands (sprint 8)
 import { topicsCommand, topicsSetupCommand, topicBindCommand, topicUnbindCommand } from './src/commands/forum-commands.js';
 
+// V3: Fiat commands
+import { fiatCommand } from './src/commands/fiat-command.js';
+
 // Extracted hook logic
 import { buildPromptContext } from './src/hooks/prompt-builder.js';
 import { handleAfterToolCall } from './src/hooks/after-tool-call.js';
@@ -164,6 +170,7 @@ const plugin = {
       'clawnchconnect', 'molten', 'hummingbot', 'clawnx',
       'defi_lend', 'approvals', 'defi_stake', 'nft', 'privacy', 'yield', 'browser',
       'governance', 'farcaster', 'safe', 'airdrop',
+      'fiat_payment',    // V3: fiat off/on-ramp execution
       // Added in audit: these tools have sub-actions that write on-chain
       'wayfinder',       // execute_swap, strategy
       'clawnch_info',    // vault_claim, agent_register
@@ -252,6 +259,9 @@ const plugin = {
     // Phase 11 tools — External Integrations
     registerToolWithReadonlyGate(createPrivacyTool());               // ownerOnly: true (financial write, ZK deposits)
     registerToolWithReadonlyGate(createBrowserTool());               // ownerOnly: true (browser automation, can interact with dApps)
+
+    // V3 tools — Fiat & Traditional Finance Rails
+    registerToolWithReadonlyGate(createFiatPaymentTool());           // ownerOnly: true (fiat on/off-ramp)
 
     // Sprint 4 tools (3) — Self-improvement (agent memory, skill evolution, session recall)
     // These tools have an evolution mode gate: write actions are blocked in stable mode.
@@ -400,6 +410,9 @@ const plugin = {
     api.registerCommand(topicsSetupCommand);
     api.registerCommand(topicBindCommand);
     api.registerCommand(topicUnbindCommand);
+
+    // V3: Fiat rails
+    api.registerCommand(fiatCommand);
 
     // ─── Gateway Startup Hook ──────────────────────────────────────
     // Only init wallet at boot for private key mode (headless).

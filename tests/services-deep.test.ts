@@ -171,7 +171,7 @@ describe('tool-config-service', () => {
       '../extensions/crypto/src/services/tool-config-service.js'
     );
     const statuses = getAllToolStatus();
-    expect(statuses.length).toBe(36);
+    expect(statuses.length).toBe(37);
     for (const s of statuses) {
       expect(s.tool).toBeDefined();
       expect(s.label).toBeDefined();
