@@ -32,7 +32,9 @@ RUN --mount=type=cache,target=/root/.npm \
 # instead of ~2min.
 COPY openclawnch.tgz /tmp/openclawnch.tgz
 RUN --mount=type=cache,target=/root/.npm \
-    npm install -g /tmp/openclawnch.tgz && rm /tmp/openclawnch.tgz
+    mkdir -p /usr/local/lib/node_modules/@clawnch/openclawnch && \
+    tar xzf /tmp/openclawnch.tgz -C /usr/local/lib/node_modules/@clawnch/openclawnch --strip-components=1 && \
+    rm /tmp/openclawnch.tgz
 
 # ── Layer 4: Dirs, config, entrypoint (tiny, always rebuilt) ─────────
 # Create non-root user for security

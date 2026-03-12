@@ -86,13 +86,29 @@ export interface BalanceChangedEvent {
   timestamp: number;
 }
 
+export interface WebhookReceivedEvent {
+  type: 'webhook_received';
+  /** Route name that matched. */
+  route: string;
+  /** Source label (e.g. "GitHub", "Stripe"). */
+  source: string;
+  /** Parsed payload body. */
+  payload: unknown;
+  /** HTTP headers from the request. */
+  headers: Record<string, string>;
+  /** When the webhook was received. */
+  receivedAt: number;
+  timestamp: number;
+}
+
 export type BusEvent =
   | PriceCrossedEvent
   | CronTickEvent
   | PlanCompletedEvent
   | CheckpointResumedEvent
   | OnChainEvent
-  | BalanceChangedEvent;
+  | BalanceChangedEvent
+  | WebhookReceivedEvent;
 
 export type BusEventType = BusEvent['type'];
 

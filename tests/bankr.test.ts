@@ -138,7 +138,7 @@ describe('bankr wallet mode in WalletState type', () => {
 // ─── Plugin Registration with Bankr Tools ────────────────────────────────
 
 describe('plugin registration with bankr', () => {
-  it('registers 43 tools including 4 bankr tools', { timeout: 15000 }, async () => {
+  it('registers 44 tools including 4 bankr tools', { timeout: 15000 }, async () => {
     const plugin = (await import('../extensions/crypto/index.js')).default;
     const registered: string[] = [];
     const mockApi = {
@@ -148,14 +148,14 @@ describe('plugin registration with bankr', () => {
       logger: { info: vi.fn(), warn: vi.fn() },
     };
     plugin.register(mockApi);
-    expect(registered).toHaveLength(43);
+    expect(registered).toHaveLength(44);
     expect(registered).toContain('bankr_launch');
     expect(registered).toContain('bankr_automate');
     expect(registered).toContain('bankr_polymarket');
     expect(registered).toContain('bankr_leverage');
   });
 
-  it('registers 97 commands including connect_bankr and automations', async () => {
+  it('registers 99 commands including connect_bankr and automations', async () => {
     const plugin = (await import('../extensions/crypto/index.js')).default;
     const commands: string[] = [];
     const mockApi = {
@@ -165,7 +165,7 @@ describe('plugin registration with bankr', () => {
       logger: { info: vi.fn(), warn: vi.fn() },
     };
     plugin.register(mockApi);
-    expect(commands).toHaveLength(97);
+    expect(commands).toHaveLength(99);
     expect(commands).toContain('connect_bankr');
     expect(commands).toContain('automations');
     expect(commands).toContain('provider');

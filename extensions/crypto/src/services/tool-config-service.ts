@@ -352,6 +352,18 @@ export const TOOL_REQUIREMENTS: ToolRequirement[] = [
     worksWithoutKeys: true,
   },
 
+  // ── V5: Multi-Agent Orchestration ──────────────────────────────────────
+  {
+    tool: 'agent_delegate',
+    label: 'Agent Delegate',
+    description: 'Delegate tasks to specialized sub-agents (strategist, analyst, accountant, risk_manager)',
+    requiredKeys: [],
+    optionalKeys: ['ANTHROPIC_API_KEY', 'OPENROUTER_API_KEY', 'OPENAI_API_KEY', 'BANKR_LLM_KEY'],
+    worksWithoutKeys: false,
+    keySource: 'Any LLM provider: Anthropic, OpenRouter, OpenAI, or Bankr',
+    setupHint: '`/flykeys set ANTHROPIC_API_KEY your_key` (or OPENROUTER_API_KEY, OPENAI_API_KEY, BANKR_LLM_KEY)',
+  },
+
   // ── V3: Fiat & Traditional Finance Rails ─────────────────────────────
   {
     tool: 'fiat_payment',

@@ -138,6 +138,11 @@ import { toolsCommand } from './src/commands/tools-command.js';
 import { compileAllEnabledTools } from './src/services/tool-compiler.js';
 import type { ToolDispatcher } from './src/services/sandbox-runtime.js';
 
+// V5: Multi-agent + Webhooks
+import { createAgentDelegateTool } from './src/tools/agent-delegate.js';
+import { agentsCommand } from './src/commands/agents-command.js';
+import { webhooksCommand } from './src/commands/webhooks-command.js';
+
 // Extracted hook logic
 import { buildPromptContext } from './src/hooks/prompt-builder.js';
 import { handleAfterToolCall } from './src/hooks/after-tool-call.js';
@@ -267,6 +272,17 @@ const plugin = {
 
     // V3 tools — Fiat & Traditional Finance Rails
     registerToolWithReadonlyGate(createFiatPaymentTool());           // ownerOnly: true (fiat on/off-ramp)
+
+    // V5 tools — Multi-agent orchestration
+    // The dispatcher and registeredTools closures are filled at gateway_start
+    // when the runtime is available. Pre-registration ensures the tool is
+    // in the registry for count assertions.
+    let agentDispatcher: ToolDispatcher = { call: async () => { throw new Error('Agent dispatcher not ready'); } };
+    let registeredToolsList: Array<{ name: string; description: string; parameters: any }> = [];
+    registerToolWithReadonlyGate(createAgentDelegateTool(
+      () => agentDispatcher,
+      () => registeredToolsList,
+    ));                                                               // ownerOnly: false (read-only delegation)
 
     // Sprint 4 tools (3) — Self-improvement (agent memory, skill evolution, session recall)
     // These tools have an evolution mode gate: write actions are blocked in stable mode.
@@ -422,6 +438,10 @@ const plugin = {
     // V4: User-defined tool management
     api.registerCommand(toolsCommand);
 
+    // V5: Multi-agent + Webhooks
+    api.registerCommand(agentsCommand);
+    api.registerCommand(webhooksCommand);
+
     // ─── Gateway Startup Hook ──────────────────────────────────────
     // Only init wallet at boot for private key mode (headless).
     // WalletConnect init is deferred to the clawnchconnect tool to avoid
@@ -529,6 +549,65 @@ const plugin = {
       } catch (err) {
         api.logger?.warn?.(
           `[crypto] Failed to load user-defined tools: ${err instanceof Error ? err.message : String(err)}`
+        );
+      }
+
+      // ─── V5: Wire Agent Dispatcher + Start Webhook Server ────────
+      // Fill in the agent_delegate tool's closures now that runtime is available.
+      try {
+        const runtimeForAgents = api.runtime as any;
+        agentDispatcher = {
+          call: async (toolName: string, args: Record<string, unknown>): Promise<any> => {
+            const tools = runtimeForAgents?.tools?.getAll?.() ?? [];
+            const tool = tools.find((t: any) => t.name === toolName);
+            if (!tool) throw new Error(`Tool "${toolName}" not found in registry`);
+            const toolCallId = `agent-${Date.now()}-${toolName}`;
+            return tool.execute(toolCallId, args, {});
+          },
+        };
+        registeredToolsList = (runtimeForAgents?.tools?.getAll?.() ?? []).map((t: any) => ({
+          name: t.name,
+          description: t.description ?? '',
+          parameters: t.parameters ?? { type: 'object', properties: {} },
+        }));
+        api.logger?.info?.(`[crypto] Agent delegate ready: ${registeredToolsList.length} tools available for sub-agents`);
+      } catch (err) {
+        api.logger?.warn?.(
+          `[crypto] Agent dispatcher setup failed: ${err instanceof Error ? err.message : String(err)}`
+        );
+      }
+
+      // Start webhook server if configured
+      try {
+        const { getWebhookServer } = await import('./src/services/webhook-server.js');
+        const { getEventBus } = await import('./src/services/event-bus.js');
+
+        const webhookServer = getWebhookServer();
+        webhookServer.onEvent(async (event) => {
+          // Emit on event bus for plan triggers to pick up
+          const bus = getEventBus();
+          bus.emit('webhook_received', {
+            type: 'webhook_received',
+            route: event.route,
+            source: event.source,
+            payload: event.payload,
+            headers: event.headers,
+            receivedAt: event.receivedAt,
+            timestamp: Date.now(),
+          });
+          api.logger?.info?.(`[crypto] Webhook received: ${event.route} from ${event.source}`);
+        });
+
+        const started = await webhookServer.start();
+        if (started) {
+          const config = webhookServer.getConfig();
+          api.logger?.info?.(
+            `[crypto] Webhook server listening on ${config.host}:${config.port}`
+          );
+        }
+      } catch (err) {
+        api.logger?.warn?.(
+          `[crypto] Webhook server failed to start: ${err instanceof Error ? err.message : String(err)}`
         );
       }
 

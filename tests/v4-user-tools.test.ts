@@ -1138,7 +1138,7 @@ describe('ToolsCommand', () => {
 // ─── Plugin Registration Count Tests ────────────────────────────────────
 
 describe('V4 Plugin Registration', () => {
-  it('plugin registers 97 commands including tools', { timeout: 15000 }, async () => {
+  it('plugin registers 99 commands including tools', { timeout: 15000 }, async () => {
     const plugin = (await import('../extensions/crypto/index.js')).default;
     const commands: string[] = [];
     const mockApi = {
@@ -1148,11 +1148,11 @@ describe('V4 Plugin Registration', () => {
       logger: { info: () => {}, warn: () => {} },
     };
     plugin.register(mockApi);
-    expect(commands).toHaveLength(97);
+    expect(commands).toHaveLength(99);
     expect(commands).toContain('tools');
   });
 
-  it('plugin still registers 43 tools (user tools are dynamic)', { timeout: 15000 }, async () => {
+  it('plugin still registers 44 tools (user tools are dynamic)', { timeout: 15000 }, async () => {
     const plugin = (await import('../extensions/crypto/index.js')).default;
     const registered: string[] = [];
     const mockApi = {
@@ -1162,6 +1162,6 @@ describe('V4 Plugin Registration', () => {
       logger: { info: () => {}, warn: () => {} },
     };
     plugin.register(mockApi);
-    expect(registered).toHaveLength(43);
+    expect(registered).toHaveLength(44);
   });
 });
