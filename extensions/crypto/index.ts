@@ -133,6 +133,11 @@ import { topicsCommand, topicsSetupCommand, topicBindCommand, topicUnbindCommand
 // V3: Fiat commands
 import { fiatCommand } from './src/commands/fiat-command.js';
 
+// V4: User-defined tools
+import { toolsCommand } from './src/commands/tools-command.js';
+import { compileAllEnabledTools } from './src/services/tool-compiler.js';
+import type { ToolDispatcher } from './src/services/sandbox-runtime.js';
+
 // Extracted hook logic
 import { buildPromptContext } from './src/hooks/prompt-builder.js';
 import { handleAfterToolCall } from './src/hooks/after-tool-call.js';
@@ -414,6 +419,9 @@ const plugin = {
     // V3: Fiat rails
     api.registerCommand(fiatCommand);
 
+    // V4: User-defined tool management
+    api.registerCommand(toolsCommand);
+
     // ─── Gateway Startup Hook ──────────────────────────────────────
     // Only init wallet at boot for private key mode (headless).
     // WalletConnect init is deferred to the clawnchconnect tool to avoid
@@ -487,6 +495,40 @@ const plugin = {
       } catch (err) {
         api.logger?.warn?.(
           `[crypto] Failed to restore some persisted state: ${err instanceof Error ? err.message : String(err)}`
+        );
+      }
+
+      // ─── V4: Register User-Defined Tools ─────────────────────────
+      // Compile all enabled user tools and register them dynamically.
+      // User tools don't affect the static count assertions (43 tools) —
+      // they are additive and loaded from ~/.openclawnch/user-tools/.
+      try {
+        // Build a lightweight dispatcher for user tools to call built-in tools.
+        // This uses the same api.runtime.tools.getAll() pattern as the plan executor.
+        const runtimeRef = api.runtime as any;
+        const userToolDispatcher: ToolDispatcher = {
+          call: async (toolName: string, args: Record<string, unknown>): Promise<any> => {
+            const tools = runtimeRef?.tools?.getAll?.() ?? [];
+            const tool = tools.find((t: any) => t.name === toolName);
+            if (!tool) throw new Error(`Tool "${toolName}" not found in registry`);
+            const toolCallId = `user-tool-${Date.now()}-${toolName}`;
+            return tool.execute(toolCallId, args, {});
+          },
+        };
+
+        const compiledUserTools = compileAllEnabledTools(userToolDispatcher);
+        for (const userTool of compiledUserTools) {
+          // Apply the same readonly gate as built-in tools
+          registerToolWithReadonlyGate(userTool);
+        }
+        if (compiledUserTools.length > 0) {
+          api.logger?.info?.(
+            `[crypto] Registered ${compiledUserTools.length} user-defined tool(s): ${compiledUserTools.map(t => t.name).join(', ')}`
+          );
+        }
+      } catch (err) {
+        api.logger?.warn?.(
+          `[crypto] Failed to load user-defined tools: ${err instanceof Error ? err.message : String(err)}`
         );
       }
 

@@ -6,7 +6,7 @@
  * - FiatPaymentTool: action routing, parameter parsing, error handling
  * - PaymentRequestService: create, get, mark paid, cancel, expiry
  * - FiatCommand: handler output
- * - Plugin registration counts (43 tools, 96 commands, 37 tool configs)
+ * - Plugin registration counts (43 tools, 97 commands, 37 tool configs)
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -432,7 +432,7 @@ describe('V3 plugin registration counts', () => {
     expect(registered).toContain('fiat_payment');
   });
 
-  it('registers 96 commands including fiat', { timeout: 15000 }, async () => {
+  it('registers 97 commands including fiat and tools', { timeout: 15000 }, async () => {
     const plugin = (await import('../extensions/crypto/index.js')).default;
     const commands: string[] = [];
     const mockApi = {
@@ -442,8 +442,9 @@ describe('V3 plugin registration counts', () => {
       logger: { info: () => {}, warn: () => {} },
     };
     plugin.register(mockApi);
-    expect(commands).toHaveLength(96);
+    expect(commands).toHaveLength(97);
     expect(commands).toContain('fiat');
+    expect(commands).toContain('tools');
   });
 
   it('tool config has 37 entries including fiat_payment', async () => {
