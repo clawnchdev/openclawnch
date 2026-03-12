@@ -71,6 +71,7 @@ export const helpCommand = {
   /molten — Molten agent
   /factoryreset — Wipe all data
   /skip — Skip onboarding
+  /back — Go back one step (onboarding)
 
 Just talk to me — "What's the price of ETH?", "Show my portfolio", "Swap 0.1 ETH for USDC", etc.`,
     };
@@ -99,7 +100,7 @@ export const balanceCommand = {
     const chainName = state.chainId ? (CHAIN_NAMES[state.chainId] ?? `Chain ${state.chainId}`) : null;
 
     return {
-      text: `**Wallet:** ${short}\n**Mode:** ${mode}${chainName ? `\n**Chain:** ${chainName}` : ''}\n\nFor token balances with USD values, ask me:\n"What are my balances?" or "Show my balance on Base"`,
+      text: `**Wallet:** ${short}\n**Mode:** ${mode}${chainName ? `\n**Chain:** ${chainName}` : ''}\n\nFull balances require an on-chain lookup. Ask me: "Show my balances" for a detailed breakdown with USD values.`,
     };
   },
 };
@@ -164,7 +165,7 @@ export const portfolioCommand = {
     const mode = state.mode === 'bankr' ? 'Bankr (custodial)' : state.mode === 'private_key' ? 'Private key' : 'WalletConnect';
 
     return {
-      text: `**Wallet:** ${short}\n**Mode:** ${mode}${state.chainId ? `\n**Chain:** ${CHAIN_NAMES[state.chainId] ?? `Chain ${state.chainId}`}` : ''}${state.bankrSolAddress ? `\n**Solana:** ${state.bankrSolAddress.slice(0, 6)}...${state.bankrSolAddress.slice(-4)}` : ''}\n\nFor a full token breakdown with USD values, ask me:\n"Show my portfolio" or "What are my balances on Base?"`,
+      text: `**Wallet:** ${short}\n**Mode:** ${mode}${state.chainId ? `\n**Chain:** ${CHAIN_NAMES[state.chainId] ?? `Chain ${state.chainId}`}` : ''}${state.bankrSolAddress ? `\n**Solana:** ${state.bankrSolAddress.slice(0, 6)}...${state.bankrSolAddress.slice(-4)}` : ''}\n\nFor a full token breakdown with USD values, ask me: "Show my portfolio" or "What are my balances on Base?"`,
     };
   },
 };

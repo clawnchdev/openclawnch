@@ -57,7 +57,8 @@ export const capAllCommand = {
   },
 };
 
-// Individual capability commands
+// Individual capability commands — tapping /cap_X selects that ONE capability and advances.
+// Users can also type multiple numbers ("1, 2, 3") or /all instead of tapping individual caps.
 function makeCapCommand(capId: string, name: string) {
   return {
     name: `cap_${capId}`,
@@ -111,6 +112,27 @@ export const importWalletCommand = {
       return { text: response.text };
     }
     return { text: 'Wallet import is only available during the wallet connection step. Use /connect for other wallet options.' };
+  },
+};
+
+// ── Back Command ────────────────────────────────────────────────────────────
+
+export const backCommand = {
+  name: 'back',
+  description: 'Go back one step during onboarding',
+  acceptsArgs: false,
+  requireAuth: true,
+  handler: async (ctx: any) => {
+    const userId = getSenderId(ctx);
+    const flow = getOnboardingFlow(userId);
+    if (flow.isActive) {
+      const response = flow.back();
+      if (response) {
+        return { text: response.text };
+      }
+      return { text: "Can't go back from the current step." };
+    }
+    return { text: 'No active onboarding. Use /help to see available commands.' };
   },
 };
 

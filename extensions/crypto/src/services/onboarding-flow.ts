@@ -279,6 +279,7 @@ First, pick a communication style:
 Or type your own preferred tone (10+ characters).
 
 /skip — Skip onboarding and jump straight in
+/back — Go back one step
 /help — See all commands`;
 
 function buildPersonaConfirmation(persona: PersonaId, customText?: string): string {
@@ -308,10 +309,10 @@ function buildCapabilitiesList(): string {
 
 /** Check if a capability's deploy-time requirement is satisfied. */
 function getCapabilityStatus(c: CapabilityCategory): string {
-  if (!c.deployRequirement) return '(ready)';
+  if (!c.deployRequirement) return '';
   const envVal = process.env[c.deployRequirement];
-  if (envVal && envVal.length > 0) return '(ready)';
-  return '(needs deploy config)';
+  if (envVal && envVal.length > 0) return '';
+  return `(needs ${c.deployRequirement} — see /setup)`;
 }
 
 function buildCapabilitiesConfirmation(selectedIds: string[]): string {
@@ -487,6 +488,50 @@ export class OnboardingFlow {
     };
   }
 
+  /**
+   * Navigate back one step during onboarding.
+   * choose_capabilities → choose_persona
+   * connect_wallet → choose_capabilities
+   * first_read → connect_wallet
+   * Returns null if /back isn't applicable at the current step.
+   */
+  back(): OnboardingMessage | null {
+    const step = this.state.step;
+
+    if (step === 'choose_capabilities') {
+      this.state.step = 'choose_persona';
+      this.state.lastInteraction = Date.now();
+      saveState(this.state);
+      return {
+        text: 'Pick a communication style:\n\n  /professional — Clear and business-like\n  /degen — CT native energy\n  /chill — Like texting a friend\n  /technical — Data-heavy, on-chain metrics\n  /mentor — Educational, explains as it goes\n\nOr type your own preferred tone (10+ characters).',
+        suggestion: 'Tap a style or describe your own',
+      };
+    }
+
+    if (step === 'connect_wallet') {
+      this.state.step = 'choose_capabilities';
+      this.state.selectedCapabilities = undefined;
+      this.state.lastInteraction = Date.now();
+      saveState(this.state);
+      return {
+        text: buildPersonaConfirmation(this.state.persona ?? 'professional', this.state.customPersona),
+        suggestion: 'Reply with numbers (e.g. "1, 2, 3") or "all"',
+      };
+    }
+
+    if (step === 'first_read') {
+      this.state.step = 'connect_wallet';
+      this.state.lastInteraction = Date.now();
+      saveState(this.state);
+      return {
+        text: 'Choose how to connect a wallet:\n\n  /create_wallet — Generate a new wallet (stored locally, encrypted)\n  /import_wallet — Import from a 12/24-word seed phrase\n  /connect — Connect MetaMask, Rainbow, Coinbase Wallet, etc. via WalletConnect\n  /connect_bankr — Use Bankr custodial wallet (zero setup)',
+        suggestion: 'Tap /create_wallet to get started or /connect for an existing wallet',
+      };
+    }
+
+    return null;
+  }
+
   /** Call when the user sends /skip-tutorial or /skip. */
   skip(): OnboardingMessage {
     this.state.step = 'skipped';
@@ -611,7 +656,7 @@ export class OnboardingFlow {
       this.state.step = 'connect_wallet';
       saveState(this.state);
       return {
-        text: 'Wallet creation was interrupted. Please try /create_wallet again.',
+        text: 'Wallet creation was interrupted (the previous mnemonic is no longer available). Run /create_wallet to generate a new wallet.',
       };
     }
 
@@ -651,7 +696,7 @@ export class OnboardingFlow {
     if (!this.state._pendingMnemonic) {
       this.state.step = 'connect_wallet';
       saveState(this.state);
-      return { text: 'Wallet creation was interrupted. Please try /create_wallet again.' };
+      return { text: 'Wallet creation was interrupted (the previous mnemonic is no longer available). Run /create_wallet to generate a new wallet.' };
     }
 
     if (password.length < 8) {
@@ -881,13 +926,21 @@ export class OnboardingFlow {
     if (!this.isActive || !success) return null;
 
     // Read tools advance from first_read → first_write
-    const readTools = ['defi_price', 'market_intel', 'defi_balance', 'clawnch_info'];
+    const readTools = [
+      'defi_price', 'market_intel', 'defi_balance', 'clawnch_info',
+      'analytics', 'herd_intelligence', 'block_explorer', 'watch_activity',
+      'cost_basis', 'clawnch_fees',
+    ];
     if (this.state.step === 'first_read' && readTools.includes(toolName)) {
       return this.onReadComplete();
     }
 
     // Write tools advance from first_write → complete
-    const writeTools = ['defi_swap', 'transfer', 'liquidity', 'clawnch_launch'];
+    const writeTools = [
+      'defi_swap', 'transfer', 'liquidity', 'clawnch_launch',
+      'bridge', 'permit2', 'defi_lend', 'defi_stake',
+      'compound_action', 'manage_orders',
+    ];
     if (this.state.step === 'first_write' && writeTools.includes(toolName)) {
       return this.onWriteComplete();
     }
