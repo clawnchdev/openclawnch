@@ -22,8 +22,10 @@ RUN apt-get update && apt-get install -y \
 
 # ── Layer 2: Heavy npm globals (cached until openclaw or WC updates) ─
 # These two are ~2min to install. Only bust this cache when upgrading.
+# IMPORTANT: Pin openclaw version to match package.json peer dep range.
+# Using @latest in CI can break builds if upstream introduces breaking changes.
 RUN --mount=type=cache,target=/root/.npm \
-    npm install -g openclaw@latest @walletconnect/sign-client@2
+    npm install -g openclaw@2026.3.8 @walletconnect/sign-client@2
 
 # ── Layer 3: OpenClawnch extension (changes every deploy) ────────────
 # Copy just the tarball and install. With npm cache mount this is ~30s
@@ -54,6 +56,9 @@ ENV NODE_OPTIONS="--max-old-space-size=1536"
 ENV NODE_ENV="production"
 ENV HOME="/home/openclawnch"
 
+# Note: Fly.io ignores Dockerfile HEALTHCHECK — it uses its own TCP/HTTP
+# health checks configured in fly.toml. This HEALTHCHECK is kept for local
+# Docker testing and docker-compose deployments.
 HEALTHCHECK --interval=10s --timeout=5s --start-period=60s --retries=5 \
     CMD curl -f http://localhost:18789/healthz || exit 1
 

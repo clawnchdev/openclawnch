@@ -203,6 +203,16 @@ const SECRET_REGISTRY: Record<string, {
     description: 'Reservoir NFT API key (free tier: 4 req/sec)',
     sensitive: 'medium',
   },
+  'social.neynar.apiKey': {
+    envVar: 'NEYNAR_API_KEY',
+    description: 'Neynar Farcaster API key',
+    sensitive: 'high',
+  },
+  'social.neynar.signerUuid': {
+    envVar: 'NEYNAR_SIGNER_UUID',
+    description: 'Neynar managed signer UUID (write operations)',
+    sensitive: 'high',
+  },
 };
 
 // ─── Credential Vault ────────────────────────────────────────────────────

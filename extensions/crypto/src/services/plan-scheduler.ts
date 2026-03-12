@@ -345,7 +345,7 @@ export class PlanScheduler {
             await this.fireTrigger(plan);
           }
         } catch (err: any) {
-          this.emit({ type: 'condition_check_error', planId, error: err.message ?? String(err) });
+          await this.emit({ type: 'condition_check_error', planId, error: err.message ?? String(err) });
         }
       }
     } finally {
@@ -369,7 +369,7 @@ export class PlanScheduler {
 
         const endAt = trigger.endAt ? new Date(trigger.endAt).getTime() : Infinity;
         if (now > endAt) {
-          this.emit({ type: 'plan_expired', plan, reason: 'Past end time' });
+          await this.emit({ type: 'plan_expired', plan, reason: 'Past end time' });
           plan.status = 'completed';
           this.store.save(plan);
           this.plans.delete(plan.id);
@@ -378,7 +378,7 @@ export class PlanScheduler {
 
         const runCount = this.intervalRunCounts.get(plan.id) ?? 0;
         if (trigger.maxRuns && runCount >= trigger.maxRuns) {
-          this.emit({ type: 'plan_expired', plan, reason: `Reached ${trigger.maxRuns} executions` });
+          await this.emit({ type: 'plan_expired', plan, reason: `Reached ${trigger.maxRuns} executions` });
           plan.status = 'completed';
           this.store.save(plan);
           this.plans.delete(plan.id);
@@ -401,7 +401,7 @@ export class PlanScheduler {
 
         // Check expiry
         if (trigger.expiresAfterMs && now - plan.createdAt > trigger.expiresAfterMs) {
-          this.emit({ type: 'plan_expired', plan, reason: 'Condition watch expired' });
+          await this.emit({ type: 'plan_expired', plan, reason: 'Condition watch expired' });
           plan.status = 'completed';
           this.store.save(plan);
           this.plans.delete(plan.id);
@@ -435,7 +435,7 @@ export class PlanScheduler {
       this.store.save(plan);
     }
 
-    this.emit({ type: 'trigger_fired', plan, executionId });
+    await this.emit({ type: 'trigger_fired', plan, executionId });
   }
 
   // ─── Condition Evaluation ─────────────────────────────────────────────
@@ -518,11 +518,16 @@ export class PlanScheduler {
     }
   }
 
-  private emit(event: SchedulerEvent): void {
+  private async emit(event: SchedulerEvent): Promise<void> {
     for (const handler of this.handlers) {
       try {
-        handler(event);
-      } catch { /* don't let handler errors break the scheduler */ }
+        await handler(event);
+      } catch (err) {
+        // Log but don't let handler errors break the scheduler.
+        // Before this fix, async handler rejections were silently dropped
+        // (unhandled promise rejection → potential Node.js crash).
+        console.error(`[plan-scheduler] handler error on ${event.type}:`, err);
+      }
     }
   }
 }
@@ -534,6 +539,11 @@ let _scheduler: PlanScheduler | null = null;
 export function getScheduler(opts?: ConstructorParameters<typeof PlanScheduler>[0]): PlanScheduler {
   if (!_scheduler) {
     _scheduler = new PlanScheduler(opts);
+  } else if (opts) {
+    console.warn(
+      '[plan-scheduler] getScheduler() called with config but scheduler already exists. ' +
+      'Config ignored. Call resetScheduler() first to reconfigure.',
+    );
   }
   return _scheduler;
 }

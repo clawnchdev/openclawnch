@@ -15,8 +15,8 @@ If upstream changes any of these signatures, our extension breaks.
 
 | API Method | Our Usage | Status |
 |---|---|---|
-| `api.registerTool(tool)` | 31 tools registered | Stable |
-| `api.registerCommand(cmd)` | 76 commands registered | Stable |
+| `api.registerTool(tool)` | 42 tools registered | Stable |
+| `api.registerCommand(cmd)` | 78+ commands registered | Stable |
 | `api.on('gateway_start', cb)` | Wallet init, plan scheduler start, heartbeat start | Stable |
 | `api.on('message_received', cb)` | Onboarding flow interception, session recall indexing | Stable |
 | `api.on('message_sending', cb)` | Cancel LLM response during onboarding, credential leak scanning | Stable |

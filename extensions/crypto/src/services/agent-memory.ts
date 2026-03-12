@@ -215,7 +215,9 @@ class AgentMemoryService {
   private config: Required<MemoryConfig>;
   private agentStore: MemoryStore;
   private userStores = new Map<string, MemoryStore>();
-  private frozenSnapshots = new Map<string, string>(); // sessionKey → frozen content
+  private frozenSnapshots = new Map<string, { content: string; createdAt: number }>(); // sessionKey → snapshot
+  private static readonly MAX_SNAPSHOTS = 50;
+  private static readonly SNAPSHOT_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours
 
   constructor(config: MemoryConfig = {}) {
     this.config = {
@@ -257,15 +259,23 @@ class AgentMemoryService {
     }
 
     const snapshot = parts.join('\n\n');
-    this.frozenSnapshots.set(sessionKey, snapshot);
+    this.evictStaleSnapshots();
+    this.frozenSnapshots.set(sessionKey, { content: snapshot, createdAt: Date.now() });
     return snapshot;
   }
 
   /**
-   * Get the frozen snapshot for a session (returns empty string if none).
+   * Get the frozen snapshot for a session (returns empty string if none/expired).
    */
   getSnapshot(sessionKey: string): string {
-    return this.frozenSnapshots.get(sessionKey) ?? '';
+    const entry = this.frozenSnapshots.get(sessionKey);
+    if (!entry) return '';
+    // Auto-expire stale snapshots on read
+    if (Date.now() - entry.createdAt > AgentMemoryService.SNAPSHOT_TTL_MS) {
+      this.frozenSnapshots.delete(sessionKey);
+      return '';
+    }
+    return entry.content;
   }
 
   /**
@@ -273,6 +283,28 @@ class AgentMemoryService {
    */
   clearSnapshot(sessionKey: string): void {
     this.frozenSnapshots.delete(sessionKey);
+  }
+
+  /**
+   * Evict stale/oversized snapshots to prevent unbounded memory growth.
+   */
+  private evictStaleSnapshots(): void {
+    const now = Date.now();
+    // Remove expired entries
+    for (const [key, entry] of this.frozenSnapshots) {
+      if (now - entry.createdAt > AgentMemoryService.SNAPSHOT_TTL_MS) {
+        this.frozenSnapshots.delete(key);
+      }
+    }
+    // If still over limit, remove oldest entries
+    while (this.frozenSnapshots.size >= AgentMemoryService.MAX_SNAPSHOTS) {
+      const oldestKey = this.frozenSnapshots.keys().next().value;
+      if (oldestKey !== undefined) {
+        this.frozenSnapshots.delete(oldestKey);
+      } else {
+        break;
+      }
+    }
   }
 
   // ── Agent Memory ───────────────────────────────────────────────────

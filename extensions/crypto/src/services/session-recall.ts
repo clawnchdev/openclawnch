@@ -20,7 +20,7 @@
  * Inspired by Hermes Agent's session_search_tool.py.
  */
 
-import { existsSync, readFileSync, appendFileSync, mkdirSync } from 'node:fs';
+import { existsSync, readFileSync, appendFileSync, writeFileSync, mkdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 // ─── Types ───────────────────────────────────────────────────────────────
@@ -248,13 +248,43 @@ class SessionRecallService {
     }
   }
 
+  private diskWrites = 0;
+  private static readonly COMPACT_INTERVAL = 500; // check every N writes
+  private static readonly MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
+
   private appendToDisk(entry: RecallEntry): void {
     try {
       const dir = this.config.baseDir;
       if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
       appendFileSync(this.getFilePath(), JSON.stringify(entry) + '\n', 'utf8');
+      this.diskWrites++;
+
+      // Periodically check if the file needs compaction
+      if (this.diskWrites % SessionRecallService.COMPACT_INTERVAL === 0) {
+        this.maybeCompact();
+      }
     } catch {
       // Best effort
+    }
+  }
+
+  /**
+   * Compact the JSONL file by rewriting it with only the in-memory entries.
+   * Prevents unbounded disk growth — the file is capped at maxEntries lines.
+   */
+  private maybeCompact(): void {
+    try {
+      const filePath = this.getFilePath();
+      if (!existsSync(filePath)) return;
+
+      const stat = statSync(filePath);
+      if (stat.size < SessionRecallService.MAX_FILE_SIZE_BYTES) return;
+
+      // Rewrite with only the entries we have in memory (already evicted to maxEntries)
+      const compacted = this.entries.map(e => JSON.stringify(e)).join('\n') + '\n';
+      writeFileSync(filePath, compacted, 'utf8');
+    } catch {
+      // Best effort — don't crash on compaction failure
     }
   }
 
