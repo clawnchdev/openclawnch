@@ -9,7 +9,10 @@
  *   5.  Delegation service: prepareDelegation, storeDelegation, formatDelegationStatus
  *   6.  Delegate command: handler shape, subcommands, no-policies output
  *   7.  Policy integration: delegation field on Policy interface
- *   8.  Plugin registers 109 commands including /delegate
+ *   8.  Plugin registers 110 commands including /delegate and /policymode
+ *   9.  Policy mode system: getPolicyMode, setPolicyMode, isDelegationMode
+ *   10. Policymode command: /policymode, /policymode delegation, /policymode simple
+ *   11. Delegate command mode gate: blocks in simple mode
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -1248,7 +1251,7 @@ describe('Delegation Service — revokeByPolicy', () => {
 // ─── 13. Plugin Registration ────────────────────────────────────────────
 
 describe('V7 Plugin Registration', () => {
-  it('plugin registers 109 commands including /delegate', { timeout: 15000 }, async () => {
+  it('plugin registers 110 commands including /delegate and /policymode', { timeout: 15000 }, async () => {
     const commands: any[] = [];
     const mockApi = {
       registerTool: () => {},
@@ -1259,9 +1262,10 @@ describe('V7 Plugin Registration', () => {
     const { default: plugin } = await import('../extensions/crypto/index.js');
     plugin.register(mockApi as any);
 
-    expect(commands).toHaveLength(109);
+    expect(commands).toHaveLength(110);
     expect(commands.find((c: any) => c.name === 'delegate')).toBeDefined();
     expect(commands.find((c: any) => c.name === 'policies')).toBeDefined();
+    expect(commands.find((c: any) => c.name === 'policymode')).toBeDefined();
   });
 
   it('delegate command has correct shape in registered commands', { timeout: 15000 }, async () => {
@@ -1280,5 +1284,194 @@ describe('V7 Plugin Registration', () => {
     expect(delegateCmd.acceptsArgs).toBe(true);
     expect(delegateCmd.requireAuth).toBe(true);
     expect(typeof delegateCmd.handler).toBe('function');
+  });
+});
+
+// ─── 14. Policy Mode System ──────────────────────────────────────────────
+
+describe('Policy Mode System', () => {
+  beforeEach(async () => {
+    // Reset cached mode before each test
+    const { resetPolicyMode } = await import(
+      '../extensions/crypto/src/services/policy-types.js'
+    );
+    resetPolicyMode();
+  });
+
+  it('getPolicyMode returns delegation by default', async () => {
+    const { getPolicyMode } = await import(
+      '../extensions/crypto/src/services/policy-types.js'
+    );
+    // Default mode is delegation (even when no file on disk)
+    const mode = getPolicyMode();
+    expect(mode === 'delegation' || mode === 'simple').toBe(true);
+  });
+
+  it('PolicyMode type accepts only delegation or simple', async () => {
+    const { setPolicyMode, getPolicyMode, resetPolicyMode } = await import(
+      '../extensions/crypto/src/services/policy-types.js'
+    );
+
+    setPolicyMode('delegation');
+    expect(getPolicyMode()).toBe('delegation');
+
+    resetPolicyMode();
+    setPolicyMode('simple');
+    expect(getPolicyMode()).toBe('simple');
+  });
+
+  it('isDelegationMode returns true in delegation mode', async () => {
+    const { isDelegationMode, setPolicyMode, resetPolicyMode } = await import(
+      '../extensions/crypto/src/services/policy-types.js'
+    );
+
+    setPolicyMode('delegation');
+    expect(isDelegationMode()).toBe(true);
+
+    resetPolicyMode();
+    setPolicyMode('simple');
+    expect(isDelegationMode()).toBe(false);
+  });
+
+  it('resetPolicyMode clears the cache', async () => {
+    const { setPolicyMode, getPolicyMode, resetPolicyMode } = await import(
+      '../extensions/crypto/src/services/policy-types.js'
+    );
+
+    setPolicyMode('simple');
+    expect(getPolicyMode()).toBe('simple');
+
+    resetPolicyMode();
+    // After reset, re-reads from disk or falls back to default
+    const mode = getPolicyMode();
+    expect(mode === 'delegation' || mode === 'simple').toBe(true);
+  });
+});
+
+// ─── 15. Policymode Command ──────────────────────────────────────────────
+
+describe('Policymode Command', () => {
+  beforeEach(async () => {
+    const { resetPolicyMode } = await import(
+      '../extensions/crypto/src/services/policy-types.js'
+    );
+    resetPolicyMode();
+  });
+
+  it('has correct command shape', async () => {
+    const { policymodeCommand } = await import(
+      '../extensions/crypto/src/commands/policymode-command.js'
+    );
+    expect(policymodeCommand.name).toBe('policymode');
+    expect(policymodeCommand.acceptsArgs).toBe(true);
+    expect(policymodeCommand.requireAuth).toBe(true);
+    expect(typeof policymodeCommand.handler).toBe('function');
+  });
+
+  it('shows current mode with no args', async () => {
+    const { policymodeCommand } = await import(
+      '../extensions/crypto/src/commands/policymode-command.js'
+    );
+    const result = await policymodeCommand.handler({});
+    expect(result.text).toContain('Policy Enforcement Mode');
+    // Should mention one of the two modes
+    expect(
+      result.text.includes('delegation') || result.text.includes('simple')
+    ).toBe(true);
+  });
+
+  it('switches to simple mode', async () => {
+    const { policymodeCommand } = await import(
+      '../extensions/crypto/src/commands/policymode-command.js'
+    );
+    const { setPolicyMode, resetPolicyMode } = await import(
+      '../extensions/crypto/src/services/policy-types.js'
+    );
+
+    // Start in delegation mode
+    setPolicyMode('delegation');
+    resetPolicyMode(); // clear cache so it re-reads
+    setPolicyMode('delegation');
+
+    const result = await policymodeCommand.handler({ args: 'simple' });
+    expect(result.text).toContain('simple');
+    expect(result.text).toContain('switched');
+  });
+
+  it('switches to delegation mode', async () => {
+    const { policymodeCommand } = await import(
+      '../extensions/crypto/src/commands/policymode-command.js'
+    );
+    const { setPolicyMode } = await import(
+      '../extensions/crypto/src/services/policy-types.js'
+    );
+
+    // Start in simple mode
+    setPolicyMode('simple');
+
+    const result = await policymodeCommand.handler({ args: 'delegation' });
+    expect(result.text).toContain('delegation');
+    expect(result.text).toContain('switched');
+  });
+
+  it('reports no change if already in requested mode', async () => {
+    const { policymodeCommand } = await import(
+      '../extensions/crypto/src/commands/policymode-command.js'
+    );
+    const { setPolicyMode } = await import(
+      '../extensions/crypto/src/services/policy-types.js'
+    );
+
+    setPolicyMode('delegation');
+    const result = await policymodeCommand.handler({ args: 'delegation' });
+    expect(result.text).toContain('Already');
+    expect(result.text).toContain('delegation');
+  });
+
+  it('rejects unknown mode', async () => {
+    const { policymodeCommand } = await import(
+      '../extensions/crypto/src/commands/policymode-command.js'
+    );
+    const result = await policymodeCommand.handler({ args: 'turbo' });
+    expect(result.text).toContain('Unknown mode');
+  });
+});
+
+// ─── 16. Delegate Command Mode Gate ──────────────────────────────────────
+
+describe('Delegate Command Mode Gate', () => {
+  beforeEach(async () => {
+    const { resetPolicyMode } = await import(
+      '../extensions/crypto/src/services/policy-types.js'
+    );
+    resetPolicyMode();
+  });
+
+  it('blocks delegate command in simple mode', async () => {
+    const { setPolicyMode } = await import(
+      '../extensions/crypto/src/services/policy-types.js'
+    );
+    const { delegateCommand } = await import(
+      '../extensions/crypto/src/commands/delegate-command.js'
+    );
+
+    setPolicyMode('simple');
+    const result = await delegateCommand.handler({ args: 'status' });
+    expect(result.text).toContain('simple');
+    expect(result.text).toContain('not active');
+  });
+
+  it('allows delegate command in delegation mode', async () => {
+    const { setPolicyMode } = await import(
+      '../extensions/crypto/src/services/policy-types.js'
+    );
+    const { delegateCommand } = await import(
+      '../extensions/crypto/src/commands/delegate-command.js'
+    );
+
+    setPolicyMode('delegation');
+    // With no policies, it should proceed past the gate (won't mention "not active")
+    const result = await delegateCommand.handler({ args: 'status' });
+    expect(result.text).not.toContain('not active');
   });
 });

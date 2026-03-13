@@ -302,3 +302,65 @@ export function describeScope(scope: PolicyScope): string {
     }
   }
 }
+
+// ─── Policy Mode ────────────────────────────────────────────────────────
+//
+// Controls how policies are enforced:
+//   - 'delegation' (default): policies compile to EIP-7710 on-chain delegations.
+//     The agent redeems delegations for execution. Full on-chain enforcement.
+//   - 'simple': policies are natural-language only, enforced at app layer.
+//     No on-chain delegation, no signing, no smart account required.
+//     This is the V6 behavior — lightweight and works with any wallet.
+
+import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
+import { join } from 'node:path';
+
+export type PolicyMode = 'delegation' | 'simple';
+
+const POLICY_MODE_HOME = join(process.env.HOME ?? '/home/openclawnch', '.openclawnch');
+const POLICY_MODE_FILE = join(POLICY_MODE_HOME, 'policy-mode.json');
+
+/** Default mode — delegation is the default for new installs. */
+const DEFAULT_MODE: PolicyMode = 'delegation';
+
+/** In-memory cache. */
+let _cachedMode: PolicyMode | null = null;
+
+/** Get the current policy enforcement mode. */
+export function getPolicyMode(): PolicyMode {
+  if (_cachedMode) return _cachedMode;
+
+  try {
+    if (existsSync(POLICY_MODE_FILE)) {
+      const data = JSON.parse(readFileSync(POLICY_MODE_FILE, 'utf8'));
+      if (data.mode === 'delegation' || data.mode === 'simple') {
+        _cachedMode = data.mode;
+        return data.mode as PolicyMode;
+      }
+    }
+  } catch { /* fall through to default */ }
+
+  _cachedMode = DEFAULT_MODE;
+  return _cachedMode;
+}
+
+/** Set the policy enforcement mode. Persists to disk. */
+export function setPolicyMode(mode: PolicyMode): void {
+  _cachedMode = mode;
+  if (!existsSync(POLICY_MODE_HOME)) {
+    mkdirSync(POLICY_MODE_HOME, { recursive: true });
+  }
+  const tmpPath = POLICY_MODE_FILE + '.tmp.' + Date.now();
+  writeFileSync(tmpPath, JSON.stringify({ mode }, null, 2), { mode: 0o600 });
+  renameSync(tmpPath, POLICY_MODE_FILE);
+}
+
+/** Check if delegation features are enabled (mode === 'delegation'). */
+export function isDelegationMode(): boolean {
+  return getPolicyMode() === 'delegation';
+}
+
+/** Reset cached mode (for testing). */
+export function resetPolicyMode(): void {
+  _cachedMode = null;
+}

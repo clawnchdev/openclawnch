@@ -13,6 +13,7 @@
  */
 
 import { getPolicyStore } from '../services/policy-store.js';
+import { getPolicyMode, isDelegationMode } from '../services/policy-types.js';
 import { buildPolicyDisplay, renderPolicyDisplay } from '../services/policy-evaluator.js';
 import { formatDelegationStatus } from '../services/delegation-service.js';
 
@@ -70,12 +71,17 @@ function listAll(userId: string) {
     };
   }
 
-  const lines: string[] = [`**${policies.length} polic${policies.length === 1 ? 'y' : 'ies'}:**`, ''];
+  const mode = getPolicyMode();
+  const modeLabel = mode === 'delegation' ? 'delegation (on-chain)' : 'simple (app-layer)';
+  const lines: string[] = [
+    `**${policies.length} polic${policies.length === 1 ? 'y' : 'ies'}** — mode: ${modeLabel}`,
+    '',
+  ];
 
   for (const p of policies) {
     const display = buildPolicyDisplay(p, userId);
     lines.push(renderPolicyDisplay(display));
-    if (p.delegation) {
+    if (p.delegation && isDelegationMode()) {
       lines.push('');
       lines.push('**On-chain delegation:**');
       lines.push(formatDelegationStatus(p.delegation));

@@ -19,6 +19,7 @@
  */
 
 import { getPolicyStore } from '../services/policy-store.js';
+import { isDelegationMode } from '../services/policy-types.js';
 import {
   prepareDelegation,
   signDelegation,
@@ -41,6 +42,18 @@ export const delegateCommand = {
   requireAuth: true,
 
   handler: async (ctx?: any) => {
+    // Gate: delegation features require delegation mode
+    if (!isDelegationMode()) {
+      return {
+        text: [
+          'On-chain delegation is not active. You are in **simple** mode —',
+          'policies are enforced at the application layer only.',
+          '',
+          'To enable on-chain delegation: `/policymode delegation`',
+        ].join('\n'),
+      };
+    }
+
     const args = (ctx?.args ?? '').trim();
     const userId = ctx?.senderId ?? ctx?.from ?? 'owner';
 

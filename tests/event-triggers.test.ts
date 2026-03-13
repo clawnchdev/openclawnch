@@ -501,7 +501,7 @@ describe('Sprint 11.6 — Trigger Commands', () => {
     expect(result.text).toContain('No dead-letter entries');
   });
 
-  it('plugin registers 109 commands including trigger commands', { timeout: 15000 }, async () => {
+  it('plugin registers 110 commands including trigger commands', { timeout: 15000 }, async () => {
     const plugin = (await import('../extensions/crypto/index.js')).default;
     const commands: string[] = [];
     const mockApi = {
@@ -511,7 +511,7 @@ describe('Sprint 11.6 — Trigger Commands', () => {
       logger: { info: vi.fn(), warn: vi.fn() },
     };
     plugin.register(mockApi);
-    expect(commands).toHaveLength(109);
+    expect(commands).toHaveLength(110);
     expect(commands).toContain('triggers');
     expect(commands).toContain('triggers_price');
     expect(commands).toContain('triggers_cron');
