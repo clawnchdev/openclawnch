@@ -153,6 +153,9 @@ import { getInterruptService } from './src/services/interrupt-service.js';
 // API key management
 import { apiCommand } from './src/commands/api-command.js';
 
+// Typing indicator — Telegram "typing..." action during agent thinking
+import { getTypingIndicator } from './src/services/typing-indicator.js';
+
 // Extracted hook logic
 import { buildPromptContext } from './src/hooks/prompt-builder.js';
 import { handleAfterToolCall } from './src/hooks/after-tool-call.js';
@@ -1179,6 +1182,11 @@ const plugin = {
         // The chat ID to send replies to (same as user ID in DMs)
         const chatId = ctx?.conversationId ?? String(userId);
 
+        // ── Typing indicator: start immediately so user knows agent is alive ──
+        if (channel === 'telegram') {
+          try { getTypingIndicator().start(String(chatId)); } catch { /* non-critical */ }
+        }
+
         const message = event?.content ?? '';
 
         // Don't intercept slash commands — let OpenClaw's command system handle them.
@@ -1235,6 +1243,9 @@ const plugin = {
       try {
         const chatId = ctx?.conversationId ?? event?.to;
         if (!chatId) return;
+
+        // ── Typing indicator: stop — response is being sent ──────────
+        try { getTypingIndicator().stop(String(chatId)); } catch { /* non-critical */ }
 
         if (consumeConversationFlag(String(chatId))) {
           api.logger?.info?.(`[crypto] Suppressing LLM response for onboarding chat ${chatId}`);

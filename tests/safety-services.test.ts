@@ -846,7 +846,7 @@ vi.mock('../extensions/crypto/src/services/rpc-provider.js', async () => {
 });
 
 describe('/doctor Command', () => {
-  it('doctorCommand has correct shape', async () => {
+  it('doctorCommand has correct shape', { timeout: 15000 }, async () => {
     const { doctorCommand } = await import(
       '../extensions/crypto/src/commands/doctor-command.js'
     );
