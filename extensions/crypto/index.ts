@@ -159,6 +159,9 @@ import { usageNewCommand } from './src/commands/usage-command.js';
 // Update + restart from Telegram
 import { updateCommand, restartCommand, setUpdateCommandSender } from './src/commands/update-command.js';
 
+// Skill registry — for dynamic /skillname slash commands
+import { getSkillRegistry } from './src/services/skill-registry.js';
+
 // Typing indicator — Telegram "typing..." action during agent thinking
 import { getTypingIndicator } from './src/services/typing-indicator.js';
 
@@ -339,144 +342,180 @@ const plugin = {
     }
 
     // ─── Register Chat Commands ────────────────────────────────────
-    api.registerCommand(walletCommand);
-    api.registerCommand(policyCommand);
-    api.registerCommand(txCommand);
-    api.registerCommand(resetCommand);
-    api.registerCommand(resetConfirmCommand);
+    // Track names to avoid conflicts when registering skill slash commands.
+    const registeredCommands: string[] = [];
+    const regCmd = (cmd: Parameters<typeof api.registerCommand>[0]) => {
+      registeredCommands.push(cmd.name);
+      api.registerCommand(cmd);
+    };
+
+    regCmd(walletCommand);
+    regCmd(policyCommand);
+    regCmd(txCommand);
+    regCmd(resetCommand);
+    regCmd(resetConfirmCommand);
 
     // Onboarding: persona selection
-    api.registerCommand(professionalCommand);
-    api.registerCommand(degenCommand);
-    api.registerCommand(chillCommand);
-    api.registerCommand(technicalCommand);
-    api.registerCommand(mentorCommand);
+    regCmd(professionalCommand);
+    regCmd(degenCommand);
+    regCmd(chillCommand);
+    regCmd(technicalCommand);
+    regCmd(mentorCommand);
 
     // Onboarding: capability selection
-    api.registerCommand(capAllCommand);
+    regCmd(capAllCommand);
     for (const cmd of capCommands) {
-      api.registerCommand(cmd);
+      regCmd(cmd);
     }
 
     // Onboarding: skip, back, wallet creation
-    api.registerCommand(skipCommand);
-    api.registerCommand(backCommand);
-    api.registerCommand(createWalletCommand);
-    api.registerCommand(importWalletCommand);
+    regCmd(skipCommand);
+    regCmd(backCommand);
+    regCmd(createWalletCommand);
+    regCmd(importWalletCommand);
 
     // Wallet management: recover, export, backup
-    api.registerCommand(recoverCommand);
-    api.registerCommand(exportWalletCommand);
-    api.registerCommand(walletBackupCommand);
+    regCmd(recoverCommand);
+    regCmd(exportWalletCommand);
+    regCmd(walletBackupCommand);
 
     // Mode: safety and signing
-    api.registerCommand(safemodeCommand);
-    api.registerCommand(dangermodeCommand);
-    api.registerCommand(readonlyCommand);
-    api.registerCommand(walletsignCommand);
-    api.registerCommand(autosignCommand);
-    api.registerCommand(modeCommand);
+    regCmd(safemodeCommand);
+    regCmd(dangermodeCommand);
+    regCmd(readonlyCommand);
+    regCmd(walletsignCommand);
+    regCmd(autosignCommand);
+    regCmd(modeCommand);
 
     // Wallet connect (direct slash commands, not routed through LLM)
     // /connect shows menu, /connect_metamask etc. initiate pairing
     setConnectCommandApi(api);
-    api.registerCommand(connectCommand);
+    regCmd(connectCommand);
     for (const cmd of walletConnectCommands) {
-      api.registerCommand(cmd);
+      regCmd(cmd);
     }
 
     // Disconnect
-    api.registerCommand(disconnectCommand);
+    regCmd(disconnectCommand);
 
     // Model switching
-    api.registerCommand(modelCommand);
+    regCmd(modelCommand);
     for (const cmd of llmShortcutCommands) {
-      api.registerCommand(cmd);
+      regCmd(cmd);
     }
 
     // Molten status
-    api.registerCommand(moltenCommand);
+    regCmd(moltenCommand);
 
     // Bankr LLM Gateway + Agent API
-    api.registerCommand(creditsCommand);
-    api.registerCommand(usageCommand);
-    api.registerCommand(connectBankrCommand);
-    api.registerCommand(automationsCommand);
-    api.registerCommand(topupCommand);
-    api.registerCommand(autotopupCommand);
+    regCmd(creditsCommand);
+    regCmd(usageCommand);
+    regCmd(connectBankrCommand);
+    regCmd(automationsCommand);
+    regCmd(topupCommand);
+    regCmd(autotopupCommand);
 
     // Fly.io runtime control (provider switching, secrets, restart)
-    api.registerCommand(providerCommand);
-    api.registerCommand(providerAnthropicCommand);
-    api.registerCommand(providerBankrCommand);
-    api.registerCommand(providerOpenrouterCommand);
-    api.registerCommand(providerOpenaiCommand);
-    api.registerCommand(flykeysCommand);
-    api.registerCommand(flystatusCommand);
-    api.registerCommand(flyrestartCommand);
+    regCmd(providerCommand);
+    regCmd(providerAnthropicCommand);
+    regCmd(providerBankrCommand);
+    regCmd(providerOpenrouterCommand);
+    regCmd(providerOpenaiCommand);
+    regCmd(flykeysCommand);
+    regCmd(flystatusCommand);
+    regCmd(flyrestartCommand);
 
     // Setup / configuration status
-    api.registerCommand(setupCommand);
+    regCmd(setupCommand);
 
     // Plans management
-    api.registerCommand(plansCommand);
-    api.registerCommand(plansActiveCommand);
-    api.registerCommand(plansCancelCommand);
-    api.registerCommand(plansClearCommand);
-    api.registerCommand(approveCommand);
-    api.registerCommand(denyCommand);
+    regCmd(plansCommand);
+    regCmd(plansActiveCommand);
+    regCmd(plansCancelCommand);
+    regCmd(plansClearCommand);
+    regCmd(approveCommand);
+    regCmd(denyCommand);
 
     // Trigger management
-    api.registerCommand(triggersCommand);
-    api.registerCommand(triggersPriceCommand);
-    api.registerCommand(triggersCronCommand);
-    api.registerCommand(deadLetterCommand);
+    regCmd(triggersCommand);
+    regCmd(triggersPriceCommand);
+    regCmd(triggersCronCommand);
+    regCmd(deadLetterCommand);
 
     // Help, portfolio, balance, chain, diagnostics
-    api.registerCommand(helpCommand);
-    api.registerCommand(portfolioCommand);
-    api.registerCommand(balanceCommand);
-    api.registerCommand(chainCommand);
-    api.registerCommand(doctorCommand);
-    api.registerCommand(rpcCommand);
+    regCmd(helpCommand);
+    regCmd(portfolioCommand);
+    regCmd(balanceCommand);
+    regCmd(chainCommand);
+    regCmd(doctorCommand);
+    regCmd(rpcCommand);
 
     // Self-improvement mode
-    api.registerCommand(evolveCommand);
-    api.registerCommand(stableCommand);
-    api.registerCommand(evolutionCommand);
+    regCmd(evolveCommand);
+    regCmd(stableCommand);
+    regCmd(evolutionCommand);
 
     // Forum topics + thread bindings
-    api.registerCommand(topicsCommand);
-    api.registerCommand(topicsSetupCommand);
-    api.registerCommand(topicBindCommand);
-    api.registerCommand(topicUnbindCommand);
+    regCmd(topicsCommand);
+    regCmd(topicsSetupCommand);
+    regCmd(topicBindCommand);
+    regCmd(topicUnbindCommand);
 
     // V3: Fiat rails
-    api.registerCommand(fiatCommand);
+    regCmd(fiatCommand);
 
     // V4: User-defined tool management
-    api.registerCommand(toolsCommand);
+    regCmd(toolsCommand);
 
     // V5: Multi-agent + Webhooks
-    api.registerCommand(agentsCommand);
-    api.registerCommand(webhooksCommand);
+    regCmd(agentsCommand);
+    regCmd(webhooksCommand);
 
     // Skill registry
-    api.registerCommand(skillsCommand);
+    regCmd(skillsCommand);
 
     // Interrupt
-    api.registerCommand(interruptCommand);
-    api.registerCommand(interruptPlanCommand);
+    regCmd(interruptCommand);
+    regCmd(interruptPlanCommand);
 
     // API key management
-    api.registerCommand(apiCommand);
+    regCmd(apiCommand);
 
     // Usage reporting
-    api.registerCommand(usageNewCommand);
+    regCmd(usageNewCommand);
 
     // Update + restart from Telegram
-    api.registerCommand(updateCommand);
-    api.registerCommand(restartCommand);
+    regCmd(updateCommand);
+    regCmd(restartCommand);
+
+    // ─── Dynamic Skill Slash Commands ──────────────────────────────
+    // Register /skillname for every discovered skill so they appear
+    // in the slash-menu dropdown. Skips names that conflict with
+    // commands already registered above. Covers static + learned skills.
+    const registeredNames = new Set(registeredCommands.map(n => n.toLowerCase()));
+    const registry = getSkillRegistry();
+    for (const skill of registry.listAll()) {
+      if (registeredNames.has(skill.name)) continue;  // skip conflicts
+      api.registerCommand({
+        name: skill.name,
+        description: `[skill] ${skill.description.slice(0, 70)}`,
+        acceptsArgs: true,
+        requireAuth: false,
+        handler: async (ctx?: any) => {
+          const reg = getSkillRegistry();
+          const content = reg.readContent(skill.name);
+          if (!content) return { text: `Skill "${skill.name}" not found.` };
+          const entry = reg.get(skill.name);
+          const missing = entry ? reg.missingEnv(entry) : [];
+          const status = missing.length ? `\n**Env not set:** ${missing.join(', ')}\n` : '';
+          const MAX = 4000;
+          const display = content.length > MAX
+            ? content.slice(0, MAX) + `\n\n[...truncated. Use \`/skills ${skill.name}\` for full content]`
+            : content;
+          return { text: `**${skill.name}**${status}\n${display}` };
+        },
+      });
+    }
 
     // ─── Gateway Startup Hook ──────────────────────────────────────
     // Only init wallet at boot for private key mode (headless).

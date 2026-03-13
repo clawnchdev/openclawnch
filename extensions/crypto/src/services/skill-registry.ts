@@ -10,8 +10,19 @@
  * Learned skills: ~/.openclawnch/learned-skills/<name>/SKILL.md
  */
 
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
-import { join, basename } from 'node:path';
+import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+// ─── ESM path resolution ────────────────────────────────────────────────
+// __dirname is undefined in ESM. Resolve from import.meta.url instead.
+// Compiled: extensions/crypto/dist/src/services/ → 3 levels up → extensions/crypto/
+// Source:   extensions/crypto/src/services/       → 2 levels up → extensions/crypto/
+
+const __selfDir = dirname(fileURLToPath(import.meta.url));
+const EXTENSION_ROOT = existsSync(join(__selfDir, '..', '..', '..', 'skills'))
+  ? join(__selfDir, '..', '..', '..')       // from dist/src/services
+  : join(__selfDir, '..', '..');            // from src/services (dev/test)
 
 // ─── Types ──────────────────────────────────────────────────────────────
 
@@ -26,6 +37,10 @@ export interface SkillEntry {
   path: string;
   /** Keywords for matching (derived from name + description + frontmatter). */
   keywords: string[];
+  /** Environment variables required by this skill (from frontmatter metadata). */
+  requiresEnv: string[];
+  /** Whether the user has disabled this skill. */
+  disabled: boolean;
   /** Full file content (lazy-loaded, cached). */
   _content?: string;
 }
@@ -36,9 +51,38 @@ export interface SkillMatch {
   score: number;
 }
 
+// ─── Disabled Skills Persistence ────────────────────────────────────────
+
+const OPENCLAWNCH_DIR = join(process.env.HOME ?? '', '.openclawnch');
+const DISABLED_FILE = join(OPENCLAWNCH_DIR, 'disabled-skills.json');
+
+function loadDisabledSet(): Set<string> {
+  try {
+    if (existsSync(DISABLED_FILE)) {
+      const data = JSON.parse(readFileSync(DISABLED_FILE, 'utf8'));
+      if (Array.isArray(data)) return new Set(data as string[]);
+    }
+  } catch { /* corrupt file — start fresh */ }
+  return new Set();
+}
+
+function saveDisabledSet(set: Set<string>): void {
+  try {
+    if (!existsSync(OPENCLAWNCH_DIR)) mkdirSync(OPENCLAWNCH_DIR, { recursive: true });
+    writeFileSync(DISABLED_FILE, JSON.stringify([...set], null, 2), 'utf8');
+  } catch { /* best-effort */ }
+}
+
 // ─── Frontmatter Parsing ────────────────────────────────────────────────
 
-function parseFrontmatter(content: string): { name?: string; description?: string; rest: string } {
+interface FrontmatterResult {
+  name?: string;
+  description?: string;
+  requiresEnv: string[];
+  rest: string;
+}
+
+function parseFrontmatter(content: string): FrontmatterResult {
   if (!content.startsWith('---')) {
     // No frontmatter — extract from markdown heading + first paragraph
     const lines = content.split('\n');
@@ -53,17 +97,18 @@ function parseFrontmatter(content: string): { name?: string; description?: strin
         break;
       }
     }
-    return { name, description, rest: content };
+    return { name, description, requiresEnv: [], rest: content };
   }
 
   const endIdx = content.indexOf('---', 3);
-  if (endIdx === -1) return { rest: content };
+  if (endIdx === -1) return { requiresEnv: [], rest: content };
 
   const yaml = content.slice(3, endIdx).trim();
   const rest = content.slice(endIdx + 3).trim();
 
   let name: string | undefined;
   let description: string | undefined;
+  let requiresEnv: string[] = [];
 
   for (const line of yaml.split('\n')) {
     const nameMatch = line.match(/^name:\s*["']?(.+?)["']?\s*$/);
@@ -71,9 +116,21 @@ function parseFrontmatter(content: string): { name?: string; description?: strin
 
     const descMatch = line.match(/^description:\s*["']?(.+?)["']?\s*$/);
     if (descMatch) description = descMatch[1];
+
+    // Parse metadata JSON: metadata: { "openclaw": { "requires": { "env": [...] } } }
+    const metaMatch = line.match(/^metadata:\s*(\{.+\})\s*$/);
+    if (metaMatch) {
+      try {
+        const meta = JSON.parse(metaMatch[1]!);
+        const envArr = meta?.openclaw?.requires?.env;
+        if (Array.isArray(envArr)) {
+          requiresEnv = envArr.filter((v: unknown): v is string => typeof v === 'string');
+        }
+      } catch { /* malformed JSON — skip */ }
+    }
   }
 
-  return { name, description, rest };
+  return { name, description, requiresEnv, rest };
 }
 
 /** Extract keywords from name + description for matching. */
@@ -91,7 +148,11 @@ function extractKeywords(name: string, description: string): string[] {
 
 // ─── Directory Scanning ─────────────────────────────────────────────────
 
-function scanSkillDir(dir: string, source: 'static' | 'learned'): SkillEntry[] {
+function scanSkillDir(
+  dir: string,
+  source: 'static' | 'learned',
+  disabledSet: Set<string>,
+): SkillEntry[] {
   const entries: SkillEntry[] = [];
   if (!existsSync(dir)) return entries;
 
@@ -117,6 +178,8 @@ function scanSkillDir(dir: string, source: 'static' | 'learned'): SkillEntry[] {
           source,
           path: skillPath,
           keywords: extractKeywords(name, description),
+          requiresEnv: fm.requiresEnv,
+          disabled: disabledSet.has(name),
         });
       } catch { /* skip unreadable */ }
     }
@@ -129,25 +192,28 @@ function scanSkillDir(dir: string, source: 'static' | 'learned'): SkillEntry[] {
 
 export class SkillRegistry {
   private skills = new Map<string, SkillEntry>();
+  private disabledSet: Set<string>;
   private staticDir: string;
   private learnedDir: string;
   private lastScan = 0;
   private scanIntervalMs = 60_000; // re-scan every 60s
 
   constructor(opts?: { staticDir?: string; learnedDir?: string }) {
-    this.staticDir = opts?.staticDir ?? join(__dirname, '..', '..', 'skills');
+    this.staticDir = opts?.staticDir ?? join(EXTENSION_ROOT, 'skills');
     this.learnedDir = opts?.learnedDir ?? join(
       process.env.HOME ?? '', '.openclawnch', 'learned-skills'
     );
+    this.disabledSet = loadDisabledSet();
     this.scan();
   }
 
   /** Re-scan both directories for skills. */
   scan(): void {
     this.skills.clear();
+    this.disabledSet = loadDisabledSet();
 
-    const staticSkills = scanSkillDir(this.staticDir, 'static');
-    const learnedSkills = scanSkillDir(this.learnedDir, 'learned');
+    const staticSkills = scanSkillDir(this.staticDir, 'static', this.disabledSet);
+    const learnedSkills = scanSkillDir(this.learnedDir, 'learned', this.disabledSet);
 
     // Learned skills override static if name conflicts
     for (const s of staticSkills) this.skills.set(s.name, s);
@@ -169,11 +235,18 @@ export class SkillRegistry {
   }
 
   /** List all skills sorted by name. */
-  list(opts?: { source?: 'static' | 'learned' }): SkillEntry[] {
+  list(opts?: { source?: 'static' | 'learned'; includeDisabled?: boolean }): SkillEntry[] {
     this.ensureFresh();
     let all = Array.from(this.skills.values());
     if (opts?.source) all = all.filter(s => s.source === opts.source);
+    if (!opts?.includeDisabled) all = all.filter(s => !s.disabled);
     return all.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  /** List all skills including disabled (for /skills command). */
+  listAll(): SkillEntry[] {
+    this.ensureFresh();
+    return Array.from(this.skills.values()).sort((a, b) => a.name.localeCompare(b.name));
   }
 
   /** Read the full SKILL.md content for a skill. */
@@ -195,6 +268,7 @@ export class SkillRegistry {
   /**
    * Match user message against skill keywords.
    * Returns skills sorted by match score (descending), filtered to score >= minScore.
+   * Only matches enabled skills.
    */
   match(message: string, opts?: { minScore?: number; maxResults?: number }): SkillMatch[] {
     this.ensureFresh();
@@ -208,6 +282,9 @@ export class SkillRegistry {
     const matches: SkillMatch[] = [];
 
     for (const skill of this.skills.values()) {
+      // Skip disabled skills in matching
+      if (skill.disabled) continue;
+
       let score = 0;
 
       // Exact name match in message (strongest signal)
@@ -237,6 +314,7 @@ export class SkillRegistry {
 
   /** Build a compact index for prompt injection (name + description, one line each). */
   buildIndex(): string {
+    // Only include enabled skills in the prompt index
     const skills = this.list();
     if (skills.length === 0) return '';
 
@@ -252,8 +330,41 @@ export class SkillRegistry {
     return lines.join('\n');
   }
 
-  /** Get total count. */
+  // ─── Enable / Disable ───────────────────────────────────────────────
+
+  /** Disable a skill (won't appear in prompts or matching). */
+  disable(name: string): boolean {
+    const skill = this.skills.get(name);
+    if (!skill) return false;
+    skill.disabled = true;
+    this.disabledSet.add(name);
+    saveDisabledSet(this.disabledSet);
+    return true;
+  }
+
+  /** Re-enable a disabled skill. */
+  enable(name: string): boolean {
+    const skill = this.skills.get(name);
+    if (!skill) return false;
+    skill.disabled = false;
+    this.disabledSet.delete(name);
+    saveDisabledSet(this.disabledSet);
+    return true;
+  }
+
+  /** Check which required env vars are missing for a skill. */
+  missingEnv(skill: SkillEntry): string[] {
+    return skill.requiresEnv.filter(key => !process.env[key]);
+  }
+
+  /** Get total count (enabled only by default). */
   get size(): number {
+    this.ensureFresh();
+    return this.list().length;
+  }
+
+  /** Get total count including disabled. */
+  get totalSize(): number {
     this.ensureFresh();
     return this.skills.size;
   }

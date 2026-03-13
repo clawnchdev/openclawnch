@@ -1138,7 +1138,7 @@ describe('ToolsCommand', () => {
 // ─── Plugin Registration Count Tests ────────────────────────────────────
 
 describe('V4 Plugin Registration', () => {
-  it('plugin registers 106 commands including tools, skills, interrupt, and api', { timeout: 15000 }, async () => {
+  it('plugin registers 147 commands including tools, skills, interrupt, and api', { timeout: 15000 }, async () => {
     const plugin = (await import('../extensions/crypto/index.js')).default;
     const commands: string[] = [];
     const mockApi = {
@@ -1148,7 +1148,7 @@ describe('V4 Plugin Registration', () => {
       logger: { info: () => {}, warn: () => {} },
     };
     plugin.register(mockApi);
-    expect(commands).toHaveLength(106);
+    expect(commands).toHaveLength(147);
     expect(commands).toContain('tools');
   });
 

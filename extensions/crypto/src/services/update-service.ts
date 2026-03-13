@@ -25,8 +25,16 @@ const execFile = promisify(execFileCb);
 
 // ─── Config ──────────────────────────────────────────────────────────────
 
-const REPO_URL = 'https://github.com/clawnchbot/openclawnch.git';
+const REPO_OWNER = 'clawnchbot';
+const REPO_NAME = 'openclawnch';
 const BRANCH = 'master';
+
+/** Build the clone URL, injecting GITHUB_TOKEN for private repos. */
+function getRepoUrl(): string {
+  const token = process.env.GITHUB_TOKEN;
+  if (token) return `https://${token}@github.com/${REPO_OWNER}/${REPO_NAME}.git`;
+  return `https://github.com/${REPO_OWNER}/${REPO_NAME}.git`;
+}
 const WORK_DIR = '/tmp/openclawnch-update';
 const EXTENSION_DEST = '/usr/local/lib/node_modules/@clawnch/openclawnch';
 
@@ -96,7 +104,7 @@ export async function checkForUpdates(): Promise<UpdateCheck> {
 
   try {
     // Get remote HEAD sha
-    const lsRemote = await run('git', ['ls-remote', REPO_URL, `refs/heads/${BRANCH}`]);
+    const lsRemote = await run('git', ['ls-remote', getRepoUrl(), `refs/heads/${BRANCH}`]);
     const remoteRef = lsRemote.split(/\s/)[0] ?? null;
 
     if (!remoteRef) {
@@ -109,7 +117,7 @@ export async function checkForUpdates(): Promise<UpdateCheck> {
       let newCommits: string[] = [];
       try {
         const log = await run('git', [
-          'ls-remote', '--refs', REPO_URL,
+          'ls-remote', '--refs', getRepoUrl(),
         ], { timeout: 10_000 });
         // Can't get commit messages without cloning, so just report "updates available"
         newCommits = ['(clone required to see details)'];
@@ -148,7 +156,7 @@ export async function performUpdate(progress: ProgressFn): Promise<UpdateResult>
     await progress('1/6 Cloning latest code...');
     if (existsSync(WORK_DIR)) rmSync(WORK_DIR, { recursive: true, force: true });
     mkdirSync(WORK_DIR, { recursive: true });
-    await run('git', ['clone', '--depth', '1', '--branch', BRANCH, REPO_URL, WORK_DIR]);
+    await run('git', ['clone', '--depth', '1', '--branch', BRANCH, getRepoUrl(), WORK_DIR]);
 
     // Read the new commit SHA
     const newCommit = await run('git', ['rev-parse', '--short', 'HEAD'], { cwd: WORK_DIR });

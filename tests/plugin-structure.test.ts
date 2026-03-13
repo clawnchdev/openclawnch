@@ -62,8 +62,8 @@ describe('crypto plugin structure', () => {
 
     plugin.register(mockApi);
 
-    // 4 core + 1 reset_confirm + 5 persona + 10 cap + 1 skip + 1 back + 5 mode + 9 connect (1 base + 8 wallets) + 1 disconnect + 1 model + 11 llm shortcuts + 1 reset + 1 molten + 2 bankr LLM (credits, usage) + 2 bankr agent (connect_bankr, automations) + 2 bankr credits (topup, autotopup) + 8 fly control (provider + 4 provider_X + flykeys, flystatus, flyrestart) + 1 setup + 4 plans + 2 confirm (approve, deny) + 4 triggers (triggers, triggers_price, triggers_cron, dead_letter) + 4 help/portfolio/balance/chain + 1 readonly + 1 doctor + 1 rpc + 3 evolution (evolve, stable, evolution) + 5 wallet mgmt (create_wallet, import_wallet, recover, export_wallet, wallet_backup) + 4 forum (topics, topics_setup, topic_bind, topic_unbind) + 1 fiat + 1 tools + 1 agents + 1 webhooks + 1 skills + 2 interrupt (interrupt, interrupt_plan) + 1 api + 1 usage + 1 update + 1 restart = 106
-    expect(mockApi.registerCommand).toHaveBeenCalledTimes(106);
+    // 106 explicit commands + 41 dynamic skill slash commands (42 skills minus 1 "molten" conflict) = 147
+    expect(mockApi.registerCommand).toHaveBeenCalledTimes(147);
     expect(commands).toContain('wallet');
     expect(commands).toContain('policy');
     expect(commands).toContain('tx');

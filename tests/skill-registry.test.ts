@@ -63,6 +63,19 @@ description: Find and execute cross-chain bridge arbitrage opportunities
 Monitor price differences across chains and execute profitable bridges.
 `);
 
+  // Skill with requires.env metadata
+  mkdirSync(join(STATIC_DIR, 'clawnx'), { recursive: true });
+  writeFileSync(join(STATIC_DIR, 'clawnx', 'SKILL.md'), `---
+name: clawnx
+description: X/Twitter integration for posting tweets and monitoring feeds
+metadata: { "openclaw": { "emoji": "𝕏", "requires": { "env": ["X_API_KEY", "X_API_SECRET"] } } }
+---
+
+# ClawnX
+
+Post tweets and manage your X account.
+`);
+
   // Create a learned skill
   mkdirSync(join(LEARNED_DIR, 'custom-dca'), { recursive: true });
   writeFileSync(join(LEARNED_DIR, 'custom-dca', 'SKILL.md'), `---
@@ -104,7 +117,7 @@ describe('SkillRegistry — Scanning', () => {
     resetSkillRegistry();
 
     const registry = new SkillRegistry({ staticDir: STATIC_DIR, learnedDir: LEARNED_DIR });
-    expect(registry.size).toBe(4); // 3 static + 1 learned
+    expect(registry.size).toBe(5); // 4 static + 1 learned
   });
 
   it('lists skills sorted by name', async () => {
@@ -115,11 +128,12 @@ describe('SkillRegistry — Scanning', () => {
 
     const registry = new SkillRegistry({ staticDir: STATIC_DIR, learnedDir: LEARNED_DIR });
     const all = registry.list();
-    expect(all.length).toBe(4);
+    expect(all.length).toBe(5);
     expect(all[0]!.name).toBe('botcoin-mining');
     expect(all[1]!.name).toBe('bridge-arbitrage');
-    expect(all[2]!.name).toBe('custom-dca');
-    expect(all[3]!.name).toBe('uniswap-v3');
+    expect(all[2]!.name).toBe('clawnx');
+    expect(all[3]!.name).toBe('custom-dca');
+    expect(all[4]!.name).toBe('uniswap-v3');
   });
 
   it('filters by source', async () => {
@@ -129,7 +143,7 @@ describe('SkillRegistry — Scanning', () => {
     resetSkillRegistry();
 
     const registry = new SkillRegistry({ staticDir: STATIC_DIR, learnedDir: LEARNED_DIR });
-    expect(registry.list({ source: 'static' }).length).toBe(3);
+    expect(registry.list({ source: 'static' }).length).toBe(4);
     expect(registry.list({ source: 'learned' }).length).toBe(1);
   });
 
@@ -311,7 +325,7 @@ describe('SkillRegistry — Index Building', () => {
 
     const registry = new SkillRegistry({ staticDir: STATIC_DIR, learnedDir: LEARNED_DIR });
     const index = registry.buildIndex();
-    expect(index).toContain('Crypto Skills (4 available)');
+    expect(index).toContain('Crypto Skills (5 available)');
     expect(index).toContain('botcoin-mining');
     expect(index).toContain('custom-dca');
     expect(index).toContain('(learned)');
@@ -441,11 +455,267 @@ describe('SkillRegistry — Real Static Skills', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 7. Plugin Registration Count
+// 7. SkillRegistry — requiresEnv Parsing
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('SkillRegistry — requiresEnv', () => {
+  beforeEach(() => {
+    cleanup();
+    setupTestSkills();
+  });
+  afterEach(cleanup);
+
+  it('parses requires.env from frontmatter metadata JSON', async () => {
+    const { SkillRegistry, resetSkillRegistry } = await import(
+      '../extensions/crypto/src/services/skill-registry.js'
+    );
+    resetSkillRegistry();
+
+    const registry = new SkillRegistry({ staticDir: STATIC_DIR, learnedDir: LEARNED_DIR });
+    const skill = registry.get('clawnx');
+    expect(skill).not.toBeNull();
+    expect(skill!.requiresEnv).toEqual(['X_API_KEY', 'X_API_SECRET']);
+  });
+
+  it('returns empty requiresEnv for skills without metadata', async () => {
+    const { SkillRegistry, resetSkillRegistry } = await import(
+      '../extensions/crypto/src/services/skill-registry.js'
+    );
+    resetSkillRegistry();
+
+    const registry = new SkillRegistry({ staticDir: STATIC_DIR, learnedDir: LEARNED_DIR });
+    const skill = registry.get('botcoin-mining');
+    expect(skill!.requiresEnv).toEqual([]);
+  });
+
+  it('missingEnv returns only unset vars', async () => {
+    const { SkillRegistry, resetSkillRegistry } = await import(
+      '../extensions/crypto/src/services/skill-registry.js'
+    );
+    resetSkillRegistry();
+
+    const registry = new SkillRegistry({ staticDir: STATIC_DIR, learnedDir: LEARNED_DIR });
+    const skill = registry.get('clawnx')!;
+
+    // Neither is set (test environment)
+    const missing = registry.missingEnv(skill);
+    expect(missing).toContain('X_API_KEY');
+    expect(missing).toContain('X_API_SECRET');
+  });
+
+  it('missingEnv returns empty when all vars set', async () => {
+    const { SkillRegistry, resetSkillRegistry } = await import(
+      '../extensions/crypto/src/services/skill-registry.js'
+    );
+    resetSkillRegistry();
+
+    // Temporarily set env vars
+    const prev1 = process.env.X_API_KEY;
+    const prev2 = process.env.X_API_SECRET;
+    process.env.X_API_KEY = 'test';
+    process.env.X_API_SECRET = 'test';
+
+    try {
+      const registry = new SkillRegistry({ staticDir: STATIC_DIR, learnedDir: LEARNED_DIR });
+      const skill = registry.get('clawnx')!;
+      expect(registry.missingEnv(skill)).toEqual([]);
+    } finally {
+      if (prev1 === undefined) delete process.env.X_API_KEY;
+      else process.env.X_API_KEY = prev1;
+      if (prev2 === undefined) delete process.env.X_API_SECRET;
+      else process.env.X_API_SECRET = prev2;
+    }
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 8. SkillRegistry — Enable / Disable
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('SkillRegistry — Enable / Disable', () => {
+  const DISABLED_FILE = join(process.env.HOME ?? '/tmp', '.openclawnch', 'disabled-skills.json');
+  let prevDisabled: string | undefined;
+
+  beforeEach(() => {
+    cleanup();
+    setupTestSkills();
+    // Save existing disabled file if any
+    try {
+      if (existsSync(DISABLED_FILE)) {
+        prevDisabled = require('node:fs').readFileSync(DISABLED_FILE, 'utf8');
+      }
+    } catch { /* no file */ }
+  });
+
+  afterEach(() => {
+    cleanup();
+    // Restore previous disabled file
+    try {
+      if (prevDisabled !== undefined) {
+        writeFileSync(DISABLED_FILE, prevDisabled, 'utf8');
+      } else if (existsSync(DISABLED_FILE)) {
+        rmSync(DISABLED_FILE);
+      }
+    } catch { /* best effort */ }
+  });
+
+  it('disable() marks skill disabled and excludes from list()', async () => {
+    const { SkillRegistry, resetSkillRegistry } = await import(
+      '../extensions/crypto/src/services/skill-registry.js'
+    );
+    resetSkillRegistry();
+
+    const registry = new SkillRegistry({ staticDir: STATIC_DIR, learnedDir: LEARNED_DIR });
+    expect(registry.size).toBe(5);
+
+    registry.disable('clawnx');
+    expect(registry.size).toBe(4);
+    expect(registry.list().some((s: any) => s.name === 'clawnx')).toBe(false);
+  });
+
+  it('disabled skills still in listAll()', async () => {
+    const { SkillRegistry, resetSkillRegistry } = await import(
+      '../extensions/crypto/src/services/skill-registry.js'
+    );
+    resetSkillRegistry();
+
+    const registry = new SkillRegistry({ staticDir: STATIC_DIR, learnedDir: LEARNED_DIR });
+    registry.disable('clawnx');
+    expect(registry.listAll().some((s: any) => s.name === 'clawnx')).toBe(true);
+    expect(registry.totalSize).toBe(5);
+  });
+
+  it('disabled skills excluded from match()', async () => {
+    const { SkillRegistry, resetSkillRegistry } = await import(
+      '../extensions/crypto/src/services/skill-registry.js'
+    );
+    resetSkillRegistry();
+
+    const registry = new SkillRegistry({ staticDir: STATIC_DIR, learnedDir: LEARNED_DIR });
+    registry.disable('clawnx');
+    const matches = registry.match('tweet on X clawnx', { minScore: 1 });
+    expect(matches.some((m: any) => m.skill.name === 'clawnx')).toBe(false);
+  });
+
+  it('disabled skills excluded from buildIndex()', async () => {
+    const { SkillRegistry, resetSkillRegistry } = await import(
+      '../extensions/crypto/src/services/skill-registry.js'
+    );
+    resetSkillRegistry();
+
+    const registry = new SkillRegistry({ staticDir: STATIC_DIR, learnedDir: LEARNED_DIR });
+    registry.disable('clawnx');
+    const index = registry.buildIndex();
+    expect(index).not.toContain('clawnx');
+    expect(index).toContain('Crypto Skills (4 available)');
+  });
+
+  it('enable() re-enables a disabled skill', async () => {
+    const { SkillRegistry, resetSkillRegistry } = await import(
+      '../extensions/crypto/src/services/skill-registry.js'
+    );
+    resetSkillRegistry();
+
+    const registry = new SkillRegistry({ staticDir: STATIC_DIR, learnedDir: LEARNED_DIR });
+    registry.disable('clawnx');
+    expect(registry.size).toBe(4);
+
+    registry.enable('clawnx');
+    expect(registry.size).toBe(5);
+    expect(registry.list().some((s: any) => s.name === 'clawnx')).toBe(true);
+  });
+
+  it('disable/enable returns false for nonexistent skill', async () => {
+    const { SkillRegistry, resetSkillRegistry } = await import(
+      '../extensions/crypto/src/services/skill-registry.js'
+    );
+    resetSkillRegistry();
+
+    const registry = new SkillRegistry({ staticDir: STATIC_DIR, learnedDir: LEARNED_DIR });
+    expect(registry.disable('nonexistent')).toBe(false);
+    expect(registry.enable('nonexistent')).toBe(false);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 9. /skills Command — Enable / Disable Subcommands
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('/skills Command — Enable / Disable', () => {
+  const DISABLED_FILE = join(process.env.HOME ?? '/tmp', '.openclawnch', 'disabled-skills.json');
+  let prevDisabled: string | undefined;
+
+  beforeEach(() => {
+    cleanup();
+    setupTestSkills();
+    try {
+      if (existsSync(DISABLED_FILE)) {
+        prevDisabled = require('node:fs').readFileSync(DISABLED_FILE, 'utf8');
+      }
+    } catch { /* no file */ }
+  });
+
+  afterEach(() => {
+    cleanup();
+    try {
+      if (prevDisabled !== undefined) {
+        writeFileSync(DISABLED_FILE, prevDisabled, 'utf8');
+      } else if (existsSync(DISABLED_FILE)) {
+        rmSync(DISABLED_FILE);
+      }
+    } catch { /* best effort */ }
+  });
+
+  it('disable subcommand disables a skill', async () => {
+    const regModule = await import('../extensions/crypto/src/services/skill-registry.js');
+    regModule.resetSkillRegistry();
+    const registry = regModule.getSkillRegistry({ staticDir: STATIC_DIR, learnedDir: LEARNED_DIR });
+
+    const { skillsCommand } = await import('../extensions/crypto/src/commands/skills-command.js');
+    const result = await skillsCommand.handler({ args: 'disable clawnx' });
+    expect(result.text).toContain('Disabled');
+    expect(result.text).toContain('clawnx');
+
+    // Verify it's actually disabled
+    expect(registry.get('clawnx')!.disabled).toBe(true);
+  });
+
+  it('enable subcommand re-enables a skill', async () => {
+    const regModule = await import('../extensions/crypto/src/services/skill-registry.js');
+    regModule.resetSkillRegistry();
+    const registry = regModule.getSkillRegistry({ staticDir: STATIC_DIR, learnedDir: LEARNED_DIR });
+    registry.disable('clawnx');
+
+    const { skillsCommand } = await import('../extensions/crypto/src/commands/skills-command.js');
+    const result = await skillsCommand.handler({ args: 'enable clawnx' });
+    expect(result.text).toContain('Enabled');
+    expect(registry.get('clawnx')!.disabled).toBe(false);
+  });
+
+  it('list shows [disabled] and [env not set] tags', async () => {
+    const regModule = await import('../extensions/crypto/src/services/skill-registry.js');
+    regModule.resetSkillRegistry();
+    const registry = regModule.getSkillRegistry({ staticDir: STATIC_DIR, learnedDir: LEARNED_DIR });
+    registry.disable('bridge-arbitrage');
+
+    const { skillsCommand } = await import('../extensions/crypto/src/commands/skills-command.js');
+    const result = await skillsCommand.handler({});
+    expect(result.text).toContain('[disabled]');
+    expect(result.text).toContain('[env not set:');
+    expect(result.text).toContain('X_API_KEY');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 10. Plugin Registration Count
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('Plugin Registration — Skills', () => {
-  it('registers 106 commands including /skills, /interrupt, and /api', { timeout: 15000 }, async () => {
+  it('registers 147 commands (106 explicit + 41 skill slash commands)', { timeout: 15000 }, async () => {
+    // Reset singleton so it scans real skills directory (not test dirs from earlier tests)
+    const regModule = await import('../extensions/crypto/src/services/skill-registry.js');
+    regModule.resetSkillRegistry();
+
     const plugin = (await import('../extensions/crypto/index.js')).default;
     const commands: string[] = [];
     const mockApi = {
@@ -457,10 +727,14 @@ describe('Plugin Registration — Skills', () => {
 
     plugin.register(mockApi as any);
 
-    expect(commands).toHaveLength(106);
+    expect(commands).toHaveLength(147);
     expect(commands).toContain('skills');
     expect(commands).toContain('interrupt');
     expect(commands).toContain('interrupt_plan');
     expect(commands).toContain('api');
+    // Verify skill slash commands are present
+    expect(commands).toContain('botcoin-mining');
+    expect(commands).toContain('defi-trading');
+    expect(commands).toContain('clawnx');
   });
 });
