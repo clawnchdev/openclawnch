@@ -40,7 +40,7 @@
     "telegram": {
       "enabled": true,
       "linkPreview": false,
-      "streamMode": "partial"
+      "streaming": "partial"
     },
     "discord": {
       "enabled": false

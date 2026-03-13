@@ -35,6 +35,15 @@ RUN --mount=type=cache,target=/root/.npm \
     mkdir -p /usr/local/lib/node_modules/@clawnch/openclawnch && \
     tar xzf /tmp/openclawnch.tgz -C /usr/local/lib/node_modules/@clawnch/openclawnch --strip-components=1 && \
     rm /tmp/openclawnch.tgz
+# Most runtime deps are bundled into the output via tsdown noExternal
+# (see tsdown.config.ts).  Only @clawnch/clawncher-sdk stays external
+# because its transitive dep @uniswap/v4-sdk has a broken ethers import
+# that rolldown can't resolve.
+RUN --mount=type=cache,target=/root/.npm \
+    mkdir -p /usr/local/lib/node_modules/@clawnch/openclawnch/node_modules && \
+    npm install --prefix /tmp/_deps @clawnch/clawncher-sdk && \
+    cp -r /tmp/_deps/node_modules/* /usr/local/lib/node_modules/@clawnch/openclawnch/node_modules/ && \
+    rm -rf /tmp/_deps
 
 # ── Layer 4: Dirs, config, entrypoint (tiny, always rebuilt) ─────────
 # Create non-root user for security
