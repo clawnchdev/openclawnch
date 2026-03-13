@@ -71,6 +71,13 @@ function ensureCryptoExtension() {
     config.skills.load.extraDirs.push(skillsDir);
   }
 
+  // Also register learned skills so the framework discovers user-created skills
+  const learnedSkillsDir = join(OPENCLAWNCH_DIR, 'learned-skills');
+  ensureDir(learnedSkillsDir);
+  if (!config.skills.load.extraDirs.includes(learnedSkillsDir)) {
+    config.skills.load.extraDirs.push(learnedSkillsDir);
+  }
+
   writeFileSync(OPENCLAW_CONFIG, JSON.stringify(config, null, 2), 'utf8');
 }
 

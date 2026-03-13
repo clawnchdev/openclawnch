@@ -711,11 +711,7 @@ describe('/skills Command — Enable / Disable', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('Plugin Registration — Skills', () => {
-  it('registers 147 commands (106 explicit + 41 skill slash commands)', { timeout: 15000 }, async () => {
-    // Reset singleton so it scans real skills directory (not test dirs from earlier tests)
-    const regModule = await import('../extensions/crypto/src/services/skill-registry.js');
-    regModule.resetSkillRegistry();
-
+  it('registers 106 commands including /skills, /interrupt, and /api', { timeout: 15000 }, async () => {
     const plugin = (await import('../extensions/crypto/index.js')).default;
     const commands: string[] = [];
     const mockApi = {
@@ -727,14 +723,10 @@ describe('Plugin Registration — Skills', () => {
 
     plugin.register(mockApi as any);
 
-    expect(commands).toHaveLength(147);
+    expect(commands).toHaveLength(106);
     expect(commands).toContain('skills');
     expect(commands).toContain('interrupt');
     expect(commands).toContain('interrupt_plan');
     expect(commands).toContain('api');
-    // Verify skill slash commands are present
-    expect(commands).toContain('botcoin-mining');
-    expect(commands).toContain('defi-trading');
-    expect(commands).toContain('clawnx');
   });
 });

@@ -62,8 +62,8 @@ describe('crypto plugin structure', () => {
 
     plugin.register(mockApi);
 
-    // 106 explicit commands + 41 dynamic skill slash commands (42 skills minus 1 "molten" conflict) = 147
-    expect(mockApi.registerCommand).toHaveBeenCalledTimes(147);
+    // 106 explicit commands (skill invocation is handled by framework's /skill)
+    expect(mockApi.registerCommand).toHaveBeenCalledTimes(106);
     expect(commands).toContain('wallet');
     expect(commands).toContain('policy');
     expect(commands).toContain('tx');
