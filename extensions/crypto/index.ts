@@ -159,6 +159,9 @@ import { usageNewCommand } from './src/commands/usage-command.js';
 // Update + restart from Telegram
 import { updateCommand, restartCommand, setUpdateCommandSender } from './src/commands/update-command.js';
 
+// Pull files from the running bot
+import { pullCommand } from './src/commands/pull-command.js';
+
 // Typing indicator — Telegram "typing..." action during agent thinking
 import { getTypingIndicator } from './src/services/typing-indicator.js';
 
@@ -477,6 +480,9 @@ const plugin = {
     // Update + restart from Telegram
     api.registerCommand(updateCommand);
     api.registerCommand(restartCommand);
+
+    // File pull
+    api.registerCommand(pullCommand);
 
     // ─── Gateway Startup Hook ──────────────────────────────────────
     // Only init wallet at boot for private key mode (headless).

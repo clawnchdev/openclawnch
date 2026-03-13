@@ -9,7 +9,7 @@
  * - WebhookServer: config defaults, HMAC verification, server lifecycle
  * - AgentsCommand: list, info, enable, disable, delete subcommands
  * - WebhooksCommand: list, info, enable, disable, delete subcommands
- * - Plugin registration counts (44 tools, 106 commands, 38 tool configs)
+ * - Plugin registration counts (44 tools, 107 commands, 38 tool configs)
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -908,7 +908,7 @@ describe('V5 Plugin Registration', () => {
     expect(registered).toContain('agent_delegate');
   });
 
-  it('plugin registers 106 commands including agents, webhooks, skills, interrupt, and api', { timeout: 15000 }, async () => {
+  it('plugin registers 107 commands including agents, webhooks, skills, interrupt, api, and pull', { timeout: 15000 }, async () => {
     const plugin = (await import('../extensions/crypto/index.js')).default;
     const commands: string[] = [];
     const mockApi = {
@@ -918,7 +918,7 @@ describe('V5 Plugin Registration', () => {
       logger: { info: () => {}, warn: () => {} },
     };
     plugin.register(mockApi);
-    expect(commands).toHaveLength(106);
+    expect(commands).toHaveLength(107);
     expect(commands).toContain('agents');
     expect(commands).toContain('webhooks');
   });
