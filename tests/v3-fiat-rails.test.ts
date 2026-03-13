@@ -418,7 +418,7 @@ describe('FiatCommand', () => {
 // ─── Plugin Registration Counts ─────────────────────────────────────────
 
 describe('V3 plugin registration counts', () => {
-  it('registers 44 tools including fiat_payment', { timeout: 15000 }, async () => {
+  it('registers 45 tools including fiat_payment', { timeout: 15000 }, async () => {
     const plugin = (await import('../extensions/crypto/index.js')).default;
     const registered: string[] = [];
     const mockApi = {
@@ -428,11 +428,11 @@ describe('V3 plugin registration counts', () => {
       logger: { info: () => {}, warn: () => {} },
     };
     plugin.register(mockApi);
-    expect(registered).toHaveLength(44);
+    expect(registered).toHaveLength(45);
     expect(registered).toContain('fiat_payment');
   });
 
-  it('registers 107 commands including fiat, tools, agents, webhooks, skills, interrupt, api, and pull', { timeout: 15000 }, async () => {
+  it('registers 108 commands including fiat, tools, agents, webhooks, skills, interrupt, api, and pull', { timeout: 15000 }, async () => {
     const plugin = (await import('../extensions/crypto/index.js')).default;
     const commands: string[] = [];
     const mockApi = {
@@ -442,7 +442,7 @@ describe('V3 plugin registration counts', () => {
       logger: { info: () => {}, warn: () => {} },
     };
     plugin.register(mockApi);
-    expect(commands).toHaveLength(107);
+    expect(commands).toHaveLength(108);
     expect(commands).toContain('fiat');
     expect(commands).toContain('tools');
   });
@@ -452,7 +452,7 @@ describe('V3 plugin registration counts', () => {
       '../extensions/crypto/src/services/tool-config-service.js'
     );
     const statuses = getAllToolStatus();
-    expect(statuses.length).toBe(38);
+    expect(statuses.length).toBe(39);
     const fiatConfig = statuses.find((s: any) => s.tool === 'fiat_payment');
     expect(fiatConfig).toBeDefined();
     expect(fiatConfig!.label).toBe('Fiat Payment');

@@ -9,7 +9,7 @@ describe('crypto plugin structure', () => {
     expect(typeof plugin.register).toBe('function');
   });
 
-  it('registers all 44 tools', () => {
+  it('registers all 45 tools', () => {
     const registered: string[] = [];
     const mockApi = {
       registerTool: vi.fn((tool: any) => registered.push(tool.name)),
@@ -20,7 +20,7 @@ describe('crypto plugin structure', () => {
 
     plugin.register(mockApi);
 
-    expect(mockApi.registerTool).toHaveBeenCalledTimes(44);
+    expect(mockApi.registerTool).toHaveBeenCalledTimes(45);
     // Original 7
     expect(registered).toContain('clawnchconnect');
     expect(registered).toContain('defi_price');
@@ -62,8 +62,8 @@ describe('crypto plugin structure', () => {
 
     plugin.register(mockApi);
 
-    // 107 explicit commands (skill invocation is handled by framework's /skill)
-    expect(mockApi.registerCommand).toHaveBeenCalledTimes(107);
+    // 108 explicit commands (skill invocation is handled by framework's /skill)
+    expect(mockApi.registerCommand).toHaveBeenCalledTimes(108);
     expect(commands).toContain('wallet');
     expect(commands).toContain('policy');
     expect(commands).toContain('tx');

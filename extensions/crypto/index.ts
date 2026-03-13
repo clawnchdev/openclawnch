@@ -162,6 +162,11 @@ import { updateCommand, restartCommand, setUpdateCommandSender } from './src/com
 // Pull files from the running bot
 import { pullCommand } from './src/commands/pull-command.js';
 
+// Policy engine — spending policies, approval rules, autonomy bounds
+import { createPolicyManageTool } from './src/tools/policy-manage.js';
+import { policiesCommand } from './src/commands/policies-command.js';
+import { evaluatePolicies, extractActionContext, recordToolExecution } from './src/services/policy-evaluator.js';
+
 // Typing indicator — Telegram "typing..." action during agent thinking
 import { getTypingIndicator } from './src/services/typing-indicator.js';
 
@@ -210,9 +215,11 @@ const plugin = {
     ]);
 
     /**
-     * Wrap a tool with a hard readonly gate. If any user is in readonly mode,
-     * write tools return an error instead of executing. This is defense-in-depth
-     * beyond the LLM prompt — the LLM can't bypass this by ignoring instructions.
+     * Wrap a tool with a hard readonly gate + policy enforcement gate.
+     * If the user is in readonly mode, write tools return an error.
+     * If active policies block the action, it returns an error.
+     * If policies require confirmation, it returns a confirmation request.
+     * This is defense-in-depth — the LLM can't bypass by ignoring instructions.
      */
     function registerToolWithReadonlyGate(tool: any): void {
       if (WRITE_TOOL_NAMES.has(tool.name)) {
@@ -225,6 +232,36 @@ const plugin = {
               text: `BLOCKED: Read-only mode is active. The tool "${tool.name}" writes to the blockchain and cannot be used in readonly mode. Use /safemode or /dangermode to re-enable write operations.`,
               isError: true,
             };
+          }
+          // Policy enforcement gate
+          if (userId) {
+            const actionCtx = extractActionContext(
+              tool.name,
+              (args ?? {}) as Record<string, unknown>,
+              userId,
+            );
+            const decision = evaluatePolicies(actionCtx);
+            if (decision.action === 'block') {
+              return {
+                content: [{ type: 'text' as const, text: `BLOCKED by policy: ${decision.reason ?? 'Policy violation.'}` }],
+                details: { blocked: true, policy: decision.policyName, rule: decision.ruleSummary },
+                isError: true,
+              };
+            }
+            if (decision.action === 'confirm') {
+              return {
+                content: [{ type: 'text' as const, text: `POLICY HOLD: ${decision.reason ?? 'Confirmation required.'}\n\nAsk the user to confirm before retrying this action.` }],
+                details: { needsConfirmation: true, policy: decision.policyName, rule: decision.ruleSummary },
+                isError: true,
+              };
+            }
+            // action === 'allow' — record usage after execution
+            const result = await originalExecute.call(tool, toolCallId, args, ctx);
+            // Record usage on success (not on error)
+            if (!result?.isError) {
+              try { recordToolExecution(actionCtx); } catch { /* best-effort */ }
+            }
+            return result;
           }
           return originalExecute.call(tool, toolCallId, args, ctx);
         };
@@ -340,6 +377,9 @@ const plugin = {
       api.registerTool(wrapWithEvoGate(skillTool, WRITE_ACTIONS_SKILL));
       api.registerTool(recallTool); // session_recall is always read-only
     }
+
+    // V6 tools — Policy engine (spending policies, approval rules, autonomy bounds)
+    api.registerTool(createPolicyManageTool());                      // ownerOnly: true (policy management)
 
     // ─── Register Chat Commands ────────────────────────────────────
     api.registerCommand(walletCommand);
@@ -483,6 +523,9 @@ const plugin = {
 
     // File pull
     api.registerCommand(pullCommand);
+
+    // V6: Policy engine
+    api.registerCommand(policiesCommand);
 
     // ─── Gateway Startup Hook ──────────────────────────────────────
     // Only init wallet at boot for private key mode (headless).

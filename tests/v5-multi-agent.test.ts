@@ -9,7 +9,7 @@
  * - WebhookServer: config defaults, HMAC verification, server lifecycle
  * - AgentsCommand: list, info, enable, disable, delete subcommands
  * - WebhooksCommand: list, info, enable, disable, delete subcommands
- * - Plugin registration counts (44 tools, 107 commands, 38 tool configs)
+ * - Plugin registration counts (45 tools, 108 commands, 39 tool configs)
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -887,14 +887,14 @@ describe('V5 Tool Config', () => {
       '../extensions/crypto/src/services/tool-config-service.js'
     );
     const statuses = getAllToolStatus();
-    expect(statuses.length).toBe(38);
+    expect(statuses.length).toBe(39);
   });
 });
 
 // ─── Plugin Registration Counts ─────────────────────────────────────────
 
 describe('V5 Plugin Registration', () => {
-  it('plugin registers 44 tools including agent_delegate', { timeout: 15000 }, async () => {
+  it('plugin registers 45 tools including agent_delegate', { timeout: 15000 }, async () => {
     const plugin = (await import('../extensions/crypto/index.js')).default;
     const registered: string[] = [];
     const mockApi = {
@@ -904,11 +904,11 @@ describe('V5 Plugin Registration', () => {
       logger: { info: () => {}, warn: () => {} },
     };
     plugin.register(mockApi);
-    expect(registered).toHaveLength(44);
+    expect(registered).toHaveLength(45);
     expect(registered).toContain('agent_delegate');
   });
 
-  it('plugin registers 107 commands including agents, webhooks, skills, interrupt, api, and pull', { timeout: 15000 }, async () => {
+  it('plugin registers 108 commands including agents, webhooks, skills, interrupt, api, and pull', { timeout: 15000 }, async () => {
     const plugin = (await import('../extensions/crypto/index.js')).default;
     const commands: string[] = [];
     const mockApi = {
@@ -918,7 +918,7 @@ describe('V5 Plugin Registration', () => {
       logger: { info: () => {}, warn: () => {} },
     };
     plugin.register(mockApi);
-    expect(commands).toHaveLength(107);
+    expect(commands).toHaveLength(108);
     expect(commands).toContain('agents');
     expect(commands).toContain('webhooks');
   });
@@ -928,7 +928,7 @@ describe('V5 Plugin Registration', () => {
       '../extensions/crypto/src/services/tool-config-service.js'
     );
     const statuses = getAllToolStatus();
-    expect(statuses.length).toBe(38);
+    expect(statuses.length).toBe(39);
     const agentConfig = statuses.find((s: any) => s.tool === 'agent_delegate');
     expect(agentConfig).toBeDefined();
     expect(agentConfig!.label).toBe('Agent Delegate');

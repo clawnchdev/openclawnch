@@ -120,7 +120,7 @@ describe('bridge tool', () => {
 // ─── Plugin Registration Count ───────────────────────────────────────────
 
 describe('bridge plugin registration', () => {
-  it('index.ts registers 44 tools (including bridge)', { timeout: 15000 }, async () => {
+  it('index.ts registers 45 tools (including bridge)', { timeout: 15000 }, async () => {
     const plugin = (await import('../extensions/crypto/index.js')).default;
     const registered: string[] = [];
     const mockApi = {
@@ -130,7 +130,7 @@ describe('bridge plugin registration', () => {
       logger: { info: () => {}, warn: () => {} },
     };
     plugin.register(mockApi);
-    expect(registered).toHaveLength(44);
+    expect(registered).toHaveLength(45);
     expect(registered).toContain('bridge');
   });
 });

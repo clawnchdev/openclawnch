@@ -761,6 +761,6 @@ describe('Tool config — Sprint 7+8 entries', () => {
       '../extensions/crypto/src/services/tool-config-service.js'
     );
     const statuses = getAllToolStatus();
-    expect(statuses.length).toBe(38);
+    expect(statuses.length).toBe(39);
   });
 });

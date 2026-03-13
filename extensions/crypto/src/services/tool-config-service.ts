@@ -375,6 +375,17 @@ export const TOOL_REQUIREMENTS: ToolRequirement[] = [
     keySource: 'https://bridge.xyz (Bridge.xyz) or https://moonpay.com (MoonPay)',
     setupHint: '`/flykeys set BRIDGE_API_KEY your_key` or `/flykeys set MOONPAY_API_KEY your_key`',
   },
+
+  // ── V6: Policy Engine ─────────────────────────────────────────────────
+  {
+    tool: 'policy_manage',
+    label: 'Policy Manager',
+    description: 'Create and manage spending policies — limits, approval thresholds, allowlists, rate limits, time windows',
+    requiredKeys: [],
+    worksWithoutKeys: true,
+    keySource: 'No API keys required',
+    setupHint: 'Just say what you want: "don\'t let me spend more than $500 a day on DeFi"',
+  },
 ];
 
 // ─── Lookup Helpers ──────────────────────────────────────────────────────

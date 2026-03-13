@@ -20,6 +20,8 @@ import { getEvolutionMode } from '../services/evolution-mode.js';
 import { buildLearnedSkillsIndex } from '../tools/skill-evolve.js';
 import { parseSessionKey, extractSenderId } from '../services/channel-sender.js';
 import { getSkillRegistry } from '../services/skill-registry.js';
+import { getPolicyStore } from '../services/policy-store.js';
+import { describeRule, describeScope } from '../services/policy-types.js';
 
 // ── Context Diet Constants ──────────────────────────────────────────────
 
@@ -128,6 +130,25 @@ export function buildPromptContext(
       } else {
         dynamicParts.push('Signing: WalletConnect. Transactions sent to phone wallet for approval.');
       }
+
+      // ── Active policies — enforce spending limits, approval rules ──
+      try {
+        const policyStore = getPolicyStore();
+        const activePolicies = policyStore.getActivePolicies(userId);
+        if (activePolicies.length > 0) {
+          const policyLines = activePolicies.map(p => {
+            const rules = p.rules.map(r => describeRule(r)).join('; ');
+            const scope = describeScope(p.scope);
+            return `  - "${p.name}": ${rules}. Applies to: ${scope}`;
+          });
+          dynamicParts.push([
+            `ACTIVE POLICIES (${activePolicies.length}): These are hard-enforced before every write tool. You CANNOT bypass them.`,
+            ...policyLines,
+            'If a user asks to do something that would violate a policy, tell them which policy blocks it BEFORE attempting the tool call.',
+            'To create/modify policies, use the policy_manage tool. ALWAYS show the user the exact rules and get explicit confirmation before activating.',
+          ].join('\n'));
+        }
+      } catch { /* best-effort — don't break prompt on policy errors */ }
 
       // ── Context Diet: Sequential + Compound ops — only when relevant ──
       if (MULTI_STEP_KEYWORDS.test(userMessage)) {
