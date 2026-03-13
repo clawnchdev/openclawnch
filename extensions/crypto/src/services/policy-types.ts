@@ -32,6 +32,40 @@ export interface Policy {
   createdAt: number;
   updatedAt: number;
   userId: string;
+  /**
+   * On-chain delegation metadata (EIP-7710).
+   * Present when the policy has been compiled and signed as an on-chain delegation.
+   * Contains chain ID, delegation hash, addresses, and lifecycle status.
+   */
+  delegation?: DelegationInfo;
+}
+
+/**
+ * On-chain delegation info stored with a policy.
+ * Maps to DelegationMetadata in delegation-types.ts but uses plain types
+ * here to avoid circular imports. The delegation service converts between them.
+ */
+export interface DelegationInfo {
+  /** Chain ID where the delegation is deployed. */
+  chainId: number;
+  /** Keccak256 hash of the delegation struct. */
+  hash: string;
+  /** DelegationManager contract address on this chain. */
+  delegationManager: string;
+  /** Current lifecycle status. */
+  status: 'unsigned' | 'signed' | 'active' | 'revoked' | 'expired';
+  /** The delegate address (agent). */
+  delegate: string;
+  /** The delegator address (user). */
+  delegator: string;
+  /** Salt used for uniqueness. */
+  salt: string;
+  /** ISO timestamp when the delegation was created. */
+  createdAt: string;
+  /** ISO timestamp when last status check was performed. */
+  lastCheckedAt?: string;
+  /** Policy rules that couldn't map to on-chain caveats (app-layer only). */
+  unmappedRules?: string[];
 }
 
 // ─── Scope ──────────────────────────────────────────────────────────────

@@ -14,6 +14,7 @@
 
 import { getPolicyStore } from '../services/policy-store.js';
 import { buildPolicyDisplay, renderPolicyDisplay } from '../services/policy-evaluator.js';
+import { formatDelegationStatus } from '../services/delegation-service.js';
 
 export const policiesCommand = {
   name: 'policies',
@@ -74,6 +75,11 @@ function listAll(userId: string) {
   for (const p of policies) {
     const display = buildPolicyDisplay(p, userId);
     lines.push(renderPolicyDisplay(display));
+    if (p.delegation) {
+      lines.push('');
+      lines.push('**On-chain delegation:**');
+      lines.push(formatDelegationStatus(p.delegation));
+    }
     lines.push('');
     lines.push('---');
     lines.push('');

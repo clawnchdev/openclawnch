@@ -1072,7 +1072,7 @@ describe('V6 Plugin Registration', () => {
     expect(tools.find(t => t.name === 'policy_manage')).toBeDefined();
   });
 
-  it('registers 108 commands including /policies', { timeout: 15000 }, async () => {
+  it('registers 109 commands including /policies and /delegate', { timeout: 15000 }, async () => {
     const commands: any[] = [];
     const mockApi = {
       registerTool: () => {},
@@ -1082,7 +1082,8 @@ describe('V6 Plugin Registration', () => {
     };
     const { default: plugin } = await import('../extensions/crypto/index.js');
     plugin.register(mockApi as any);
-    expect(commands).toHaveLength(108);
+    expect(commands).toHaveLength(109);
     expect(commands.find(c => c.name === 'policies')).toBeDefined();
+    expect(commands.find(c => c.name === 'delegate')).toBeDefined();
   });
 });
