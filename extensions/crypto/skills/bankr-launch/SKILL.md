@@ -1,3 +1,8 @@
+---
+name: bankr-launch
+description: Deploy tokens on Base (Uniswap V4) or Solana (Raydium) via Bankr gas-sponsored launch API
+---
+
 # Token Launching via Bankr
 
 ## Overview

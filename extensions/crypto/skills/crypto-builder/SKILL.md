@@ -1,3 +1,8 @@
+---
+name: crypto-builder
+description: Build custom crypto tools, protocol adapters, and DeFi strategies that plug into OpenClawnch
+---
+
 # Crypto Integration Builder
 
 Build custom crypto tools, protocol adapters, and DeFi strategies that plug safely into OpenClawnch.

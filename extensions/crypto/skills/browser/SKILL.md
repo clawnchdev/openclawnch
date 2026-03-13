@@ -1,3 +1,8 @@
+---
+name: browser
+description: Automate web page interactions via PinchTab for claiming airdrops and interacting with dApps
+---
+
 # Browser Automation (PinchTab)
 
 Use the `browser` tool for web page interaction via PinchTab.

@@ -1,3 +1,8 @@
+---
+name: bankr-leverage
+description: Open leveraged long/short positions via Avantis on Base with up to 10x leverage
+---
+
 # Leveraged Trading via Bankr
 
 ## Overview

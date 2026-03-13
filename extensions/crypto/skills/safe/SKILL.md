@@ -1,3 +1,8 @@
+---
+name: safe
+description: Manage Safe multisig wallets including proposing, signing, and executing multi-sig transactions
+---
+
 # Safe Multisig
 
 Use the `safe` tool to manage Safe{Wallet} multisig wallets.

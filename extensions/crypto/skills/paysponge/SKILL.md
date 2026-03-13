@@ -1,3 +1,8 @@
+---
+name: paysponge
+description: Agent wallets, spending controls, and business gateway for fiat and crypto payments
+---
+
 # PaySponge — Agent Financial Infrastructure
 
 PaySponge (YC-backed) provides agent wallets, spending controls, and a gateway for businesses to sell to agents.

@@ -153,6 +153,9 @@ import { getInterruptService } from './src/services/interrupt-service.js';
 // API key management
 import { apiCommand } from './src/commands/api-command.js';
 
+// Usage reporting
+import { usageNewCommand } from './src/commands/usage-command.js';
+
 // Typing indicator — Telegram "typing..." action during agent thinking
 import { getTypingIndicator } from './src/services/typing-indicator.js';
 
@@ -464,6 +467,9 @@ const plugin = {
 
     // API key management
     api.registerCommand(apiCommand);
+
+    // Usage reporting
+    api.registerCommand(usageNewCommand);
 
     // ─── Gateway Startup Hook ──────────────────────────────────────
     // Only init wallet at boot for private key mode (headless).

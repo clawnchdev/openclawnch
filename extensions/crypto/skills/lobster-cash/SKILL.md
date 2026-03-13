@@ -1,3 +1,8 @@
+---
+name: lobster-cash
+description: Agent payments via Solana USDC wallets and Visa virtual cards for crypto and traditional purchases
+---
+
 # Lobster.cash — Agent Payments
 
 Lobster.cash enables the agent to spend money and make purchases.

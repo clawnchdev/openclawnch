@@ -1,3 +1,8 @@
+---
+name: bankr-polymarket
+description: Access Polymarket prediction markets to search, place bets, view positions, and redeem winnings
+---
+
 # Polymarket Predictions via Bankr
 
 ## Overview

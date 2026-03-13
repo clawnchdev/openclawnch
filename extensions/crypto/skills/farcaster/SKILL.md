@@ -1,3 +1,8 @@
+---
+name: farcaster
+description: Post casts, browse feeds, search users, and engage with content on the Farcaster protocol
+---
+
 # Farcaster
 
 Use the `farcaster` tool for social actions on the Farcaster protocol.

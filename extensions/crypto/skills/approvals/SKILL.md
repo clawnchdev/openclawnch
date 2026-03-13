@@ -1,3 +1,8 @@
+---
+name: approvals
+description: Scan, audit, and revoke ERC-20 token approvals to manage wallet spending permissions
+---
+
 # Token Approvals Audit
 
 Use the `approvals` tool to scan, audit, and revoke ERC-20 token approvals.

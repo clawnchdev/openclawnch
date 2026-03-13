@@ -1,3 +1,8 @@
+---
+name: bankr-automations
+description: Set up automated server-side trading strategies (limit buys/sells) that execute on Base via Bankr
+---
+
 # Trading Automations via Bankr
 
 ## Overview

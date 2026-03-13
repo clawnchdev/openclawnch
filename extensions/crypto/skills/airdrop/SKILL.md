@@ -1,3 +1,8 @@
+---
+name: airdrop
+description: Check eligibility for and claim token airdrops
+---
+
 # Airdrop Tracker
 
 Use the `airdrop` tool to check eligibility and claim token airdrops.

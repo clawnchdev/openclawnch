@@ -1,3 +1,8 @@
+---
+name: governance
+description: Manage DAO proposals, voting, delegation, and voting power across Snapshot and on-chain governance
+---
+
 # DAO Governance
 
 Use the `governance` tool for DAO proposals, voting, delegation, and voting power checks.

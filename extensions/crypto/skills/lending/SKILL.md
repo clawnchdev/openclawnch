@@ -1,3 +1,8 @@
+---
+name: lending
+description: Supply, borrow, repay, and check health factors on Aave V3 lending protocol on Base
+---
+
 # Lending & Borrowing
 
 Use the `defi_lend` tool for lending protocol operations on Aave V3 (Base).

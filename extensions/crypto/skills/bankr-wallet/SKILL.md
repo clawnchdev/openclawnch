@@ -1,3 +1,8 @@
+---
+name: bankr-wallet
+description: Custodial wallet accessible via API for server-side on-chain operations without phone approval
+---
+
 # Bankr Wallet Mode
 
 ## What It Is

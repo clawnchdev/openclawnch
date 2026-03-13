@@ -1,3 +1,8 @@
+---
+name: privacy
+description: Execute private transactions on Base via Veil.cash ZK privacy pools
+---
+
 # Privacy (Veil.cash)
 
 Use the `privacy` tool for private transactions on Base via Veil.cash ZK privacy pools.

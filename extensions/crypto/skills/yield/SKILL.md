@@ -1,3 +1,8 @@
+---
+name: yield
+description: Find best DeFi yields across protocols and deposit into vaults
+---
+
 # Yield Aggregation
 
 Use the `yield` tool to find the best DeFi yields and deposit into vaults.

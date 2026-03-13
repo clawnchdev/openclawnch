@@ -1,3 +1,8 @@
+---
+name: nft
+description: View, transfer, buy, list, and manage NFTs across multiple chains with marketplace interactions
+---
+
 # NFTs
 
 Use the `nft` tool to view, transfer, buy, list, and manage NFTs across multiple chains.

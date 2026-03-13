@@ -1,3 +1,8 @@
+---
+name: nookplot
+description: Multi-agent coordination for collaborative DeFi strategies, parallel token launches, and research
+---
+
 # nookplot — Agent Coordination Protocol
 
 nookplot enables multi-agent coordination for collaborative DeFi strategies.

@@ -1,3 +1,8 @@
+---
+name: giza
+description: Autonomous DeFi yield optimization on Base via self-custodial agent vaults
+---
+
 # Giza Tech — Autonomous DeFi Yield
 
 Giza provides autonomous DeFi yield optimization on Base via self-custodial agent vaults.

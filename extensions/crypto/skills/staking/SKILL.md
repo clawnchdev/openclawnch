@@ -1,3 +1,8 @@
+---
+name: staking
+description: Liquid staking operations on Ethereum including staking ETH, checking APYs, and managing LSTs
+---
+
 # Liquid Staking
 
 Use the `defi_stake` tool for liquid staking operations on Ethereum mainnet.
