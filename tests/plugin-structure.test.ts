@@ -62,8 +62,8 @@ describe('crypto plugin structure', () => {
 
     plugin.register(mockApi);
 
-    // 110 explicit commands (skill invocation is handled by framework's /skill)
-    expect(mockApi.registerCommand).toHaveBeenCalledTimes(110);
+    // 111 explicit commands (skill invocation is handled by framework's /skill)
+    expect(mockApi.registerCommand).toHaveBeenCalledTimes(111);
     expect(commands).toContain('wallet');
     expect(commands).toContain('policy');
     expect(commands).toContain('tx');

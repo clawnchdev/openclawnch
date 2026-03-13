@@ -170,6 +170,7 @@ import { evaluatePolicies, extractActionContext, recordToolExecution, getPolicyC
 // Delegation — EIP-7710 on-chain policy enforcement
 import { delegateCommand } from './src/commands/delegate-command.js';
 import { policymodeCommand } from './src/commands/policymode-command.js';
+import { profileCommand } from './src/commands/profile-command.js';
 
 // Typing indicator — Telegram "typing..." action during agent thinking
 import { getTypingIndicator } from './src/services/typing-indicator.js';
@@ -545,6 +546,7 @@ const plugin = {
     // V7: On-chain delegation (EIP-7710)
     api.registerCommand(delegateCommand);
     api.registerCommand(policymodeCommand);
+    api.registerCommand(profileCommand);
 
     // ─── Gateway Startup Hook ──────────────────────────────────────
     // Only init wallet at boot for private key mode (headless).
