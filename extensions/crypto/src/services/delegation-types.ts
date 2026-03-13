@@ -191,6 +191,33 @@ export function getDelegationDomain(chainId: number) {
   } as const;
 }
 
+// ─── Execution Modes (ERC-7579) ─────────────────────────────────────────
+//
+// DelegationManager.redeemDelegations uses ERC-7579 execution modes.
+// Mode is a bytes32 encoding: callType (1 byte) + execType (1 byte) + unused (4) + modeSelector (4) + modePayload (22).
+// For single calls with default execution: 0x00...00.
+
+/**
+ * Default single-call execution mode.
+ * callType=0x00 (single), execType=0x00 (default), rest zeros.
+ */
+export const EXECUTE_MODE_DEFAULT = ('0x' + '0'.repeat(64)) as Hex;
+
+/**
+ * Encode a single execution as callData for redeemDelegations.
+ * ERC-7579 single execution: abi.encodePacked(target, value, callData).
+ * But DelegationManager expects: abi.encode(target, value, callData) as the
+ * executionCallData parameter.
+ */
+export interface ExecutionAction {
+  /** Target contract address. */
+  target: Address;
+  /** Value in wei to send with the call. */
+  value: bigint;
+  /** Encoded function calldata (e.g., from encodeFunctionData). */
+  callData: Hex;
+}
+
 // ─── Caveat Enforcer Mapping ────────────────────────────────────────────
 //
 // Maps PolicyRule types to their on-chain caveat enforcers.

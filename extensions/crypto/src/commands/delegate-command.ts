@@ -23,10 +23,14 @@ import {
   prepareDelegation,
   signDelegation,
   storeDelegation,
+  revokeByPolicy,
+  refreshDelegationStatus,
+  canRedeem,
   formatDelegationStatus,
   getDelegatedPolicies,
   formatSupportedChains,
 } from '../services/delegation-service.js';
+import { getDelegationStore } from '../services/delegation-store.js';
 import { buildPolicyDisplay, renderPolicyDisplay } from '../services/policy-evaluator.js';
 import { CHAIN_NAMES, SUPPORTED_CHAIN_IDS } from '../services/delegation-types.js';
 
@@ -266,22 +270,30 @@ async function handleRevoke(userId: string, name: string) {
   lines.push(`**Revoking delegation for "${policy.name}"**`);
   lines.push('');
 
-  const wasOnChain = policy.delegation.hash && policy.delegation.hash !== '0x'
-    && (policy.delegation.status === 'signed' || policy.delegation.status === 'active');
+  const result = await revokeByPolicy(policy, userId);
 
-  policy.delegation.status = 'revoked';
-  policy.updatedAt = Date.now();
-  store.savePolicy(policy);
-
-  if (wasOnChain) {
-    lines.push(`Delegation revoked locally.`);
-    lines.push(`Chain: ${CHAIN_NAMES[policy.delegation.chainId] ?? policy.delegation.chainId}`);
-    lines.push(`Hash: \`${policy.delegation.hash}\``);
+  if ('error' in result) {
+    // On-chain revocation failed but local revocation succeeded
+    lines.push(`On-chain revocation failed: ${result.error}`);
     lines.push('');
-    lines.push('To also revoke on-chain, the delegator must call `disableDelegation()` on the');
-    lines.push('DelegationManager contract. This prevents any further on-chain redemption.');
+    lines.push('Delegation has been revoked locally. The on-chain delegation may still be');
+    lines.push('redeemable. Connect the delegator wallet and try again to revoke on-chain.');
+  } else if ('localOnly' in result) {
+    // No full struct stored — could only revoke locally
+    if (policy.delegation.hash && policy.delegation.hash !== '0x') {
+      lines.push('Delegation revoked locally (full delegation struct not available for on-chain revocation).');
+      lines.push(`Chain: ${CHAIN_NAMES[policy.delegation.chainId] ?? policy.delegation.chainId}`);
+      lines.push(`Hash: \`${policy.delegation.hash}\``);
+    } else {
+      lines.push('Delegation was unsigned (never submitted on-chain). Marked as revoked locally.');
+    }
   } else {
-    lines.push('Delegation was unsigned (never submitted on-chain). Marked as revoked locally.');
+    // On-chain revocation succeeded
+    lines.push('**Delegation revoked on-chain.**');
+    lines.push(`Transaction: \`${result.txHash}\``);
+    lines.push(`Chain: ${CHAIN_NAMES[policy.delegation.chainId] ?? policy.delegation.chainId}`);
+    lines.push('');
+    lines.push('The delegation can no longer be redeemed. On-chain enforcement disabled.');
   }
 
   return { text: lines.join('\n') };
@@ -289,7 +301,7 @@ async function handleRevoke(userId: string, name: string) {
 
 // ─── Show Status ────────────────────────────────────────────────────────
 
-function showStatus(userId: string) {
+async function showStatus(userId: string) {
   const delegated = getDelegatedPolicies(userId);
 
   if (delegated.length === 0) {
@@ -301,9 +313,24 @@ function showStatus(userId: string) {
   lines.push('');
 
   for (const p of delegated) {
+    // Refresh on-chain status if we have a hash
+    if (p.delegation?.hash && p.delegation.hash !== '0x' && p.delegation.status !== 'revoked') {
+      try {
+        await refreshDelegationStatus(p, userId);
+      } catch { /* continue with cached status */ }
+    }
+
     lines.push(`**${p.name}** [Policy: ${p.status.toUpperCase()}]`);
     if (p.delegation) {
       lines.push(formatDelegationStatus(p.delegation));
+
+      // Show redemption readiness
+      const redeemStatus = canRedeem(p.id);
+      if (redeemStatus.ready) {
+        lines.push('  Redemption: READY (full delegation stored)');
+      } else {
+        lines.push(`  Redemption: NOT AVAILABLE (${redeemStatus.reason})`);
+      }
     }
     lines.push('');
   }

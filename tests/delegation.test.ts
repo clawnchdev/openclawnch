@@ -964,7 +964,288 @@ describe('Policy type — delegation field', () => {
   });
 });
 
-// ─── 8. Plugin Registration ─────────────────────────────────────────────
+// ─── 8. Delegation Store ────────────────────────────────────────────────
+
+describe('DelegationStore', () => {
+  it('save and load round-trips a SignedDelegation', async () => {
+    const { getDelegationStore, resetDelegationStore } = await import(
+      '../extensions/crypto/src/services/delegation-store.js'
+    );
+
+    resetDelegationStore();
+    const store = getDelegationStore();
+
+    const delegation = {
+      delegate: '0x2222222222222222222222222222222222222222' as `0x${string}`,
+      delegator: '0x1111111111111111111111111111111111111111' as `0x${string}`,
+      authority: '0x0000000000000000000000000000000000000000000000000000000000000000' as `0x${string}`,
+      caveats: [{
+        enforcer: '0x92Bf12322527cAA612fd31a0e810472BBB106A8F' as `0x${string}`,
+        terms: '0xabcdef' as `0x${string}`,
+        args: '0x' as `0x${string}`,
+      }],
+      salt: 12345n,
+      signature: '0xdeadbeef' as `0x${string}`,
+    };
+
+    store.save(delegation, 8453, 'test-store-policy');
+
+    const loaded = store.load('test-store-policy');
+    expect(loaded).not.toBeNull();
+    expect(loaded!.chainId).toBe(8453);
+    expect(loaded!.delegation.delegate).toBe(delegation.delegate);
+    expect(loaded!.delegation.delegator).toBe(delegation.delegator);
+    expect(loaded!.delegation.salt).toBe(12345n);
+    expect(loaded!.delegation.signature).toBe('0xdeadbeef');
+    expect(loaded!.delegation.caveats).toHaveLength(1);
+    expect(loaded!.delegation.caveats[0]!.enforcer).toBe(delegation.caveats[0]!.enforcer);
+
+    // Cleanup
+    store.delete('test-store-policy');
+    resetDelegationStore();
+  });
+
+  it('has() returns true for stored, false for missing', async () => {
+    const { getDelegationStore, resetDelegationStore } = await import(
+      '../extensions/crypto/src/services/delegation-store.js'
+    );
+
+    resetDelegationStore();
+    const store = getDelegationStore();
+
+    expect(store.has('nonexistent-policy')).toBe(false);
+
+    store.save({
+      delegate: '0x2222222222222222222222222222222222222222' as `0x${string}`,
+      delegator: '0x1111111111111111111111111111111111111111' as `0x${string}`,
+      authority: '0x0000000000000000000000000000000000000000000000000000000000000000' as `0x${string}`,
+      caveats: [],
+      salt: 1n,
+      signature: '0x' as `0x${string}`,
+    }, 8453, 'has-test-policy');
+
+    expect(store.has('has-test-policy')).toBe(true);
+
+    store.delete('has-test-policy');
+    expect(store.has('has-test-policy')).toBe(false);
+
+    resetDelegationStore();
+  });
+
+  it('delete removes stored delegation', async () => {
+    const { getDelegationStore, resetDelegationStore } = await import(
+      '../extensions/crypto/src/services/delegation-store.js'
+    );
+
+    resetDelegationStore();
+    const store = getDelegationStore();
+
+    store.save({
+      delegate: '0x2222222222222222222222222222222222222222' as `0x${string}`,
+      delegator: '0x1111111111111111111111111111111111111111' as `0x${string}`,
+      authority: '0x0000000000000000000000000000000000000000000000000000000000000000' as `0x${string}`,
+      caveats: [],
+      salt: 1n,
+      signature: '0x' as `0x${string}`,
+    }, 8453, 'delete-test-policy');
+
+    expect(store.delete('delete-test-policy')).toBe(true);
+    expect(store.load('delete-test-policy')).toBeNull();
+    expect(store.delete('delete-test-policy')).toBe(false);
+
+    resetDelegationStore();
+  });
+});
+
+// ─── 9. Redemption Readiness ────────────────────────────────────────────
+
+describe('Delegation Service — canRedeem', () => {
+  it('returns not ready when no delegation stored', async () => {
+    const { canRedeem } = await import(
+      '../extensions/crypto/src/services/delegation-service.js'
+    );
+
+    const result = canRedeem('nonexistent-policy-id');
+    expect(result.ready).toBe(false);
+    expect(result.reason).toContain('No signed delegation');
+  });
+
+  it('returns ready when delegation is stored', async () => {
+    const { canRedeem } = await import(
+      '../extensions/crypto/src/services/delegation-service.js'
+    );
+    const { getDelegationStore, resetDelegationStore } = await import(
+      '../extensions/crypto/src/services/delegation-store.js'
+    );
+
+    resetDelegationStore();
+    const store = getDelegationStore();
+
+    store.save({
+      delegate: '0x2222222222222222222222222222222222222222' as `0x${string}`,
+      delegator: '0x1111111111111111111111111111111111111111' as `0x${string}`,
+      authority: '0x0000000000000000000000000000000000000000000000000000000000000000' as `0x${string}`,
+      caveats: [],
+      salt: 1n,
+      signature: '0xdeadbeef' as `0x${string}`,
+    }, 8453, 'can-redeem-test');
+
+    const result = canRedeem('can-redeem-test');
+    expect(result.ready).toBe(true);
+
+    store.delete('can-redeem-test');
+    resetDelegationStore();
+  });
+});
+
+// ─── 10. Redemption — redeemDelegation ──────────────────────────────────
+
+describe('Delegation Service — redeemDelegation', () => {
+  it('returns error when no delegation stored', async () => {
+    const { redeemDelegation } = await import(
+      '../extensions/crypto/src/services/delegation-service.js'
+    );
+
+    const result = await redeemDelegation('no-such-policy', {
+      target: '0x3333333333333333333333333333333333333333' as `0x${string}`,
+      value: 0n,
+      callData: '0x' as `0x${string}`,
+    });
+
+    expect('error' in result).toBe(true);
+    if ('error' in result) {
+      expect(result.error).toContain('No signed delegation found');
+    }
+  });
+
+  it('returns error when no wallet connected', async () => {
+    const { redeemDelegation } = await import(
+      '../extensions/crypto/src/services/delegation-service.js'
+    );
+    const { getDelegationStore, resetDelegationStore } = await import(
+      '../extensions/crypto/src/services/delegation-store.js'
+    );
+
+    resetDelegationStore();
+    const store = getDelegationStore();
+
+    store.save({
+      delegate: '0x2222222222222222222222222222222222222222' as `0x${string}`,
+      delegator: '0x1111111111111111111111111111111111111111' as `0x${string}`,
+      authority: '0x0000000000000000000000000000000000000000000000000000000000000000' as `0x${string}`,
+      caveats: [],
+      salt: 1n,
+      signature: '0xdeadbeef' as `0x${string}`,
+    }, 8453, 'redeem-no-wallet-test');
+
+    const result = await redeemDelegation('redeem-no-wallet-test', {
+      target: '0x3333333333333333333333333333333333333333' as `0x${string}`,
+      value: 0n,
+      callData: '0x' as `0x${string}`,
+    });
+
+    expect('error' in result).toBe(true);
+    if ('error' in result) {
+      expect(result.error).toContain('No wallet connected');
+    }
+
+    store.delete('redeem-no-wallet-test');
+    resetDelegationStore();
+  });
+});
+
+// ─── 11. Execution Types ────────────────────────────────────────────────
+
+describe('Delegation Types — execution constants', () => {
+  it('EXECUTE_MODE_DEFAULT is 64 zero bytes', async () => {
+    const { EXECUTE_MODE_DEFAULT } = await import(
+      '../extensions/crypto/src/services/delegation-types.js'
+    );
+
+    expect(EXECUTE_MODE_DEFAULT).toMatch(/^0x0{64}$/);
+  });
+
+  it('ExecutionAction interface fields exist on conforming object', async () => {
+    const action: import('../extensions/crypto/src/services/delegation-types.js').ExecutionAction = {
+      target: '0x3333333333333333333333333333333333333333' as `0x${string}`,
+      value: 100n,
+      callData: '0xdeadbeef' as `0x${string}`,
+    };
+
+    expect(action.target).toMatch(/^0x[0-9a-fA-F]{40}$/);
+    expect(action.value).toBe(100n);
+    expect(action.callData).toBe('0xdeadbeef');
+  });
+});
+
+// ─── 12. Revoke By Policy ───────────────────────────────────────────────
+
+describe('Delegation Service — revokeByPolicy', () => {
+  it('returns localOnly when no full struct stored', async () => {
+    const { revokeByPolicy } = await import(
+      '../extensions/crypto/src/services/delegation-service.js'
+    );
+    const { getPolicyStore } = await import(
+      '../extensions/crypto/src/services/policy-store.js'
+    );
+
+    const store = getPolicyStore();
+    const policy = {
+      id: 'revoke-local-test',
+      name: 'RevokeLocalTest',
+      description: 'test',
+      rules: [{ type: 'max_amount' as const, maxAmountUsd: 100 }],
+      scope: { type: 'all_write' as const },
+      status: 'active' as const,
+      confirmedAt: Date.now(),
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      userId: 'revoke-test-user',
+      delegation: {
+        chainId: 8453,
+        hash: '0xabcdef',
+        delegationManager: '0xdb9B1e94B5b69Df7e401DDbedE43491141047dB3',
+        status: 'signed' as const,
+        delegate: '0x2222222222222222222222222222222222222222',
+        delegator: '0x1111111111111111111111111111111111111111',
+        salt: '0',
+        createdAt: new Date().toISOString(),
+      },
+    };
+    store.savePolicy(policy);
+
+    const result = await revokeByPolicy(policy, 'revoke-test-user');
+    expect('localOnly' in result).toBe(true);
+
+    const saved = store.getPolicy('revoke-test-user', 'revoke-local-test');
+    expect(saved?.delegation?.status).toBe('revoked');
+
+    store.deletePolicy('revoke-test-user', 'revoke-local-test');
+  });
+
+  it('returns error when policy has no delegation', async () => {
+    const { revokeByPolicy } = await import(
+      '../extensions/crypto/src/services/delegation-service.js'
+    );
+
+    const policy = {
+      id: 'no-deleg-test',
+      name: 'NoDeleg',
+      description: 'test',
+      rules: [],
+      scope: { type: 'all_write' as const },
+      status: 'active' as const,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      userId: 'owner',
+    };
+
+    const result = await revokeByPolicy(policy, 'owner');
+    expect('error' in result).toBe(true);
+  });
+});
+
+// ─── 13. Plugin Registration ────────────────────────────────────────────
 
 describe('V7 Plugin Registration', () => {
   it('plugin registers 109 commands including /delegate', { timeout: 15000 }, async () => {

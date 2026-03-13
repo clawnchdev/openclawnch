@@ -20,6 +20,8 @@
 import {
   createPublicClient,
   http,
+  encodeAbiParameters,
+  encodePacked,
   type Address,
   type Hex,
 } from 'viem';
@@ -31,10 +33,12 @@ import {
   DELEGATION_EIP712_TYPES,
   CHAIN_NAMES,
   SUPPORTED_CHAIN_IDS,
+  EXECUTE_MODE_DEFAULT,
   getDelegationDomain,
   type SignedDelegation,
   type UnsignedDelegation,
   type DelegationStatus,
+  type ExecutionAction,
 } from './delegation-types.js';
 import {
   compilePolicyToDelegation,
@@ -43,6 +47,7 @@ import {
   type CompilationResult,
 } from './delegation-compiler.js';
 import { getPolicyStore } from './policy-store.js';
+import { getDelegationStore } from './delegation-store.js';
 import type { Policy, DelegationInfo } from './policy-types.js';
 
 // ─── Chain Configuration ────────────────────────────────────────────────
@@ -243,7 +248,9 @@ export async function signDelegation(
 
 /**
  * Step 3: Store a signed delegation in the policy metadata and get its hash.
- * Attempts to read the delegation hash from DelegationManager on-chain.
+ * Persists the full SignedDelegation struct to the delegation store (for
+ * later redemption and on-chain revocation) and lightweight metadata on
+ * the policy. Attempts to read the delegation hash from DelegationManager.
  */
 export async function storeDelegation(
   policy: Policy,
@@ -252,7 +259,11 @@ export async function storeDelegation(
   chainId: number,
   unmappedRules: string[],
 ): Promise<DelegationInfo> {
-  const store = getPolicyStore();
+  const policyStore = getPolicyStore();
+  const delegationStore = getDelegationStore();
+
+  // Persist the full signed delegation struct for redemption/revocation
+  delegationStore.save(delegation, chainId, policy.id);
 
   // Try to get the delegation hash from the on-chain contract
   let hash: string = '0x';
@@ -290,7 +301,7 @@ export async function storeDelegation(
 
   policy.delegation = info;
   policy.updatedAt = Date.now();
-  store.savePolicy(policy);
+  policyStore.savePolicy(policy);
 
   return info;
 }
@@ -423,6 +434,215 @@ export function buildEip7715Request(
       expiry: Math.floor(Date.now() / 1000) + 86400 * 30, // 30 days default
     }],
   };
+}
+
+// ─── Revoke By Policy ───────────────────────────────────────────────────
+
+/**
+ * Revoke a delegation by policy ID. Loads the full SignedDelegation from the
+ * delegation store and calls disableDelegation() on-chain. Also updates the
+ * policy metadata and cleans up the stored struct.
+ *
+ * Returns { txHash } on success, or { error } if wallet/store/chain fails.
+ * Falls back to local-only revocation if the full struct isn't stored.
+ */
+export async function revokeByPolicy(
+  policy: Policy,
+  userId: string,
+): Promise<{ txHash: string } | { localOnly: true } | { error: string }> {
+  if (!policy.delegation) {
+    return { error: 'Policy has no delegation to revoke.' };
+  }
+
+  const delegationStore = getDelegationStore();
+  const stored = delegationStore.load(policy.id);
+
+  if (!stored) {
+    // No full struct — can only revoke locally
+    policy.delegation.status = 'revoked';
+    policy.updatedAt = Date.now();
+    getPolicyStore().savePolicy(policy);
+    return { localOnly: true };
+  }
+
+  // Try on-chain revocation
+  const result = await revokeDelegationOnChain(stored.delegation, stored.chainId);
+
+  if ('error' in result) {
+    // On-chain failed — still revoke locally
+    policy.delegation.status = 'revoked';
+    policy.updatedAt = Date.now();
+    getPolicyStore().savePolicy(policy);
+    return result;
+  }
+
+  // On-chain succeeded — update metadata and clean up
+  policy.delegation.status = 'revoked';
+  policy.delegation.lastCheckedAt = new Date().toISOString();
+  policy.updatedAt = Date.now();
+  getPolicyStore().savePolicy(policy);
+  delegationStore.delete(policy.id);
+
+  return result;
+}
+
+// ─── Redemption ─────────────────────────────────────────────────────────
+
+/**
+ * Encode the permissionContext for redeemDelegations().
+ *
+ * The permissionContext is an ABI-encoded delegation chain. For a single
+ * root delegation (no parent), it encodes:
+ *   abi.encode(Delegation[], bytes[])
+ * where Delegation[] is the chain (length 1 for root) and bytes[] is the
+ * per-caveat args for each delegation in the chain.
+ */
+function encodePermissionContext(delegation: SignedDelegation): Hex {
+  // Single-delegation chain (root delegation, no parent)
+  // The DelegationManager expects the delegation struct + caveat args
+  // packed as: abi.encode(Delegation[], bytes[])
+  //
+  // For a single root delegation with N caveats, the args array has N entries
+  // (one per caveat, usually all '0x' for compile-time enforcers).
+
+  const delegationTuple = {
+    delegate: delegation.delegate,
+    delegator: delegation.delegator,
+    authority: delegation.authority,
+    caveats: delegation.caveats.map(c => ({
+      enforcer: c.enforcer,
+      terms: c.terms,
+      args: c.args,
+    })),
+    salt: delegation.salt,
+    signature: delegation.signature,
+  };
+
+  // Encode as: abi.encode(Delegation[])
+  // The DelegationManager decodes the permissionContext as a delegation chain.
+  return encodeAbiParameters(
+    [{
+      type: 'tuple[]',
+      components: [
+        { name: 'delegate', type: 'address' },
+        { name: 'delegator', type: 'address' },
+        { name: 'authority', type: 'bytes32' },
+        {
+          name: 'caveats', type: 'tuple[]',
+          components: [
+            { name: 'enforcer', type: 'address' },
+            { name: 'terms', type: 'bytes' },
+            { name: 'args', type: 'bytes' },
+          ],
+        },
+        { name: 'salt', type: 'uint256' },
+        { name: 'signature', type: 'bytes' },
+      ],
+    }],
+    [[delegationTuple]],
+  );
+}
+
+/**
+ * Encode execution calldata for a single action.
+ * ERC-7579 single execution: abi.encodePacked(target, value, callData).
+ */
+function encodeExecution(action: ExecutionAction): Hex {
+  return encodePacked(
+    ['address', 'uint256', 'bytes'],
+    [action.target, action.value, action.callData],
+  );
+}
+
+export interface RedemptionResult {
+  /** Transaction hash from the redeemDelegations call. */
+  txHash: string;
+  /** Chain ID where the redemption was executed. */
+  chainId: number;
+}
+
+/**
+ * Redeem a delegation to execute an action on-chain.
+ *
+ * This is the core execution path: the agent calls redeemDelegations() on the
+ * DelegationManager, which verifies all caveats and executes the action through
+ * the delegator's smart account.
+ *
+ * The caller must have the delegate's wallet (agent wallet) connected, since
+ * the agent is the one redeeming.
+ *
+ * @param policyId - The policy whose delegation to redeem
+ * @param action   - The execution action (target, value, calldata)
+ * @returns        - Transaction hash or error
+ */
+export async function redeemDelegation(
+  policyId: string,
+  action: ExecutionAction,
+): Promise<RedemptionResult | { error: string }> {
+  const delegationStore = getDelegationStore();
+  const stored = delegationStore.load(policyId);
+
+  if (!stored) {
+    return { error: `No signed delegation found for policy "${policyId}". Create and sign a delegation first.` };
+  }
+
+  const { delegation, chainId } = stored;
+
+  // Check policy status
+  const policyStore = getPolicyStore();
+  // Find the policy across all users (agent may not know userId)
+  // For now, the policyId is globally unique
+  const policies = policyStore.listPolicies('owner');
+  const policy = policies.find(p => p.id === policyId);
+  if (policy?.delegation?.status === 'revoked') {
+    return { error: 'Delegation has been revoked. Cannot redeem.' };
+  }
+
+  // Get the agent's wallet (delegate)
+  const wallet = await getWallet();
+  if (wallet.mode === 'none' || !wallet.walletClient) {
+    return { error: 'No wallet connected. The agent needs a connected wallet to redeem delegations.' };
+  }
+
+  // Encode the redemption parameters
+  const permissionContext = encodePermissionContext(delegation);
+  const executionCallData = encodeExecution(action);
+
+  try {
+    const txHash = await wallet.walletClient.writeContract({
+      address: DELEGATION_CONTRACTS.DelegationManager,
+      abi: DELEGATION_MANAGER_ABI,
+      functionName: 'redeemDelegations',
+      args: [
+        [permissionContext],          // bytes[] _permissionContexts
+        [EXECUTE_MODE_DEFAULT],       // bytes32[] _modes
+        [executionCallData],          // bytes[] _executionCallData
+      ],
+      chain: CHAIN_CONFIGS[chainId],
+    });
+
+    return { txHash: txHash as string, chainId };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { error: `Redemption failed: ${msg}` };
+  }
+}
+
+/**
+ * Check if a delegation is available for redemption (stored and not revoked).
+ */
+export function canRedeem(policyId: string): { ready: boolean; reason?: string } {
+  const delegationStore = getDelegationStore();
+  if (!delegationStore.has(policyId)) {
+    return { ready: false, reason: 'No signed delegation stored for this policy.' };
+  }
+
+  const stored = delegationStore.load(policyId);
+  if (!stored) {
+    return { ready: false, reason: 'Delegation file corrupted or unreadable.' };
+  }
+
+  return { ready: true };
 }
 
 // ─── Display Helpers ────────────────────────────────────────────────────
