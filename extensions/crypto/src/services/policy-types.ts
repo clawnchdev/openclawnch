@@ -27,6 +27,8 @@ export interface Policy {
   status: PolicyStatus;
   /** Why it's a draft — what the agent still needs to clarify. */
   pendingClarifications?: string[];
+  /** Timestamp when user explicitly confirmed the draft. Set by handleConfirm. */
+  confirmedAt?: number;
   createdAt: number;
   updatedAt: number;
   userId: string;
@@ -211,9 +213,13 @@ const PERIOD_MS: Record<string, number> = {
   monthly: 30 * 24 * 60 * 60 * 1000,
 };
 
-/** Convert a named period to milliseconds. */
+/** Convert a named period to milliseconds. Throws on unknown periods. */
 export function periodToMs(period: string): number {
-  return PERIOD_MS[period] ?? PERIOD_MS['daily']!;
+  const ms = PERIOD_MS[period];
+  if (ms == null) {
+    throw new Error(`Unknown period: "${period}". Valid: ${Object.keys(PERIOD_MS).join(', ')}.`);
+  }
+  return ms;
 }
 
 // ─── Rule Rendering ─────────────────────────────────────────────────────

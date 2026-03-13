@@ -10,6 +10,7 @@
  * - Rendering policy displays for user verification
  */
 
+import { randomUUID } from 'node:crypto';
 import { getPolicyStore } from './policy-store.js';
 import {
   type ActionContext,
@@ -42,6 +43,15 @@ const ACTION_PRIORITY: Record<PolicyAction, number> = {
  */
 export function evaluatePolicies(ctx: ActionContext): PolicyDecision {
   const store = getPolicyStore();
+
+  // Fail-closed: if the policy store is corrupted, block everything
+  if (store.isCorrupted(ctx.userId)) {
+    return {
+      action: 'block',
+      reason: 'Policy store is corrupted — all write operations are blocked for safety. Check ~/.openclawnch/policies/ for .corrupt files and restore or delete them.',
+    };
+  }
+
   const policies = store.getActivePolicies(ctx.userId);
 
   if (policies.length === 0) {
@@ -132,7 +142,14 @@ function evaluateRule(
 
     case 'allowlist': {
       const value = getFieldValue(rule.field, ctx);
-      if (value == null) return { action: 'allow' }; // can't check, allow
+      if (value == null) {
+        return {
+          ...base,
+          action: 'confirm',
+          reason: `Policy "${policy.name}": cannot determine ${rule.field} for allowlist check. Confirm to proceed.`,
+          ruleSummary: describeRule(rule),
+        };
+      }
       const allowed = rule.values.map(v => v.toLowerCase());
       if (!allowed.includes(value.toLowerCase())) {
         return {
@@ -147,7 +164,14 @@ function evaluateRule(
 
     case 'blocklist': {
       const value = getFieldValue(rule.field, ctx);
-      if (value == null) return { action: 'allow' };
+      if (value == null) {
+        return {
+          ...base,
+          action: 'confirm',
+          reason: `Policy "${policy.name}": cannot determine ${rule.field} for blocklist check. Confirm to proceed.`,
+          ruleSummary: describeRule(rule),
+        };
+      }
       const blocked = rule.values.map(v => v.toLowerCase());
       if (blocked.includes(value.toLowerCase())) {
         return {
@@ -289,6 +313,17 @@ export function recordToolExecution(ctx: ActionContext): void {
   }
 }
 
+// ─── User ID Extraction ─────────────────────────────────────────────────
+
+/**
+ * Shared helper to extract userId from tool execution context.
+ * Used by both the enforcement gate (index.ts) and the policy_manage tool.
+ * Ensures consistent fallback chain everywhere.
+ */
+export function extractPolicyUserId(ctx?: any): string {
+  return ctx?.senderId ?? ctx?.from ?? ctx?.metadata?.senderId ?? 'owner';
+}
+
 // ─── Context Extraction ─────────────────────────────────────────────────
 
 /**
@@ -400,6 +435,83 @@ export function renderPolicyDisplay(display: PolicyDisplay): string {
   }
 
   return lines.join('\n');
+}
+
+// ─── Confirmation Nonce System ──────────────────────────────────────────
+//
+// When a policy returns "confirm", a nonce is generated and included in the
+// response. The LLM must pass this nonce back as `policyConfirmationNonce` in
+// the tool args to prove the user actually confirmed. Nonces expire after TTL.
+
+/** Default TTL for confirmation nonces: 5 minutes. */
+const NONCE_TTL_MS = 5 * 60 * 1000;
+
+/** Max nonces stored (prevent unbounded growth). Old entries are evicted. */
+const MAX_NONCES = 500;
+
+interface NonceEntry {
+  nonce: string;
+  userId: string;
+  toolName: string;
+  createdAt: number;
+}
+
+class PolicyConfirmationStore {
+  private nonces = new Map<string, NonceEntry>();
+
+  /** Generate a nonce for a confirm decision. */
+  create(userId: string, toolName: string): string {
+    this.prune();
+    const nonce = randomUUID();
+    this.nonces.set(nonce, { nonce, userId, toolName, createdAt: Date.now() });
+    return nonce;
+  }
+
+  /** Validate and consume a nonce. Returns true if valid. */
+  consume(nonce: string, userId: string, toolName: string): boolean {
+    const entry = this.nonces.get(nonce);
+    if (!entry) return false;
+    this.nonces.delete(nonce);
+    // Check expiry
+    if (Date.now() - entry.createdAt > NONCE_TTL_MS) return false;
+    // Check user + tool match
+    if (entry.userId !== userId) return false;
+    if (entry.toolName !== toolName) return false;
+    return true;
+  }
+
+  /** Prune expired entries and enforce max size. */
+  private prune(): void {
+    const now = Date.now();
+    for (const [key, entry] of this.nonces) {
+      if (now - entry.createdAt > NONCE_TTL_MS) {
+        this.nonces.delete(key);
+      }
+    }
+    // Evict oldest if over limit
+    if (this.nonces.size > MAX_NONCES) {
+      const sorted = [...this.nonces.entries()].sort((a, b) => a[1].createdAt - b[1].createdAt);
+      const toRemove = sorted.slice(0, sorted.length - MAX_NONCES);
+      for (const [key] of toRemove) this.nonces.delete(key);
+    }
+  }
+
+  /** Clear all nonces (for testing). */
+  reset(): void {
+    this.nonces.clear();
+  }
+}
+
+let _confirmStore: PolicyConfirmationStore | null = null;
+
+export function getPolicyConfirmationStore(): PolicyConfirmationStore {
+  if (!_confirmStore) _confirmStore = new PolicyConfirmationStore();
+  return _confirmStore;
+}
+
+export function resetPolicyConfirmationStore(): void {
+  _confirmStore?.reset();
+  _confirmStore = null;
 }
 
 /** Expand category names into tool lists for scope rendering. */

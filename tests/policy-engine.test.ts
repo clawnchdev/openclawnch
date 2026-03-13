@@ -628,19 +628,430 @@ describe('/policies command', () => {
     expect(result.text).toContain('$500');
   });
 
-  it('enable/disable changes policy status', async () => {
+  it('enable/disable changes policy status (confirmed policy)', async () => {
     const { policiesCommand } = await import('../extensions/crypto/src/commands/policies-command.js');
     const { getPolicyStore } = await import('../extensions/crypto/src/services/policy-store.js');
     const store = getPolicyStore();
     store.savePolicy({
       id: 'p1', name: 'my limit', description: 'test',
       rules: [], scope: { type: 'all_write' },
-      status: 'active', createdAt: Date.now(), updatedAt: Date.now(), userId: 'user1',
+      status: 'active', confirmedAt: Date.now(), createdAt: Date.now(), updatedAt: Date.now(), userId: 'user1',
     });
     await policiesCommand.handler({ senderId: 'user1', args: 'disable my limit' });
     expect(store.getPolicy('user1', 'p1')!.status).toBe('disabled');
     await policiesCommand.handler({ senderId: 'user1', args: 'enable my limit' });
     expect(store.getPolicy('user1', 'p1')!.status).toBe('active');
+  });
+
+  it('enable rejects unconfirmed policy', async () => {
+    const { policiesCommand } = await import('../extensions/crypto/src/commands/policies-command.js');
+    const { getPolicyStore } = await import('../extensions/crypto/src/services/policy-store.js');
+    const store = getPolicyStore();
+    store.savePolicy({
+      id: 'p1', name: 'my limit', description: 'test',
+      rules: [], scope: { type: 'all_write' },
+      status: 'draft', createdAt: Date.now(), updatedAt: Date.now(), userId: 'user1',
+    });
+    const result = await policiesCommand.handler({ senderId: 'user1', args: 'enable my limit' });
+    expect(result.text).toContain('never been confirmed');
+    expect(store.getPolicy('user1', 'p1')!.status).toBe('draft');
+  });
+});
+
+// ─── Production Hardening Tests ─────────────────────────────────────────
+
+describe('P0: Allowlist/Blocklist null field → confirm', () => {
+  beforeEach(async () => {
+    process.env.HOME = TEST_HOME;
+    const { resetPolicyStore, getPolicyStore } = await import('../extensions/crypto/src/services/policy-store.js');
+    resetPolicyStore();
+    const store = getPolicyStore();
+    store.savePolicy({
+      id: 'p-allow', name: 'only-eth', description: 'test',
+      rules: [{ type: 'allowlist', field: 'tokens', values: ['eth'] }],
+      scope: { type: 'all_write' },
+      status: 'active', confirmedAt: Date.now(), createdAt: Date.now(), updatedAt: Date.now(), userId: 'user1',
+    });
+    store.savePolicy({
+      id: 'p-block', name: 'no-shib', description: 'test',
+      rules: [{ type: 'blocklist', field: 'tokens', values: ['shib'] }],
+      scope: { type: 'all_write' },
+      status: 'active', confirmedAt: Date.now(), createdAt: Date.now(), updatedAt: Date.now(), userId: 'user1',
+    });
+  });
+
+  afterEach(() => { try { rmSync(TEST_HOME, { recursive: true, force: true }); } catch {} });
+
+  it('allowlist with unknown token → confirm (not allow)', async () => {
+    const { evaluatePolicies } = await import('../extensions/crypto/src/services/policy-evaluator.js');
+    // token is undefined — should require confirmation, not silently allow
+    const decision = evaluatePolicies({ toolName: 'defi_swap', userId: 'user1' });
+    expect(decision.action).toBe('confirm');
+    expect(decision.reason).toContain('cannot determine');
+  });
+
+  it('blocklist with unknown token → confirm (not allow)', async () => {
+    const { evaluatePolicies } = await import('../extensions/crypto/src/services/policy-evaluator.js');
+    // Disable allowlist policy to test blocklist in isolation
+    const { getPolicyStore } = await import('../extensions/crypto/src/services/policy-store.js');
+    const store = getPolicyStore();
+    const p = store.getPolicy('user1', 'p-allow')!;
+    p.status = 'disabled';
+    store.savePolicy(p);
+
+    const decision = evaluatePolicies({ toolName: 'defi_swap', userId: 'user1' });
+    expect(decision.action).toBe('confirm');
+    expect(decision.reason).toContain('cannot determine');
+  });
+});
+
+describe('P0: Corrupt store → fail-closed', () => {
+  beforeEach(async () => {
+    process.env.HOME = TEST_HOME;
+    const { resetPolicyStore } = await import('../extensions/crypto/src/services/policy-store.js');
+    resetPolicyStore();
+  });
+
+  afterEach(() => { try { rmSync(TEST_HOME, { recursive: true, force: true }); } catch {} });
+
+  it('blocks all when policy file is corrupt', async () => {
+    const { mkdirSync: mkd, writeFileSync: wfs } = await import('node:fs');
+    const { createHash } = await import('node:crypto');
+    const hashedId = createHash('sha256').update('user1').digest('hex').slice(0, 16);
+    const dir = join(TEST_HOME, '.openclawnch', 'policies', hashedId);
+    mkd(dir, { recursive: true });
+    wfs(join(dir, 'policies.json'), '{{{CORRUPT');
+
+    const { resetPolicyStore, getPolicyStore } = await import('../extensions/crypto/src/services/policy-store.js');
+    resetPolicyStore();
+    const store = getPolicyStore();
+    // listPolicies should trigger corruption detection
+    store.listPolicies('user1');
+    expect(store.isCorrupted('user1')).toBe(true);
+
+    const { evaluatePolicies } = await import('../extensions/crypto/src/services/policy-evaluator.js');
+    const decision = evaluatePolicies({ toolName: 'defi_swap', userId: 'user1', amountUsd: 1 });
+    expect(decision.action).toBe('block');
+    expect(decision.reason).toContain('corrupted');
+  });
+});
+
+describe('P0: Confirmation nonce system', () => {
+  beforeEach(async () => {
+    const { resetPolicyConfirmationStore } = await import('../extensions/crypto/src/services/policy-evaluator.js');
+    resetPolicyConfirmationStore();
+  });
+
+  it('creates and consumes a valid nonce', async () => {
+    const { getPolicyConfirmationStore } = await import('../extensions/crypto/src/services/policy-evaluator.js');
+    const store = getPolicyConfirmationStore();
+    const nonce = store.create('user1', 'defi_swap');
+    expect(typeof nonce).toBe('string');
+    expect(nonce.length).toBeGreaterThan(0);
+    // Consume should succeed
+    expect(store.consume(nonce, 'user1', 'defi_swap')).toBe(true);
+    // Second consume should fail (already consumed)
+    expect(store.consume(nonce, 'user1', 'defi_swap')).toBe(false);
+  });
+
+  it('rejects nonce with wrong user', async () => {
+    const { getPolicyConfirmationStore } = await import('../extensions/crypto/src/services/policy-evaluator.js');
+    const store = getPolicyConfirmationStore();
+    const nonce = store.create('user1', 'defi_swap');
+    expect(store.consume(nonce, 'user2', 'defi_swap')).toBe(false);
+  });
+
+  it('rejects nonce with wrong tool', async () => {
+    const { getPolicyConfirmationStore } = await import('../extensions/crypto/src/services/policy-evaluator.js');
+    const store = getPolicyConfirmationStore();
+    const nonce = store.create('user1', 'defi_swap');
+    expect(store.consume(nonce, 'user1', 'transfer')).toBe(false);
+  });
+
+  it('rejects unknown nonce', async () => {
+    const { getPolicyConfirmationStore } = await import('../extensions/crypto/src/services/policy-evaluator.js');
+    const store = getPolicyConfirmationStore();
+    expect(store.consume('nonexistent-nonce', 'user1', 'defi_swap')).toBe(false);
+  });
+});
+
+describe('P1: parseRule validation', () => {
+  beforeEach(async () => {
+    process.env.HOME = TEST_HOME;
+    const { resetPolicyStore } = await import('../extensions/crypto/src/services/policy-store.js');
+    resetPolicyStore();
+  });
+
+  afterEach(() => { try { rmSync(TEST_HOME, { recursive: true, force: true }); } catch {} });
+
+  it('rejects spending_limit without maxAmountUsd', async () => {
+    const { createPolicyManageTool } = await import('../extensions/crypto/src/tools/policy-manage.js');
+    const tool = createPolicyManageTool();
+    const result = await tool.execute('tc1', {
+      action: 'propose', name: 'test', description: 'test',
+      rules: [{ type: 'spending_limit', period: 'daily' }], // missing maxAmountUsd
+      scope: { type: 'all_write' },
+    }, { senderId: 'user1' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('maxAmountUsd');
+  });
+
+  it('rejects spending_limit without period', async () => {
+    const { createPolicyManageTool } = await import('../extensions/crypto/src/tools/policy-manage.js');
+    const tool = createPolicyManageTool();
+    const result = await tool.execute('tc1', {
+      action: 'propose', name: 'test', description: 'test',
+      rules: [{ type: 'spending_limit', maxAmountUsd: 500 }], // missing period
+      scope: { type: 'all_write' },
+    }, { senderId: 'user1' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('period');
+  });
+
+  it('rejects unknown rule type', async () => {
+    const { createPolicyManageTool } = await import('../extensions/crypto/src/tools/policy-manage.js');
+    const tool = createPolicyManageTool();
+    const result = await tool.execute('tc1', {
+      action: 'propose', name: 'test', description: 'test',
+      rules: [{ type: 'banana_rule' }],
+      scope: { type: 'all_write' },
+    }, { senderId: 'user1' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('Unknown rule type');
+  });
+
+  it('rejects allowlist without values', async () => {
+    const { createPolicyManageTool } = await import('../extensions/crypto/src/tools/policy-manage.js');
+    const tool = createPolicyManageTool();
+    const result = await tool.execute('tc1', {
+      action: 'propose', name: 'test', description: 'test',
+      rules: [{ type: 'allowlist', field: 'tokens' }], // missing values
+      scope: { type: 'all_write' },
+    }, { senderId: 'user1' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('values');
+  });
+
+  it('rejects time_window without hours or days', async () => {
+    const { createPolicyManageTool } = await import('../extensions/crypto/src/tools/policy-manage.js');
+    const tool = createPolicyManageTool();
+    const result = await tool.execute('tc1', {
+      action: 'propose', name: 'test', description: 'test',
+      rules: [{ type: 'time_window' }], // neither allowedHours nor allowedDays
+      scope: { type: 'all_write' },
+    }, { senderId: 'user1' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('allowedHours or allowedDays');
+  });
+
+  it('rejects time_window with invalid hours', async () => {
+    const { createPolicyManageTool } = await import('../extensions/crypto/src/tools/policy-manage.js');
+    const tool = createPolicyManageTool();
+    const result = await tool.execute('tc1', {
+      action: 'propose', name: 'test', description: 'test',
+      rules: [{ type: 'time_window', allowedHours: { start: -1, end: 25 } }],
+      scope: { type: 'all_write' },
+    }, { senderId: 'user1' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('0-23');
+  });
+
+  it('rejects time_window with invalid days', async () => {
+    const { createPolicyManageTool } = await import('../extensions/crypto/src/tools/policy-manage.js');
+    const tool = createPolicyManageTool();
+    const result = await tool.execute('tc1', {
+      action: 'propose', name: 'test', description: 'test',
+      rules: [{ type: 'time_window', allowedDays: [0, 7] }], // 7 is invalid
+      scope: { type: 'all_write' },
+    }, { senderId: 'user1' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('0 (Sun) - 6 (Sat)');
+  });
+});
+
+describe('P1: handleEnable draft guard', () => {
+  beforeEach(async () => {
+    process.env.HOME = TEST_HOME;
+    const { resetPolicyStore } = await import('../extensions/crypto/src/services/policy-store.js');
+    resetPolicyStore();
+  });
+
+  afterEach(() => { try { rmSync(TEST_HOME, { recursive: true, force: true }); } catch {} });
+
+  it('enable rejects unconfirmed policy (tool)', async () => {
+    const { createPolicyManageTool } = await import('../extensions/crypto/src/tools/policy-manage.js');
+    const { getPolicyStore } = await import('../extensions/crypto/src/services/policy-store.js');
+    const tool = createPolicyManageTool();
+    const store = getPolicyStore();
+    store.savePolicy({
+      id: 'p1', name: 'test', description: 'test',
+      rules: [{ type: 'max_amount', maxAmountUsd: 100 }],
+      scope: { type: 'all_write' },
+      status: 'disabled', createdAt: Date.now(), updatedAt: Date.now(), userId: 'user1',
+      // no confirmedAt
+    });
+    const result = await tool.execute('tc1', {
+      action: 'enable', policyId: 'p1',
+    }, { senderId: 'user1' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('never been confirmed');
+  });
+
+  it('confirm sets confirmedAt', async () => {
+    const { createPolicyManageTool } = await import('../extensions/crypto/src/tools/policy-manage.js');
+    const { getPolicyStore } = await import('../extensions/crypto/src/services/policy-store.js');
+    const tool = createPolicyManageTool();
+    // Propose
+    const proposeResult = await tool.execute('tc1', {
+      action: 'propose', name: 'test', description: 'test',
+      rules: [{ type: 'max_amount', maxAmountUsd: 100 }],
+      scope: { type: 'all_write' },
+    }, { senderId: 'user1' });
+    const policyId = JSON.parse(proposeResult.content[0].text).policyId;
+    // Confirm
+    await tool.execute('tc2', { action: 'confirm', policyId }, { senderId: 'user1' });
+    const store = getPolicyStore();
+    const policy = store.getPolicy('user1', policyId)!;
+    expect(policy.confirmedAt).toBeDefined();
+    expect(policy.confirmedAt).toBeGreaterThan(0);
+  });
+});
+
+describe('P1: userId sanitization — collision resistance', () => {
+  beforeEach(async () => {
+    process.env.HOME = TEST_HOME;
+    const { resetPolicyStore } = await import('../extensions/crypto/src/services/policy-store.js');
+    resetPolicyStore();
+  });
+
+  afterEach(() => { try { rmSync(TEST_HOME, { recursive: true, force: true }); } catch {} });
+
+  it('user@1 and user_1 have separate policy stores', async () => {
+    const { getPolicyStore } = await import('../extensions/crypto/src/services/policy-store.js');
+    const store = getPolicyStore();
+    store.savePolicy({
+      id: 'p1', name: 'policy-a', description: 'for user@1',
+      rules: [{ type: 'max_amount', maxAmountUsd: 100 }],
+      scope: { type: 'all_write' },
+      status: 'active', confirmedAt: Date.now(), createdAt: Date.now(), updatedAt: Date.now(), userId: 'user@1',
+    });
+    store.savePolicy({
+      id: 'p2', name: 'policy-b', description: 'for user_1',
+      rules: [{ type: 'max_amount', maxAmountUsd: 200 }],
+      scope: { type: 'all_write' },
+      status: 'active', confirmedAt: Date.now(), createdAt: Date.now(), updatedAt: Date.now(), userId: 'user_1',
+    });
+    // Each user should only see their own policy
+    expect(store.listPolicies('user@1')).toHaveLength(1);
+    expect(store.listPolicies('user@1')[0].name).toBe('policy-a');
+    expect(store.listPolicies('user_1')).toHaveLength(1);
+    expect(store.listPolicies('user_1')[0].name).toBe('policy-b');
+  });
+});
+
+describe('P2: Max policy count per user', () => {
+  beforeEach(async () => {
+    process.env.HOME = TEST_HOME;
+    const { resetPolicyStore } = await import('../extensions/crypto/src/services/policy-store.js');
+    resetPolicyStore();
+  });
+
+  afterEach(() => { try { rmSync(TEST_HOME, { recursive: true, force: true }); } catch {} });
+
+  it('rejects when exceeding 50 policies', async () => {
+    const { getPolicyStore } = await import('../extensions/crypto/src/services/policy-store.js');
+    const store = getPolicyStore();
+    // Create 50 policies
+    for (let i = 0; i < 50; i++) {
+      store.savePolicy({
+        id: `p${i}`, name: `policy-${i}`, description: 'test',
+        rules: [{ type: 'max_amount', maxAmountUsd: 100 }],
+        scope: { type: 'all_write' },
+        status: 'active', confirmedAt: Date.now(), createdAt: Date.now(), updatedAt: Date.now(), userId: 'user1',
+      });
+    }
+    expect(store.listPolicies('user1')).toHaveLength(50);
+    // 51st should throw
+    expect(() => store.savePolicy({
+      id: 'p50', name: 'policy-50', description: 'test',
+      rules: [{ type: 'max_amount', maxAmountUsd: 100 }],
+      scope: { type: 'all_write' },
+      status: 'active', confirmedAt: Date.now(), createdAt: Date.now(), updatedAt: Date.now(), userId: 'user1',
+    })).toThrow('Maximum 50');
+  });
+});
+
+describe('P2: periodToMs validation', () => {
+  it('throws on unknown period', async () => {
+    const { periodToMs } = await import('../extensions/crypto/src/services/policy-types.js');
+    expect(() => periodToMs('biweekly')).toThrow('Unknown period');
+  });
+
+  it('accepts known periods', async () => {
+    const { periodToMs } = await import('../extensions/crypto/src/services/policy-types.js');
+    expect(periodToMs('hourly')).toBe(3_600_000);
+    expect(periodToMs('daily')).toBe(86_400_000);
+    expect(periodToMs('weekly')).toBe(604_800_000);
+    expect(periodToMs('monthly')).toBe(30 * 86_400_000);
+  });
+});
+
+describe('P1: handleRevise duplicate name check', () => {
+  beforeEach(async () => {
+    process.env.HOME = TEST_HOME;
+    const { resetPolicyStore } = await import('../extensions/crypto/src/services/policy-store.js');
+    resetPolicyStore();
+  });
+
+  afterEach(() => { try { rmSync(TEST_HOME, { recursive: true, force: true }); } catch {} });
+
+  it('rejects rename to existing policy name', async () => {
+    const { createPolicyManageTool } = await import('../extensions/crypto/src/tools/policy-manage.js');
+    const { getPolicyStore } = await import('../extensions/crypto/src/services/policy-store.js');
+    const tool = createPolicyManageTool();
+    const store = getPolicyStore();
+    // Create two policies
+    store.savePolicy({
+      id: 'p1', name: 'policy-A', description: 'test',
+      rules: [{ type: 'max_amount', maxAmountUsd: 100 }],
+      scope: { type: 'all_write' },
+      status: 'draft', createdAt: Date.now(), updatedAt: Date.now(), userId: 'user1',
+    });
+    store.savePolicy({
+      id: 'p2', name: 'policy-B', description: 'test',
+      rules: [{ type: 'max_amount', maxAmountUsd: 200 }],
+      scope: { type: 'all_write' },
+      status: 'draft', createdAt: Date.now(), updatedAt: Date.now(), userId: 'user1',
+    });
+    // Try to rename p2 to 'policy-A'
+    const result = await tool.execute('tc1', {
+      action: 'revise', policyId: 'p2', name: 'policy-A',
+    }, { senderId: 'user1' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('already exists');
+  });
+});
+
+describe('extractPolicyUserId', () => {
+  it('returns senderId when available', async () => {
+    const { extractPolicyUserId } = await import('../extensions/crypto/src/services/policy-evaluator.js');
+    expect(extractPolicyUserId({ senderId: 'alice' })).toBe('alice');
+  });
+
+  it('falls back to from', async () => {
+    const { extractPolicyUserId } = await import('../extensions/crypto/src/services/policy-evaluator.js');
+    expect(extractPolicyUserId({ from: 'bob' })).toBe('bob');
+  });
+
+  it('falls back to metadata.senderId', async () => {
+    const { extractPolicyUserId } = await import('../extensions/crypto/src/services/policy-evaluator.js');
+    expect(extractPolicyUserId({ metadata: { senderId: 'charlie' } })).toBe('charlie');
+  });
+
+  it('defaults to owner', async () => {
+    const { extractPolicyUserId } = await import('../extensions/crypto/src/services/policy-evaluator.js');
+    expect(extractPolicyUserId({})).toBe('owner');
+    expect(extractPolicyUserId(undefined)).toBe('owner');
   });
 });
 

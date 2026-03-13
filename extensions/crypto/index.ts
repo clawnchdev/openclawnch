@@ -165,7 +165,7 @@ import { pullCommand } from './src/commands/pull-command.js';
 // Policy engine — spending policies, approval rules, autonomy bounds
 import { createPolicyManageTool } from './src/tools/policy-manage.js';
 import { policiesCommand } from './src/commands/policies-command.js';
-import { evaluatePolicies, extractActionContext, recordToolExecution } from './src/services/policy-evaluator.js';
+import { evaluatePolicies, extractActionContext, recordToolExecution, getPolicyConfirmationStore, extractPolicyUserId } from './src/services/policy-evaluator.js';
 
 // Typing indicator — Telegram "typing..." action during agent thinking
 import { getTypingIndicator } from './src/services/typing-indicator.js';
@@ -226,44 +226,55 @@ const plugin = {
         const originalExecute = tool.execute;
         tool.execute = async (toolCallId: string, args: unknown, ctx?: any) => {
           // Check if the requesting user is in readonly mode
-          const userId = ctx?.senderId ?? ctx?.from ?? ctx?.metadata?.senderId;
-          if (userId && isReadonly(userId)) {
+          const userId = extractPolicyUserId(ctx);
+          if (isReadonly(userId)) {
             return {
               text: `BLOCKED: Read-only mode is active. The tool "${tool.name}" writes to the blockchain and cannot be used in readonly mode. Use /safemode or /dangermode to re-enable write operations.`,
               isError: true,
             };
           }
           // Policy enforcement gate
-          if (userId) {
-            const actionCtx = extractActionContext(
-              tool.name,
-              (args ?? {}) as Record<string, unknown>,
-              userId,
-            );
-            const decision = evaluatePolicies(actionCtx);
-            if (decision.action === 'block') {
-              return {
-                content: [{ type: 'text' as const, text: `BLOCKED by policy: ${decision.reason ?? 'Policy violation.'}` }],
-                details: { blocked: true, policy: decision.policyName, rule: decision.ruleSummary },
-                isError: true,
-              };
-            }
-            if (decision.action === 'confirm') {
-              return {
-                content: [{ type: 'text' as const, text: `POLICY HOLD: ${decision.reason ?? 'Confirmation required.'}\n\nAsk the user to confirm before retrying this action.` }],
-                details: { needsConfirmation: true, policy: decision.policyName, rule: decision.ruleSummary },
-                isError: true,
-              };
-            }
-            // action === 'allow' — record usage after execution
-            const result = await originalExecute.call(tool, toolCallId, args, ctx);
-            // Record usage on success (not on error)
-            if (!result?.isError) {
-              try { recordToolExecution(actionCtx); } catch { /* best-effort */ }
-            }
-            return result;
+          const argsObj = (args ?? {}) as Record<string, unknown>;
+          const actionCtx = extractActionContext(tool.name, argsObj, userId);
+          const decision = evaluatePolicies(actionCtx);
+          if (decision.action === 'block') {
+            return {
+              content: [{ type: 'text' as const, text: `BLOCKED by policy: ${decision.reason ?? 'Policy violation.'}` }],
+              details: { blocked: true, policy: decision.policyName, rule: decision.ruleSummary },
+              isError: true,
+            };
           }
-          return originalExecute.call(tool, toolCallId, args, ctx);
+          if (decision.action === 'confirm') {
+            // Check if the caller provided a valid confirmation nonce
+            const nonce = argsObj.policyConfirmationNonce as string | undefined;
+            if (nonce) {
+              const confirmStore = getPolicyConfirmationStore();
+              if (confirmStore.consume(nonce, userId, tool.name)) {
+                // Nonce valid — user confirmed, proceed to execution
+                const result = await originalExecute.call(tool, toolCallId, args, ctx);
+                if (!result?.isError) {
+                  try { recordToolExecution(actionCtx); } catch { /* best-effort */ }
+                }
+                return result;
+              }
+              // Invalid/expired nonce — fall through to hold
+            }
+            // Generate a new nonce for the user to confirm
+            const confirmStore = getPolicyConfirmationStore();
+            const newNonce = confirmStore.create(userId, tool.name);
+            return {
+              content: [{ type: 'text' as const, text: `POLICY HOLD: ${decision.reason ?? 'Confirmation required.'}\n\nAsk the user to confirm. Once confirmed, retry this tool call with the parameter policyConfirmationNonce="${newNonce}".` }],
+              details: { needsConfirmation: true, policy: decision.policyName, rule: decision.ruleSummary, confirmationNonce: newNonce },
+              isError: true,
+            };
+          }
+          // action === 'allow' — record usage after execution
+          const result = await originalExecute.call(tool, toolCallId, args, ctx);
+          // Record usage on success (not on error)
+          if (!result?.isError) {
+            try { recordToolExecution(actionCtx); } catch { /* best-effort */ }
+          }
+          return result;
         };
       }
       api.registerTool(tool);

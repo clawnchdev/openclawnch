@@ -7,8 +7,9 @@
  *     usage.json      — array of PolicyUsage (rolling window, pruned on load)
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, chmodSync } from 'node:fs';
 import { join } from 'node:path';
+import { createHash } from 'node:crypto';
 import type { Policy, PolicyUsage, UsageEntry } from './policy-types.js';
 
 const HOME = process.env.HOME ?? '/home/openclawnch';
@@ -17,10 +18,20 @@ const BASE_DIR = join(HOME, '.openclawnch', 'policies');
 /** Max usage entries per policy before pruning (keep 30 days). */
 const MAX_USAGE_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 
+/** Maximum policies per user (DoS prevention). */
+const MAX_POLICIES_PER_USER = 50;
+
+/** File permissions for policy files (owner read/write only). */
+const FILE_MODE = 0o600;
+
 // ─── Path helpers ───────────────────────────────────────────────────────
 
+/**
+ * Hash userId to prevent collisions: "user@1" and "user_1" must NOT
+ * map to the same directory. SHA-256 prefix is collision-resistant.
+ */
 function sanitizeUserId(id: string): string {
-  return id.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64);
+  return createHash('sha256').update(id).digest('hex').slice(0, 16);
 }
 
 function userDir(userId: string): string {
@@ -42,6 +53,13 @@ function usagePath(userId: string): string {
 export class PolicyStore {
   private cache = new Map<string, Policy[]>();
   private usageCache = new Map<string, PolicyUsage[]>();
+  /** Set of userIds whose policy files are corrupted. Fail-closed: block all. */
+  private _corrupted = new Set<string>();
+
+  /** Check if the store is corrupted for a user (fail-closed). */
+  isCorrupted(userId: string): boolean {
+    return this._corrupted.has(userId);
+  }
 
   /** Load all policies for a user. */
   listPolicies(userId: string): Policy[] {
@@ -55,7 +73,12 @@ export class PolicyStore {
       const data = JSON.parse(readFileSync(path, 'utf8')) as Policy[];
       this.cache.set(userId, data);
       return data;
-    } catch {
+    } catch (err) {
+      // Corruption detected — rename corrupt file for forensics and fail closed
+      this._corrupted.add(userId);
+      try {
+        renameSync(path, path + '.corrupt.' + Date.now());
+      } catch { /* best effort */ }
       return [];
     }
   }
@@ -76,13 +99,16 @@ export class PolicyStore {
     return this.listPolicies(userId).find(p => p.name.toLowerCase() === lower);
   }
 
-  /** Create or update a policy. */
+  /** Create or update a policy. Throws if max count exceeded on insert. */
   savePolicy(policy: Policy): void {
     const policies = this.listPolicies(policy.userId);
     const idx = policies.findIndex(p => p.id === policy.id);
     if (idx >= 0) {
       policies[idx] = policy;
     } else {
+      if (policies.length >= MAX_POLICIES_PER_USER) {
+        throw new Error(`Maximum ${MAX_POLICIES_PER_USER} policies per user reached. Delete some before creating new ones.`);
+      }
       policies.push(policy);
     }
     this.cache.set(policy.userId, policies);
@@ -122,10 +148,15 @@ export class PolicyStore {
       const data = JSON.parse(readFileSync(path, 'utf8')) as PolicyUsage[];
       // Prune old entries
       const cutoff = Date.now() - MAX_USAGE_AGE_MS;
+      let pruned = false;
       for (const pu of data) {
+        const before = pu.entries.length;
         pu.entries = pu.entries.filter(e => e.timestamp > cutoff);
+        if (pu.entries.length < before) pruned = true;
       }
       this.usageCache.set(userId, data);
+      // Persist pruned data to prevent unbounded file growth
+      if (pruned) this.persistUsage(userId);
       return data;
     } catch {
       return [];
@@ -172,19 +203,32 @@ export class PolicyStore {
 
   private persist(userId: string): void {
     const policies = this.cache.get(userId) ?? [];
-    writeFileSync(policiesPath(userId), JSON.stringify(policies, null, 2));
+    atomicWrite(policiesPath(userId), JSON.stringify(policies, null, 2));
   }
 
   private persistUsage(userId: string): void {
     const usages = this.usageCache.get(userId) ?? [];
-    writeFileSync(usagePath(userId), JSON.stringify(usages, null, 2));
+    atomicWrite(usagePath(userId), JSON.stringify(usages, null, 2));
   }
 
   /** Clear all caches (for testing). */
   reset(): void {
     this.cache.clear();
     this.usageCache.clear();
+    this._corrupted.clear();
   }
+}
+
+// ─── Atomic Write Helper ────────────────────────────────────────────────
+
+/**
+ * Write to a temp file then rename (atomic on POSIX).
+ * Prevents data loss on crash mid-write. Sets restrictive permissions.
+ */
+function atomicWrite(targetPath: string, data: string): void {
+  const tmpPath = targetPath + '.tmp.' + Date.now();
+  writeFileSync(tmpPath, data, { mode: FILE_MODE });
+  renameSync(tmpPath, targetPath);
 }
 
 // ─── Singleton ──────────────────────────────────────────────────────────

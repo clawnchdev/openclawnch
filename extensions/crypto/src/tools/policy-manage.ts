@@ -20,6 +20,7 @@ import {
   evaluatePolicies,
   buildPolicyDisplay,
   renderPolicyDisplay,
+  extractPolicyUserId,
 } from '../services/policy-evaluator.js';
 import {
   type Policy,
@@ -124,7 +125,7 @@ export function createPolicyManageTool() {
     execute: async (_toolCallId: string, args: unknown, ctx?: any) => {
       const params = args as Record<string, unknown>;
       const action = params.action as string;
-      const userId = ctx?.senderId ?? ctx?.from ?? 'owner';
+      const userId = extractPolicyUserId(ctx);
 
       switch (action) {
         case 'propose':   return handlePropose(params, userId);
@@ -163,7 +164,12 @@ function handlePropose(params: Record<string, unknown>, userId: string) {
   const existing = store.getPolicyByName(userId, name);
   if (existing) return errorResult(`A policy named "${name}" already exists (id: ${existing.id}).`);
 
-  const rules = rawRules.map(parseRule);
+  let rules: PolicyRule[];
+  try {
+    rules = rawRules.map(parseRule);
+  } catch (err) {
+    return errorResult(`Invalid rule: ${err instanceof Error ? err.message : String(err)}`);
+  }
   const scope = parseScope(rawScope);
 
   const policy: Policy = {
@@ -178,7 +184,11 @@ function handlePropose(params: Record<string, unknown>, userId: string) {
     userId,
   };
 
-  store.savePolicy(policy);
+  try {
+    store.savePolicy(policy);
+  } catch (err) {
+    return errorResult(err instanceof Error ? err.message : String(err));
+  }
 
   // Render for user verification
   const display = buildPolicyDisplay(policy, userId);
@@ -208,6 +218,7 @@ function handleConfirm(params: Record<string, unknown>, userId: string) {
   if (policy.status === 'active') return errorResult('Policy is already active.');
 
   policy.status = 'active';
+  policy.confirmedAt = Date.now();
   policy.updatedAt = Date.now();
   store.savePolicy(policy);
 
@@ -233,10 +244,22 @@ function handleRevise(params: Record<string, unknown>, userId: string) {
   }
 
   // Update fields that are provided
-  if (params.name) policy.name = params.name as string;
+  if (params.name) {
+    const newName = params.name as string;
+    // Check duplicate name (skip if same policy)
+    const dup = store.getPolicyByName(userId, newName);
+    if (dup && dup.id !== policy.id) {
+      return errorResult(`A policy named "${newName}" already exists (id: ${dup.id}).`);
+    }
+    policy.name = newName;
+  }
   if (params.description) policy.description = params.description as string;
   if (params.rules && Array.isArray(params.rules) && (params.rules as any[]).length > 0) {
-    policy.rules = (params.rules as any[]).map(parseRule);
+    try {
+      policy.rules = (params.rules as any[]).map(parseRule);
+    } catch (err) {
+      return errorResult(`Invalid rule: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
   if (params.scope) policy.scope = parseScope(params.scope);
 
@@ -337,6 +360,14 @@ function handleEnable(params: Record<string, unknown>, userId: string) {
   const policy = store.getPolicy(userId, policyId);
   if (!policy) return errorResult(`Policy ${policyId} not found.`);
 
+  // Only allow enabling policies that have been confirmed at least once.
+  // This prevents bypassing the propose→confirm flow.
+  if (!policy.confirmedAt) {
+    return errorResult(
+      `Policy "${policy.name}" has never been confirmed. Use the "confirm" action first to verify the rules with the user.`,
+    );
+  }
+
   policy.status = 'active';
   policy.updatedAt = Date.now();
   store.savePolicy(policy);
@@ -422,53 +453,117 @@ function handleCategories() {
 
 // ─── Parsing Helpers ────────────────────────────────────────────────────
 
+/**
+ * Parse and validate a raw rule from the LLM.
+ * Throws on missing required fields or unknown types instead of silently
+ * defaulting (which could create zero-limit policies that block everything
+ * or miss enforcement entirely).
+ */
 function parseRule(raw: any): PolicyRule {
   const type = raw.type as string;
   switch (type) {
-    case 'spending_limit':
+    case 'spending_limit': {
+      if (raw.maxAmountUsd == null || typeof raw.maxAmountUsd !== 'number') {
+        throw new Error('spending_limit rule requires maxAmountUsd (number).');
+      }
+      if (raw.period == null) {
+        throw new Error('spending_limit rule requires period (hourly|daily|weekly|monthly).');
+      }
+      const validPeriods = ['hourly', 'daily', 'weekly', 'monthly'];
+      if (!validPeriods.includes(raw.period)) {
+        throw new Error(`spending_limit period must be one of: ${validPeriods.join(', ')}. Got: "${raw.period}".`);
+      }
       return {
         type: 'spending_limit',
-        maxAmountUsd: raw.maxAmountUsd ?? 0,
-        period: raw.period ?? 'daily',
+        maxAmountUsd: raw.maxAmountUsd,
+        period: raw.period,
       };
-    case 'rate_limit':
+    }
+    case 'rate_limit': {
+      if (raw.maxCalls == null || typeof raw.maxCalls !== 'number') {
+        throw new Error('rate_limit rule requires maxCalls (number).');
+      }
+      if (raw.periodMs == null || typeof raw.periodMs !== 'number') {
+        throw new Error('rate_limit rule requires periodMs (number, milliseconds).');
+      }
       return {
         type: 'rate_limit',
-        maxCalls: raw.maxCalls ?? 10,
-        periodMs: raw.periodMs ?? 86_400_000,
+        maxCalls: raw.maxCalls,
+        periodMs: raw.periodMs,
       };
-    case 'allowlist':
+    }
+    case 'allowlist': {
+      if (!raw.field) {
+        throw new Error('allowlist rule requires field (tokens|chains|addresses|contracts).');
+      }
+      if (!raw.values || !Array.isArray(raw.values) || raw.values.length === 0) {
+        throw new Error('allowlist rule requires values (non-empty array).');
+      }
       return {
         type: 'allowlist',
-        field: raw.field ?? 'tokens',
-        values: (raw.values ?? []).map((v: string) => v.toLowerCase()),
+        field: raw.field,
+        values: raw.values.map((v: string) => v.toLowerCase()),
       };
-    case 'blocklist':
+    }
+    case 'blocklist': {
+      if (!raw.field) {
+        throw new Error('blocklist rule requires field (tokens|chains|addresses|contracts).');
+      }
+      if (!raw.values || !Array.isArray(raw.values) || raw.values.length === 0) {
+        throw new Error('blocklist rule requires values (non-empty array).');
+      }
       return {
         type: 'blocklist',
-        field: raw.field ?? 'tokens',
-        values: (raw.values ?? []).map((v: string) => v.toLowerCase()),
+        field: raw.field,
+        values: raw.values.map((v: string) => v.toLowerCase()),
       };
-    case 'time_window':
+    }
+    case 'time_window': {
+      // Validate allowedHours range
+      if (raw.allowedHours) {
+        const { start, end } = raw.allowedHours;
+        if (typeof start !== 'number' || typeof end !== 'number' || start < 0 || start > 23 || end < 0 || end > 23) {
+          throw new Error('time_window allowedHours start/end must be 0-23.');
+        }
+      }
+      // Validate allowedDays range
+      if (raw.allowedDays && Array.isArray(raw.allowedDays)) {
+        for (const d of raw.allowedDays) {
+          if (typeof d !== 'number' || d < 0 || d > 6) {
+            throw new Error('time_window allowedDays must be numbers 0 (Sun) - 6 (Sat).');
+          }
+        }
+      }
+      if (!raw.allowedHours && !raw.allowedDays) {
+        throw new Error('time_window rule requires at least allowedHours or allowedDays.');
+      }
       return {
         type: 'time_window',
         allowedHours: raw.allowedHours,
         allowedDays: raw.allowedDays,
         timezone: raw.timezone,
       };
-    case 'approval_threshold':
+    }
+    case 'approval_threshold': {
+      if (raw.amountUsd == null || typeof raw.amountUsd !== 'number') {
+        throw new Error('approval_threshold rule requires amountUsd (number).');
+      }
       return {
         type: 'approval_threshold',
-        amountUsd: raw.amountUsd ?? 0,
+        amountUsd: raw.amountUsd,
       };
-    case 'max_amount':
+    }
+    case 'max_amount': {
+      if (raw.maxAmountUsd == null || typeof raw.maxAmountUsd !== 'number') {
+        throw new Error('max_amount rule requires maxAmountUsd (number).');
+      }
       return {
         type: 'max_amount',
-        maxAmountUsd: raw.maxAmountUsd ?? 0,
+        maxAmountUsd: raw.maxAmountUsd,
       };
+    }
     default:
-      // Graceful fallback — treat unknown as max_amount 0 (blocks everything)
-      return { type: 'max_amount', maxAmountUsd: 0 };
+      throw new Error(`Unknown rule type: "${type}". Valid types: spending_limit, rate_limit, allowlist, blocklist, time_window, approval_threshold, max_amount.`);
   }
 }
 

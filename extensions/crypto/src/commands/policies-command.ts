@@ -104,6 +104,13 @@ function setStatus(userId: string, name: string, status: 'active' | 'disabled') 
   if (!policy) policy = store.getPolicy(userId, name);
   if (!policy) return { text: `Policy "${name}" not found.` };
 
+  // Prevent enabling a policy that was never confirmed through the propose→confirm flow
+  if (status === 'active' && !policy.confirmedAt) {
+    return {
+      text: `Policy **${policy.name}** has never been confirmed. Describe the policy in plain English and the agent will walk you through the confirmation flow.`,
+    };
+  }
+
   policy.status = status;
   policy.updatedAt = Date.now();
   store.savePolicy(policy);

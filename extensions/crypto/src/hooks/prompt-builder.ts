@@ -137,9 +137,14 @@ export function buildPromptContext(
         const activePolicies = policyStore.getActivePolicies(userId);
         if (activePolicies.length > 0) {
           const policyLines = activePolicies.map(p => {
+            // Sanitize policy name: strip control chars, cap length, prevent injection
+            const safeName = p.name
+              .replace(/[\x00-\x1f\x7f]/g, '') // strip control characters
+              .replace(/[<>{}]/g, '')            // strip XML/template chars
+              .slice(0, 100);                    // cap length
             const rules = p.rules.map(r => describeRule(r)).join('; ');
             const scope = describeScope(p.scope);
-            return `  - "${p.name}": ${rules}. Applies to: ${scope}`;
+            return `  - [Policy: ${safeName}]: ${rules}. Applies to: ${scope}`;
           });
           dynamicParts.push([
             `ACTIVE POLICIES (${activePolicies.length}): These are hard-enforced before every write tool. You CANNOT bypass them.`,
