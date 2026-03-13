@@ -156,6 +156,9 @@ import { apiCommand } from './src/commands/api-command.js';
 // Usage reporting
 import { usageNewCommand } from './src/commands/usage-command.js';
 
+// Update + restart from Telegram
+import { updateCommand, restartCommand, setUpdateCommandSender } from './src/commands/update-command.js';
+
 // Typing indicator — Telegram "typing..." action during agent thinking
 import { getTypingIndicator } from './src/services/typing-indicator.js';
 
@@ -470,6 +473,10 @@ const plugin = {
 
     // Usage reporting
     api.registerCommand(usageNewCommand);
+
+    // Update + restart from Telegram
+    api.registerCommand(updateCommand);
+    api.registerCommand(restartCommand);
 
     // ─── Gateway Startup Hook ──────────────────────────────────────
     // Only init wallet at boot for private key mode (headless).
@@ -1151,6 +1158,9 @@ const plugin = {
 
     // ── Channel-agnostic sender for onboarding + notifications ────────
     const channelSender = createChannelSender(api);
+
+    // Wire channel sender to /update command for progress messages
+    setUpdateCommandSender(channelSender);
 
     /** Send an onboarding message to a chat on the given channel. */
     async function sendOnboardingMessage(channel: ChannelId, chatId: string, msg: OnboardingMessage): Promise<void> {
