@@ -264,11 +264,9 @@ export function saveState(state: OnboardingState): void {
 
 // ── Messages ────────────────────────────────────────────────────────────────
 
-const WELCOME_MESSAGE = `Welcome. I'm OpenClawnch — a personal DeFi agent that can check prices, execute trades, manage wallets, bridge cross-chain, and more.
+const WELCOME_MESSAGE = `OpenClawnch — personal DeFi agent. I handle real money on-chain, connected to your mobile wallet for approval on every transaction.
 
-I can connect to your mobile wallet (MetaMask, Rainbow, Coinbase, etc.) — every transaction goes to your phone for approval.
-
-First, pick a communication style:
+Pick a communication style to get started:
 
   /professional — Clear and business-like
   /degen — CT native energy
@@ -278,9 +276,15 @@ First, pick a communication style:
 
 Or type your own preferred tone (10+ characters).
 
-/skip — Skip onboarding and jump straight in
-/back — Go back one step
-/help — See all commands`;
+Explore what I can do:
+  /help trading — Swaps, limit orders, DCA, leverage
+  /help defi — Lending, staking, yield, liquidity
+  /help portfolio — Balances, cost basis, tracking
+  /help tools — User-defined tools, API connectors
+  /help agents — Multi-agent delegation
+  /help — Full command list
+
+/skip — Jump straight in`;
 
 function buildPersonaConfirmation(persona: PersonaId, customText?: string): string {
   const intro = persona === 'custom'
@@ -359,24 +363,21 @@ Now let's try a write operation. Say:
 
 I'll prepare the transaction and send it to your phone wallet for approval. You always have final say.`;
 
-const FIRST_WRITE_DONE_MESSAGE = `Transaction confirmed. Every write operation goes to your wallet for approval. You propose, you decide.
+const FIRST_WRITE_DONE_MESSAGE = `Transaction confirmed. Every write operation goes to your wallet for approval.
 
-Command reference:
-  /connect        — Reconnect wallet
-  /wallet         — Balance and wallet info
-  /portfolio      — Full token portfolio
-  /tx             — Recent transactions
-  /policy         — Manage spending policies
-  /factoryreset   — Wipe all data and start over
-  /help           — All available commands
+Setup complete. Explore what I can do:
+  /help trading — Swaps, orders, DCA, leverage
+  /help defi — Lending, staking, yield, bridging
+  /help portfolio — Balances, prices, tracking
+  /help — Full command list
 
-Setup complete. Talk to me naturally — "What's the price of ETH?", "Show my portfolio", "Send 10 USDC to 0x...", or anything else.`;
+Or just talk to me — "What's the price of ETH?", "Show my portfolio", "Send 10 USDC to 0x..."`;
 
-const SKIP_MESSAGE = `Onboarding skipped. You can configure everything later:
-  /connect — Pair wallet      |  /wallet — Balances
-  /portfolio — Holdings       |  /tx — History
-  /policy — Auto-approve      |  /factoryreset — Start over
-  /help — All commands`;
+
+const SKIP_MESSAGE = `Onboarding skipped. Use /help to explore commands, or /help <category> for specifics:
+  trading, defi, portfolio, automation, wallet, fiat, tools, agents
+
+  /connect — Pair wallet  |  /help — Full command list`;
 
 // ── Persona Parsing ─────────────────────────────────────────────────────────
 

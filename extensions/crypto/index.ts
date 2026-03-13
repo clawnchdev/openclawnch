@@ -143,6 +143,16 @@ import { createAgentDelegateTool } from './src/tools/agent-delegate.js';
 import { agentsCommand } from './src/commands/agents-command.js';
 import { webhooksCommand } from './src/commands/webhooks-command.js';
 
+// Skill registry + /skills command
+import { skillsCommand } from './src/commands/skills-command.js';
+
+// Interrupt commands + service
+import { interruptCommand, interruptPlanCommand } from './src/commands/interrupt-command.js';
+import { getInterruptService } from './src/services/interrupt-service.js';
+
+// API key management
+import { apiCommand } from './src/commands/api-command.js';
+
 // Extracted hook logic
 import { buildPromptContext } from './src/hooks/prompt-builder.js';
 import { handleAfterToolCall } from './src/hooks/after-tool-call.js';
@@ -442,11 +452,37 @@ const plugin = {
     api.registerCommand(agentsCommand);
     api.registerCommand(webhooksCommand);
 
+    // Skill registry
+    api.registerCommand(skillsCommand);
+
+    // Interrupt
+    api.registerCommand(interruptCommand);
+    api.registerCommand(interruptPlanCommand);
+
+    // API key management
+    api.registerCommand(apiCommand);
+
     // ─── Gateway Startup Hook ──────────────────────────────────────
     // Only init wallet at boot for private key mode (headless).
     // WalletConnect init is deferred to the clawnchconnect tool to avoid
     // double-init of WC Core which breaks the pairing handshake.
     api.on('gateway_start', async () => {
+      // ─── Hydrate API Keys from Keychain ───────────────────────────
+      try {
+        const { hydrateApiKeys } = await import('./src/services/keychain-secrets.js');
+        const { loaded, skipped } = hydrateApiKeys();
+        if (loaded.length > 0) {
+          api.logger?.info?.(`[crypto] Loaded API keys from Keychain: ${loaded.join(', ')}`);
+        }
+        if (skipped.length > 0) {
+          api.logger?.info?.(`[crypto] API keys already in env (skipped Keychain): ${skipped.join(', ')}`);
+        }
+      } catch (err) {
+        api.logger?.warn?.(
+          `[crypto] Failed to hydrate API keys from Keychain: ${err instanceof Error ? err.message : String(err)}`
+        );
+      }
+
       const projectId = process.env.WALLETCONNECT_PROJECT_ID;
       const privateKey = process.env.CLAWNCHER_PRIVATE_KEY;
 
@@ -985,6 +1021,50 @@ const plugin = {
         );
       }
 
+      // ─── Start LLM Credit Monitor ─────────────────────────────────────
+      if (process.env.BANKR_LLM_KEY) {
+        try {
+          const { getCreditMonitor } = await import('./src/services/credit-monitor.js');
+          const creditMonitor = getCreditMonitor({
+            intervalMs: parseInt(process.env.OPENCLAWNCH_CREDIT_CHECK_INTERVAL_MS ?? '300000', 10),
+            warningThresholdUsd: parseFloat(process.env.OPENCLAWNCH_CREDIT_WARNING_USD ?? '5'),
+            criticalThresholdUsd: parseFloat(process.env.OPENCLAWNCH_CREDIT_CRITICAL_USD ?? '1'),
+          });
+
+          const creditSender = createChannelSender(api);
+          const creditOwnerChatId = process.env.OPENCLAWNCH_OWNER_CHAT_ID
+            ?? (api.config as any)?.channels?.telegram?.allowFrom?.[0]
+            ?? null;
+
+          creditMonitor.onAlert(async (alert) => {
+            if (!creditOwnerChatId) return;
+            const severity = alert.severity === 'critical' ? '**CRITICAL**' : '**WARNING**';
+            const message = `${severity} ${alert.message}`;
+
+            const availableChannels = creditSender.availableChannels();
+            for (const ch of availableChannels) {
+              try {
+                await creditSender.send(ch, creditOwnerChatId, message);
+                break;
+              } catch { /* try next channel */ }
+            }
+          });
+
+          creditMonitor.start();
+          api.logger?.info?.('[crypto] LLM credit monitor started');
+
+          api.registerService?.({
+            id: 'crypto-credit-monitor',
+            start: () => { /* already started */ },
+            stop: () => { creditMonitor.stop(); },
+          });
+        } catch (err) {
+          api.logger?.warn?.(
+            `[crypto] Credit monitor failed to start: ${err instanceof Error ? err.message : String(err)}`
+          );
+        }
+      }
+
       // ─── Graceful Shutdown Handler ──────────────────────────────────
       // The host process (openclaw gateway) receives SIGTERM from Docker/Fly.
       // registerService uses optional chaining — if the host doesn't support
@@ -993,6 +1073,11 @@ const plugin = {
       const shutdownServices = (): void => {
         try { getScheduler().stop(); } catch { /* already stopped or never started */ }
         try { getHeartbeatMonitor().stop(); } catch { /* already stopped or never started */ }
+        try {
+          import('./src/services/credit-monitor.js')
+            .then(({ getCreditMonitor }) => getCreditMonitor().stop())
+            .catch(() => {});
+        } catch { /* already stopped */ }
         // Persist in-memory forum topics and thread bindings
         try { persistForumTopics(); } catch { /* best effort */ }
         try { persistThreadBindings(); } catch { /* best effort */ }
@@ -1155,6 +1240,16 @@ const plugin = {
           api.logger?.info?.(`[crypto] Suppressing LLM response for onboarding chat ${chatId}`);
           return { cancel: true };
         }
+
+        // ── Interrupt check ──────────────────────────────────────────
+        // If /interrupt was called, suppress the LLM response.
+        try {
+          const sessionKey = ctx?.sessionKey ?? String(chatId);
+          if (getInterruptService().consume(sessionKey)) {
+            api.logger?.info?.(`[crypto] Response interrupted for session ${sessionKey}`);
+            return { cancel: true };
+          }
+        } catch { /* Non-critical */ }
 
         // ── Credential leak scanning ─────────────────────────────────
         // Scan outbound messages for accidentally leaked secrets before

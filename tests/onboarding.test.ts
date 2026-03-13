@@ -246,7 +246,7 @@ describe('OnboardingFlow', () => {
     const msg = flow.onWriteComplete();
 
     expect(msg).not.toBeNull();
-    expect(msg!.text).toContain('Command reference');
+    expect(msg!.text).toContain('Setup complete');
     expect(msg!.final).toBe(true);
     expect(flow.currentStep).toBe('complete');
     expect(flow.isActive).toBe(false);

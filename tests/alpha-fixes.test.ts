@@ -85,7 +85,7 @@ describe('H1: /connect_* advances onboarding on wallet connection', () => {
 // ── H7: /help command ───────────────────────────────────────────────────
 
 describe('H7: /help command returns grouped commands', () => {
-  it('returns text with all command categories', async () => {
+   it('returns text with category help links', async () => {
     const { helpCommand } = await import(
       '../extensions/crypto/src/commands/help-command.js'
     );
@@ -93,36 +93,48 @@ describe('H7: /help command returns grouped commands', () => {
     const text = result.text;
 
     // Title
-    expect(text).toContain('OpenClawnch Commands');
+    expect(text).toContain('OpenClawnch');
+    expect(text).toContain('Command Reference');
 
-    // Key categories
-    expect(text).toContain('**Wallet**');
-    expect(text).toContain('**Safety & Signing**');
-    expect(text).toContain('**LLM**');
-    expect(text).toContain('**Persona**');
-    expect(text).toContain('**Plans**');
-    expect(text).toContain('**Bankr**');
-    expect(text).toContain('**Diagnostics**');
-    expect(text).toContain('**Other**');
+    // Category links
+    expect(text).toContain('/help trading');
+    expect(text).toContain('/help defi');
+    expect(text).toContain('/help portfolio');
+    expect(text).toContain('/help wallet');
+    expect(text).toContain('/help agents');
   });
 
-  it('includes key commands in help text', async () => {
+  it('includes key commands in help overview', async () => {
     const { helpCommand } = await import(
       '../extensions/crypto/src/commands/help-command.js'
     );
     const result = await helpCommand.handler({});
     const text = result.text;
 
-    // Important commands that should always be listed
+    // Quick commands in overview
     expect(text).toContain('/connect');
     expect(text).toContain('/wallet');
     expect(text).toContain('/portfolio');
-    expect(text).toContain('/safemode');
-    expect(text).toContain('/dangermode');
-    expect(text).toContain('/llm');
     expect(text).toContain('/plans');
-    expect(text).toContain('/flykeys');
-    expect(text).toContain('/factoryreset');
+    expect(text).toContain('/setup');
+    expect(text).toContain('/doctor');
+  });
+
+  it('category subcommands return detailed pages', async () => {
+    const { helpCommand } = await import(
+      '../extensions/crypto/src/commands/help-command.js'
+    );
+
+    const trading = await helpCommand.handler({ args: 'trading' });
+    expect(trading.text).toContain('Trading');
+    expect(trading.text).toContain('defi_swap');
+
+    const wallet = await helpCommand.handler({ args: 'wallet' });
+    expect(wallet.text).toContain('/connect');
+    expect(wallet.text).toContain('/autosign');
+
+    const unknown = await helpCommand.handler({ args: 'nonexistent' });
+    expect(unknown.text).toContain('No help category');
   });
 
   it('refers to itself as OpenClawnch, not OpenClaw', async () => {

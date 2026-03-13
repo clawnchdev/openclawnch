@@ -19,6 +19,7 @@ import { getAgentMemory } from '../services/agent-memory.js';
 import { getEvolutionMode } from '../services/evolution-mode.js';
 import { buildLearnedSkillsIndex } from '../tools/skill-evolve.js';
 import { parseSessionKey, extractSenderId } from '../services/channel-sender.js';
+import { getSkillRegistry } from '../services/skill-registry.js';
 
 // ── Context Diet Constants ──────────────────────────────────────────────
 
@@ -30,6 +31,19 @@ const MAX_MEMORY_SNAPSHOT_CHARS = 3000;
 
 /** Keywords that suggest a multi-step or compound operation. */
 const MULTI_STEP_KEYWORDS = /\b(then|after|chain|sequence|step|multi|schedule|recurring|every|if .+ (drops?|rises?|reaches)|compound|plan|dca|bridge.+swap|swap.+bridge)\b/i;
+
+/**
+ * Max chars for auto-injected skill content. When a skill matches strongly
+ * (score >= SKILL_AUTO_INJECT_THRESHOLD), the full SKILL.md is injected
+ * into the prompt. This cap prevents prompt bloat from oversized skills.
+ */
+const MAX_SKILL_INJECT_CHARS = 8000;
+
+/** Score threshold for full skill content auto-injection (bypass LLM judgment). */
+const SKILL_AUTO_INJECT_THRESHOLD = 3;
+
+/** Score threshold for hint-only injection (tell LLM to load the skill). */
+const SKILL_HINT_THRESHOLD = 2;
 
 /** Dependencies injected by the plugin register() function. */
 export interface PromptBuilderDeps {
@@ -120,6 +134,40 @@ export function buildPromptContext(
         staticParts.push(`Sequential execution rules: Execute ONE step at a time. After each step, CHECK the actual result before proceeding. For swap chains (A→B→C), check actual balance received before next swap. If any step fails, STOP.`);
         staticParts.push(`compound_action tool: Use for scheduled, conditional, or multi-step operations (timed execution, price conditions, recurring tasks, chained operations). Flow: create → confirm → execute/schedule. See /plans for scheduled plans.`);
       }
+
+      // ── Skill auto-injection — match user message against skill registry ──
+      // Strong matches (score >= 3): inject full SKILL.md content into prompt,
+      // removing the LLM's judgment call entirely. This fixes the "LLM ignored
+      // the skill and searched on-chain instead" problem.
+      // Moderate matches (score 2): inject a hint to load the skill.
+      try {
+        const registry = getSkillRegistry();
+        const matches = registry.match(userMessage, { minScore: SKILL_HINT_THRESHOLD, maxResults: 2 });
+        for (const m of matches) {
+          if (m.score >= SKILL_AUTO_INJECT_THRESHOLD) {
+            // Strong match: inject full content
+            const content = registry.readContent(m.skill.name);
+            if (content) {
+              const trimmed = content.length > MAX_SKILL_INJECT_CHARS
+                ? content.slice(0, MAX_SKILL_INJECT_CHARS) + '\n[...skill truncated — use `/skills ' + m.skill.name + '` for full content]'
+                : content;
+              dynamicParts.push(
+                `<auto_loaded_skill name="${m.skill.name}" source="${m.skill.source}">\n` +
+                `The user's message matched the "${m.skill.name}" skill (score: ${m.score}). ` +
+                `Follow these instructions to handle this request:\n\n${trimmed}\n</auto_loaded_skill>`,
+              );
+            }
+          } else {
+            // Moderate match: hint only
+            dynamicParts.push(
+              `The user's message may relate to the "${m.skill.name}" skill: ${m.skill.description.slice(0, 120)}. ` +
+              `Load it with \`/skills ${m.skill.name}\` or \`skill_evolve(action: "view", name: "${m.skill.name}")\` for full instructions before responding.`,
+            );
+          }
+        }
+      } catch {
+        // Non-critical — don't block prompt build if skill registry fails
+      }
     }
 
     // ── Wallet state context (dynamic — changes per session) ──
@@ -133,7 +181,14 @@ export function buildPromptContext(
     }
     if (walletState.mode === 'bankr') {
       // Context Diet: compact Bankr routing block
-      dynamicParts.push('Bankr mode (custodial, auto-sign via api.bankr.bot). Chains: Base/Ethereum/Polygon/Unichain/Solana. Use defi_swap for swaps, bankr_launch for token launches (Base+Solana), bankr_automate for DCA/limit/TWAP, bankr_polymarket for prediction markets, bankr_leverage for leveraged trading.');
+      dynamicParts.push(
+        'Bankr mode (custodial, auto-sign via api.bankr.bot). Chains: Base/Ethereum/Polygon/Unichain/Solana. ' +
+        'Use defi_swap for swaps, bankr_launch for token launches (Base+Solana), bankr_automate for DCA/limit/TWAP, bankr_polymarket for prediction markets, bankr_leverage for leveraged trading. ' +
+        'IMPORTANT: Bankr wallets are smart contract accounts. Do NOT fetch raw calldata from external DEX aggregators (KyberSwap, 1inch, OpenOcean, etc.) and submit it via Bankr — it will fail. ' +
+        'Always use defi_swap tool or Bankr native prompts (POST /agent/prompt) for swaps. ' +
+        'For low-liquidity or memecoin token swaps, add 10% input buffer to avoid undershooting the target amount. ' +
+        'When buying a specific token amount, check the token price first (defi_price), calculate the input amount with buffer, then execute a single swap.',
+      );
     }
 
     // ── Self-improvement context (dynamic — per-user memories) ──
@@ -149,14 +204,25 @@ export function buildPromptContext(
         dynamicParts.push(trimmed);
       }
 
-      // Inject learned skills index (static — same index for everyone)
-      const learnedIndex = buildLearnedSkillsIndex();
-      if (learnedIndex) {
-        // Context Diet: cap learned skills index size
-        const trimmedIndex = learnedIndex.length > MAX_SKILLS_INDEX_CHARS
-          ? learnedIndex.slice(0, MAX_SKILLS_INDEX_CHARS) + '\n[...truncated — use skill_evolve to browse full index]'
-          : learnedIndex;
-        staticParts.push(trimmedIndex);
+      // Inject unified skill index (static + learned) from registry
+      try {
+        const registry = getSkillRegistry();
+        const skillIndex = registry.buildIndex();
+        if (skillIndex) {
+          const trimmedIndex = skillIndex.length > MAX_SKILLS_INDEX_CHARS
+            ? skillIndex.slice(0, MAX_SKILLS_INDEX_CHARS) + '\n[...truncated — use /skills to browse full index]'
+            : skillIndex;
+          staticParts.push(trimmedIndex);
+        }
+      } catch {
+        // Fall back to learned-only index
+        const learnedIndex = buildLearnedSkillsIndex();
+        if (learnedIndex) {
+          const trimmedIndex = learnedIndex.length > MAX_SKILLS_INDEX_CHARS
+            ? learnedIndex.slice(0, MAX_SKILLS_INDEX_CHARS) + '\n[...truncated — use skill_evolve to browse full index]'
+            : learnedIndex;
+          staticParts.push(trimmedIndex);
+        }
       }
 
       // Evolution mode hint (dynamic — per-user)

@@ -61,14 +61,24 @@ curl -s -X POST https://api.bankr.bot/agent/prompt \
 
 Poll `GET https://api.bankr.bot/agent/job/{jobId}` (with `X-API-Key`) until `status` is `completed`.
 
-**If BOTCOIN < 25M**, buy via swap (use the real token address, not a name lookup):
+**If BOTCOIN < 25M**, buy via Bankr native swap. Follow this sequence exactly:
+
+1. **Check BOTCOIN price first** using `defi_price` tool with token address `0xA601877977340862Ca67f816eb079958E5bd0BA3` on Base. Calculate how much ETH is needed for the deficit (e.g., if you need 25M more BOTCOIN and price is $0.000022, that's ~$550 → check ETH price to get the ETH amount).
+
+2. **Add 10% buffer** to the calculated ETH amount to account for slippage and price impact. BOTCOIN is a low-liquidity token — undershoot is common without buffer.
+
+3. **Execute a single swap** via Bankr prompt. Always use the token address, never the name "BOTCOIN" (Bankr may not resolve it):
 
 ```bash
 curl -s -X POST https://api.bankr.bot/agent/prompt \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BANKR_API_KEY" \
-  -d '{"prompt": "swap $10 of ETH to 0xA601877977340862Ca67f816eb079958E5bd0BA3 on base"}'
+  -d '{"prompt": "swap <CALCULATED_ETH_WITH_BUFFER> ETH to 0xA601877977340862Ca67f816eb079958E5bd0BA3 on base"}'
 ```
+
+**Do NOT** use external DEX aggregator calldata (KyberSwap, 1inch, etc.) with Bankr — Bankr smart wallets cannot execute arbitrary external calldata. Always use the Bankr prompt or `defi_swap` tool.
+
+4. **Verify balance** after the swap completes. If still under 25M (unlikely with buffer), do one small top-up swap.
 
 **Checkpoint:** Confirm both BOTCOIN (>= 25M) and ETH (> 0) before proceeding.
 

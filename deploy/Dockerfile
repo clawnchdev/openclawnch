@@ -36,13 +36,21 @@ RUN --mount=type=cache,target=/root/.npm \
     tar xzf /tmp/openclawnch.tgz -C /usr/local/lib/node_modules/@clawnch/openclawnch --strip-components=1 && \
     rm /tmp/openclawnch.tgz
 # Most runtime deps are bundled into the output via tsdown noExternal
-# (see tsdown.config.ts).  Only @clawnch/clawncher-sdk stays external
-# because its transitive dep @uniswap/v4-sdk has a broken ethers import
-# that rolldown can't resolve.
+# (see tsdown.config.ts).  Only @uniswap/v4-sdk and @uniswap/v3-sdk stay
+# external because they have a broken `ethers/lib/utils` CJS import that
+# rolldown can't resolve.
+# Note: We use npm pack + tar instead of npm install because @uniswap/v4-sdk
+# ships with broken "workspace:*" deps that npm install can't resolve.
 RUN --mount=type=cache,target=/root/.npm \
-    mkdir -p /usr/local/lib/node_modules/@clawnch/openclawnch/node_modules && \
-    npm install --prefix /tmp/_deps @clawnch/clawncher-sdk && \
-    cp -r /tmp/_deps/node_modules/* /usr/local/lib/node_modules/@clawnch/openclawnch/node_modules/ && \
+    DEST=/usr/local/lib/node_modules/@clawnch/openclawnch/node_modules && \
+    mkdir -p "$DEST" && cd /tmp && mkdir _deps && cd _deps && \
+    for pkg in @uniswap/v4-sdk @uniswap/v3-sdk; do \
+      npm pack "$pkg" && \
+      dir="$DEST/$pkg" && mkdir -p "$dir" && \
+      tarball=$(ls *.tgz | tail -1) && \
+      tar xzf "$tarball" --strip-components=1 -C "$dir" && \
+      rm "$tarball"; \
+    done && \
     rm -rf /tmp/_deps
 
 # ── Layer 4: Dirs, config, entrypoint (tiny, always rebuilt) ─────────
@@ -76,5 +84,8 @@ HEALTHCHECK --interval=10s --timeout=5s --start-period=60s --retries=5 \
 EXPOSE 18789
 WORKDIR /workspace
 
-USER openclawnch
+# Install gosu for dropping privileges in entrypoint after volume fixup
+RUN apt-get update && apt-get install -y gosu && rm -rf /var/lib/apt/lists/*
+
+# Entrypoint runs as root to fix volume ownership, then drops to openclawnch
 ENTRYPOINT ["/entrypoint.sh"]

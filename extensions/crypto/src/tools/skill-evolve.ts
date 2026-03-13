@@ -22,6 +22,7 @@ import { Type } from '@sinclair/typebox';
 import { stringEnum, jsonResult, textResult, errorResult, readStringParam } from '../lib/tool-helpers.js';
 import { scanSkillContent, validateSkillFrontmatter, formatScanReport } from '../lib/skill-guard.js';
 import { getEvolutionMode } from '../services/evolution-mode.js';
+import { getSkillRegistry } from '../services/skill-registry.js';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, unlinkSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -182,17 +183,28 @@ export function createSkillEvolveTool() {
 // ─── Action Handlers ─────────────────────────────────────────────────────
 
 function handleList() {
-  const skills = listLearnedSkills();
-  if (skills.length === 0) {
-    return textResult(
-      'No learned skills yet. Use action "create" after completing a complex workflow ' +
-      'to save it as a reusable skill.',
-    );
+  const learned = listLearnedSkills();
+
+  // Also report static skill count from registry
+  let staticCount = 0;
+  try {
+    const registry = getSkillRegistry();
+    staticCount = registry.list({ source: 'static' }).length;
+  } catch { /* registry not available */ }
+
+  const lines: string[] = [];
+
+  if (learned.length > 0) {
+    lines.push(`**Learned Skills** (${learned.length}):`, '');
+    for (const s of learned) {
+      lines.push(`- **${s.name}**: ${s.description}`);
+    }
+  } else {
+    lines.push('No learned skills yet. Use action "create" after completing a complex workflow to save it as a reusable skill.');
   }
 
-  const lines = ['**Learned Skills** (' + skills.length + '):', ''];
-  for (const s of skills) {
-    lines.push(`- **${s.name}**: ${s.description}`);
+  if (staticCount > 0) {
+    lines.push('', `${staticCount} built-in skills also available. Use \`/skills\` to browse all skills.`);
   }
 
   return textResult(lines.join('\n'));
@@ -202,17 +214,29 @@ function handleView(params: Record<string, unknown>) {
   const name = readStringParam(params, 'name', { required: true });
   if (!name) return errorResult('Skill name is required for view action.');
 
-  const path = getSkillPath(name);
-  if (!existsSync(path)) {
-    return errorResult(`Learned skill "${name}" not found. Use action "list" to see available skills.`);
+  // Try learned skills first (original behavior)
+  const learnedPath = getSkillPath(name);
+  if (existsSync(learnedPath)) {
+    try {
+      const content = readFileSync(learnedPath, 'utf8');
+      return textResult(content);
+    } catch (err) {
+      return errorResult(`Failed to read skill: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
+  // Fall through to the unified skill registry (includes static skills)
   try {
-    const content = readFileSync(path, 'utf8');
-    return textResult(content);
-  } catch (err) {
-    return errorResult(`Failed to read skill: ${err instanceof Error ? err.message : String(err)}`);
+    const registry = getSkillRegistry();
+    const content = registry.readContent(name);
+    if (content) {
+      return textResult(content);
+    }
+  } catch {
+    // Registry not available — continue to error
   }
+
+  return errorResult(`Skill "${name}" not found. Use action "list" or \`/skills\` to see available skills.`);
 }
 
 function handleCreate(params: Record<string, unknown>) {

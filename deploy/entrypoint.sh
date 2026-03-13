@@ -3,11 +3,16 @@ set -e
 
 # ── OpenClawnch Telegram Entrypoint ──────────────────────────────────────
 # Security-hardened startup for crypto operations on Fly.io.
+#
+# Runs as root initially to fix volume permissions from earlier deploys,
+# then drops to openclawnch via gosu before starting the gateway.
 
-# ── SECURITY: Refuse to start with private keys ─────────────────────────
-# OpenClawnch Telegram mode uses WalletConnect exclusively for transaction
-# signing. If a private key is present, someone misconfigured the deploy —
-# refuse to start rather than risk key exposure.
+# ── Fix volume ownership ────────────────────────────────────────────────
+# The /workspace Fly volume may have dirs created as root by earlier deploys.
+# Fix them before dropping privileges.
+if [ "$(id -u)" = "0" ]; then
+  chown -R openclawnch:openclawnch /workspace 2>/dev/null || true
+fi
 
 # ── Private key warning (autosign mode) ─────────────────────────────
 # If a private key is present, the user has opted into autosign mode.
@@ -65,8 +70,11 @@ chmod 600 "$HOME/.openclaw/openclaw.json"
 # ── Persist identity/devices across restarts ────────────────────────────
 # OpenClaw generates an identity (device ID, auth tokens) on first run.
 # We symlink these to the persistent Fly volume so they survive restarts.
+# Fix ownership: earlier deploys created these dirs as root; the app runs
+# as openclawnch and needs write access.
 mkdir -p /workspace/.openclaw-state/identity \
-         /workspace/.openclaw-state/devices
+         /workspace/.openclaw-state/devices \
+         /workspace/.openclaw-state/plans
 
 rm -rf "$HOME/.openclaw/identity" "$HOME/.openclaw/devices"
 ln -sf /workspace/.openclaw-state/identity "$HOME/.openclaw/identity"
@@ -124,10 +132,10 @@ node -e "
   cfg.agents.defaults.model = cfg.agents.defaults.model || {};
 
   const models = {
-    anthropic: 'anthropic/claude-opus-4-6',
-    openrouter: 'openrouter/anthropic/claude-opus-4-6',
+    anthropic: 'anthropic/claude-sonnet-4-6',
+    openrouter: 'openrouter/anthropic/claude-sonnet-4-6',
     openai: 'openai/gpt-4o',
-    bankr: 'bankr/claude-opus-4.6',
+    bankr: 'bankr/claude-sonnet-4.6',
   };
   cfg.agents.defaults.model.primary = models[provider] || models.anthropic;
 
@@ -157,4 +165,11 @@ echo "Starting OpenClawnch (Telegram mode)..."
 echo "Gateway config:"
 node -e "const c=JSON.parse(require('fs').readFileSync(process.env.HOME + '/.openclaw/openclaw.json','utf8')); console.log(JSON.stringify({gateway:c.gateway,channels:c.channels,plugins:c.plugins?{entries:Object.keys(c.plugins.entries||{})}:null},null,2))"
 
-exec openclaw gateway --port 18789 --bind lan --allow-unconfigured 2>&1
+# Ensure all dirs created above are owned by openclawnch (we're still root here)
+if [ "$(id -u)" = "0" ]; then
+  chown -R openclawnch:openclawnch "$HOME/.openclaw" "$HOME/.openclawnch" 2>/dev/null || true
+  # Drop to non-root user for the actual gateway process
+  exec gosu openclawnch openclaw gateway --port 18789 --bind lan --allow-unconfigured 2>&1
+else
+  exec openclaw gateway --port 18789 --bind lan --allow-unconfigured 2>&1
+fi

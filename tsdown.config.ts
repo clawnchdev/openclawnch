@@ -26,7 +26,17 @@ export default defineConfig({
     /^viem/,
     /^@clawnch\/sdk/,
     /^@clawnch\/clawnx/,
+    /^@clawnch\/clawncher-sdk/,
+    /^clanker-sdk/,
+    /^@uniswap\/sdk-core/,
     /^@noble\/hashes/,
     /^@scure\/bip39/,
+  ],
+  // @uniswap/v4-sdk stays external — it has a broken `ethers/lib/utils`
+  // CJS import that rolldown can't resolve (ethers v5 → v6 mismatch).
+  // Installed in Docker via npm pack to avoid the workspace:* problem.
+  external: [
+    /^@uniswap\/v4-sdk/,
+    /^@uniswap\/v3-sdk/,
   ],
 });

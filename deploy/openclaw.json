@@ -2,7 +2,7 @@
   "agents": {
     "defaults": {
       "model": {
-        "primary": "anthropic/claude-opus-4-6"
+        "primary": "anthropic/claude-sonnet-4-6"
       },
       "memorySearch": {
         "enabled": false
@@ -40,7 +40,9 @@
     "telegram": {
       "enabled": true,
       "linkPreview": false,
-      "streaming": "partial"
+      "streaming": "partial",
+      "dmPolicy": "pairing",
+      "groupPolicy": "open"
     },
     "discord": {
       "enabled": false
