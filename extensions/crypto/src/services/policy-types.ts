@@ -62,6 +62,8 @@ export interface DelegationInfo {
   salt: string;
   /** ISO timestamp when the delegation was created. */
   createdAt: string;
+  /** ISO timestamp when the delegation expires. Null = no time-bound. */
+  expiresAt?: string;
   /** ISO timestamp when last status check was performed. */
   lastCheckedAt?: string;
   /** Policy rules that couldn't map to on-chain caveats (app-layer only). */

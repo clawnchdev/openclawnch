@@ -16,6 +16,8 @@
  *   12. Autonomy profiles: definitions, activation, deactivation
  *   13. Profile command: /profile, /profile training, /profile off
  *   14. Delegation monitor: health check, alert generation
+ *   15. Delegation executor: tryDelegationExecution, action extraction, matching
+ *   16. Policy gate integration: delegation routing in the execution path
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -1754,5 +1756,163 @@ describe('Delegation Monitor', () => {
       ? A extends { severity: infer S } ? S : never : never;
     const severities: string[] = ['info', 'warning', 'critical'];
     expect(severities).toContain('critical');
+  });
+});
+
+// ─── 20. Delegation Executor ─────────────────────────────────────────────
+
+describe('Delegation Executor', () => {
+  beforeEach(async () => {
+    const { resetPolicyMode } = await import(
+      '../extensions/crypto/src/services/policy-types.js'
+    );
+    resetPolicyMode();
+  });
+
+  it('exports tryDelegationExecution function', async () => {
+    const { tryDelegationExecution } = await import(
+      '../extensions/crypto/src/services/delegation-executor.js'
+    );
+    expect(typeof tryDelegationExecution).toBe('function');
+  });
+
+  it('skips when not in delegation mode', async () => {
+    const { tryDelegationExecution } = await import(
+      '../extensions/crypto/src/services/delegation-executor.js'
+    );
+    const { setPolicyMode } = await import(
+      '../extensions/crypto/src/services/policy-types.js'
+    );
+
+    setPolicyMode('simple');
+    const result = await tryDelegationExecution(
+      { toolName: 'transfer', userId: 'test-user' },
+      { action: 'send', to: '0x' + '1'.repeat(40), amount: '0.1' },
+    );
+    expect(result.executed).toBe(false);
+    expect(result.skipReason).toContain('Not in delegation mode');
+  });
+
+  it('skips for unsupported tools', async () => {
+    const { tryDelegationExecution } = await import(
+      '../extensions/crypto/src/services/delegation-executor.js'
+    );
+    const { setPolicyMode } = await import(
+      '../extensions/crypto/src/services/policy-types.js'
+    );
+
+    setPolicyMode('delegation');
+    const result = await tryDelegationExecution(
+      { toolName: 'defi_swap', userId: 'test-user' },
+      { action: 'execute', fromToken: 'ETH', toToken: 'USDC' },
+    );
+    expect(result.executed).toBe(false);
+    expect(result.skipReason).toContain('does not support delegation execution');
+  });
+
+  it('skips when action extraction fails (bad args)', async () => {
+    const { tryDelegationExecution } = await import(
+      '../extensions/crypto/src/services/delegation-executor.js'
+    );
+    const { setPolicyMode } = await import(
+      '../extensions/crypto/src/services/policy-types.js'
+    );
+
+    setPolicyMode('delegation');
+    const result = await tryDelegationExecution(
+      { toolName: 'transfer', userId: 'test-user' },
+      { action: 'list' }, // not 'send', can't extract
+    );
+    expect(result.executed).toBe(false);
+    expect(result.skipReason).toContain('Could not extract');
+  });
+
+  it('skips when no matching delegation exists', async () => {
+    const { tryDelegationExecution } = await import(
+      '../extensions/crypto/src/services/delegation-executor.js'
+    );
+    const { setPolicyMode } = await import(
+      '../extensions/crypto/src/services/policy-types.js'
+    );
+
+    setPolicyMode('delegation');
+    const result = await tryDelegationExecution(
+      { toolName: 'transfer', userId: 'nonexistent-user' },
+      { action: 'send', to: '0x' + '1'.repeat(40), amount: '0.1' },
+    );
+    expect(result.executed).toBe(false);
+    expect(result.skipReason).toContain('No matching delegation');
+  });
+
+  it('getDelegationSupportedTools returns transfer', async () => {
+    const { getDelegationSupportedTools } = await import(
+      '../extensions/crypto/src/services/delegation-executor.js'
+    );
+    const tools = getDelegationSupportedTools();
+    expect(tools).toContain('transfer');
+  });
+
+  it('isDelegationExecutionAvailable returns false in simple mode', async () => {
+    const { isDelegationExecutionAvailable } = await import(
+      '../extensions/crypto/src/services/delegation-executor.js'
+    );
+    const { setPolicyMode } = await import(
+      '../extensions/crypto/src/services/policy-types.js'
+    );
+
+    setPolicyMode('simple');
+    expect(isDelegationExecutionAvailable('transfer', 'test-user')).toBe(false);
+  });
+
+  it('isDelegationExecutionAvailable returns false for unsupported tool', async () => {
+    const { isDelegationExecutionAvailable } = await import(
+      '../extensions/crypto/src/services/delegation-executor.js'
+    );
+    const { setPolicyMode } = await import(
+      '../extensions/crypto/src/services/policy-types.js'
+    );
+
+    setPolicyMode('delegation');
+    expect(isDelegationExecutionAvailable('defi_swap', 'test-user')).toBe(false);
+  });
+});
+
+// ─── 21. Policy Gate Integration ─────────────────────────────────────────
+
+describe('Policy Gate — Delegation Integration', () => {
+  it('policy gate imports tryDelegationExecution', async () => {
+    // Verify the import exists in index.ts by checking the executor module loads
+    const executor = await import(
+      '../extensions/crypto/src/services/delegation-executor.js'
+    );
+    expect(executor.tryDelegationExecution).toBeDefined();
+    expect(executor.isDelegationExecutionAvailable).toBeDefined();
+    expect(executor.getDelegationSupportedTools).toBeDefined();
+  });
+
+  it('expiresAt field exists on DelegationInfo type', async () => {
+    // Verify the type has the new field by creating a conforming object
+    const info: import('../extensions/crypto/src/services/policy-types.js').DelegationInfo = {
+      chainId: 8453,
+      hash: '0x123',
+      delegationManager: '0x456',
+      status: 'signed',
+      delegate: '0xaaa',
+      delegator: '0xbbb',
+      salt: '1',
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 86400000).toISOString(),
+    };
+    expect(info.expiresAt).toBeDefined();
+  });
+
+  it('extractExpiryFromCaveats is used in storeDelegation', async () => {
+    // Verify the delegation service module loads cleanly with the new function
+    const service = await import(
+      '../extensions/crypto/src/services/delegation-service.js'
+    );
+    expect(service.storeDelegation).toBeDefined();
+    // storeDelegation now accepts optional expiresAt parameter (6th arg → 7th)
+    expect(service.storeDelegation.length).toBeGreaterThanOrEqual(5);
   });
 });

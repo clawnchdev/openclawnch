@@ -21,6 +21,7 @@ import {
   createPublicClient,
   http,
   encodeAbiParameters,
+  decodeAbiParameters,
   encodePacked,
   type Address,
   type Hex,
@@ -35,6 +36,7 @@ import {
   SUPPORTED_CHAIN_IDS,
   EXECUTE_MODE_DEFAULT,
   getDelegationDomain,
+  type Caveat,
   type SignedDelegation,
   type UnsignedDelegation,
   type DelegationStatus,
@@ -247,6 +249,43 @@ export async function signDelegation(
 }
 
 /**
+ * Extract the earliest expiry timestamp from TimestampEnforcer caveats.
+ * TimestampEnforcer terms are: (uint128 executeAfter, uint128 executeBefore).
+ * Returns ISO string for the earliest executeBefore, or undefined if none.
+ */
+function extractExpiryFromCaveats(caveats: Caveat[]): string | undefined {
+  const timestampEnforcerAddr = DELEGATION_CONTRACTS.TimestampEnforcer.toLowerCase();
+  let earliestExpiry: bigint | undefined;
+
+  for (const caveat of caveats) {
+    if (caveat.enforcer.toLowerCase() !== timestampEnforcerAddr) continue;
+
+    try {
+      const decoded = decodeAbiParameters(
+        [
+          { type: 'uint128', name: 'executeAfter' },
+          { type: 'uint128', name: 'executeBefore' },
+        ],
+        caveat.terms as Hex,
+      );
+      const executeBefore = decoded[1] as bigint;
+      if (executeBefore > 0n) {
+        if (earliestExpiry === undefined || executeBefore < earliestExpiry) {
+          earliestExpiry = executeBefore;
+        }
+      }
+    } catch {
+      // Couldn't decode — skip
+    }
+  }
+
+  if (earliestExpiry !== undefined) {
+    return new Date(Number(earliestExpiry) * 1000).toISOString();
+  }
+  return undefined;
+}
+
+/**
  * Step 3: Store a signed delegation in the policy metadata and get its hash.
  * Persists the full SignedDelegation struct to the delegation store (for
  * later redemption and on-chain revocation) and lightweight metadata on
@@ -258,6 +297,7 @@ export async function storeDelegation(
   delegation: SignedDelegation,
   chainId: number,
   unmappedRules: string[],
+  expiresAt?: string,
 ): Promise<DelegationInfo> {
   const policyStore = getPolicyStore();
   const delegationStore = getDelegationStore();
@@ -296,6 +336,7 @@ export async function storeDelegation(
     delegator: delegation.delegator,
     salt: delegation.salt.toString(),
     createdAt: new Date().toISOString(),
+    expiresAt: expiresAt ?? extractExpiryFromCaveats(delegation.caveats),
     unmappedRules: unmappedRules.length > 0 ? unmappedRules : undefined,
   };
 

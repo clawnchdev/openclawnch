@@ -171,6 +171,7 @@ import { evaluatePolicies, extractActionContext, recordToolExecution, getPolicyC
 import { delegateCommand } from './src/commands/delegate-command.js';
 import { policymodeCommand } from './src/commands/policymode-command.js';
 import { profileCommand } from './src/commands/profile-command.js';
+import { tryDelegationExecution } from './src/services/delegation-executor.js';
 
 // Typing indicator — Telegram "typing..." action during agent thinking
 import { getTypingIndicator } from './src/services/typing-indicator.js';
@@ -256,6 +257,16 @@ const plugin = {
               const confirmStore = getPolicyConfirmationStore();
               if (confirmStore.consume(nonce, userId, tool.name)) {
                 // Nonce valid — user confirmed, proceed to execution
+                // Try delegation execution first (on-chain), fall back to normal
+                const delegationResult = await tryDelegationExecution(actionCtx, argsObj);
+                if (delegationResult.executed) {
+                  try { recordToolExecution(actionCtx); } catch { /* best-effort */ }
+                  return {
+                    content: [{ type: 'text' as const, text: `Executed via on-chain delegation. Tx: ${delegationResult.txHash} (chain ${delegationResult.chainId})` }],
+                    details: { delegationExecution: true, txHash: delegationResult.txHash, chainId: delegationResult.chainId },
+                  };
+                }
+                // Delegation not available or failed — fall through to normal execution
                 const result = await originalExecute.call(tool, toolCallId, args, ctx);
                 if (!result?.isError) {
                   try { recordToolExecution(actionCtx); } catch { /* best-effort */ }
@@ -273,7 +284,16 @@ const plugin = {
               isError: true,
             };
           }
-          // action === 'allow' — record usage after execution
+          // action === 'allow' — try delegation execution first, fall back to normal
+          const delegationResult = await tryDelegationExecution(actionCtx, argsObj);
+          if (delegationResult.executed) {
+            try { recordToolExecution(actionCtx); } catch { /* best-effort */ }
+            return {
+              content: [{ type: 'text' as const, text: `Executed via on-chain delegation. Tx: ${delegationResult.txHash} (chain ${delegationResult.chainId})` }],
+              details: { delegationExecution: true, txHash: delegationResult.txHash, chainId: delegationResult.chainId },
+            };
+          }
+          // Delegation not available or failed — normal tool execution
           const result = await originalExecute.call(tool, toolCallId, args, ctx);
           // Record usage on success (not on error)
           if (!result?.isError) {

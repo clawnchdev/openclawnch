@@ -171,14 +171,13 @@ function buildHealth(
     }
   }
 
-  // Estimate expiry from delegation creation time
-  // TimestampEnforcer caveats encode beforeTimestamp, but we don't decode terms here.
-  // Instead we check if the delegation has an estimated expiry based on profile config.
-  const createdMs = new Date(info.createdAt).getTime();
-  if (!isNaN(createdMs)) {
-    // Check if any time_window rule gives us end-of-window info
-    // For now, delegation-level expiry would need to be stored in DelegationInfo
-    // This is a gap — we'll add an `expiresAt` field in a follow-up
+  // Check delegation expiry from the expiresAt field
+  if (info.expiresAt) {
+    const expiryMs = new Date(info.expiresAt).getTime();
+    if (!isNaN(expiryMs)) {
+      const remainingMs = expiryMs - Date.now();
+      expiresInSec = Math.max(0, Math.floor(remainingMs / 1000));
+    }
   }
 
   return {
