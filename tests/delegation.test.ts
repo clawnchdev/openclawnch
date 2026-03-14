@@ -9,7 +9,7 @@
  *   5.  Delegation service: prepareDelegation, storeDelegation, formatDelegationStatus
  *   6.  Delegate command: handler shape, subcommands, no-policies output
  *   7.  Policy integration: delegation field on Policy interface
- *   8.  Plugin registers 111 commands including /delegate, /policymode, and /profile
+ *   8.  Plugin registers 112 commands including /delegate, /policymode, /profile, /upgrade
  *   9.  Policy mode system: getPolicyMode, setPolicyMode, isDelegationMode
  *   10. Policymode command: /policymode, /policymode delegation, /policymode simple
  *   11. Delegate command mode gate: blocks in simple mode
@@ -18,6 +18,9 @@
  *   14. Delegation monitor: health check, alert generation
  *   15. Delegation executor: tryDelegationExecution, action extraction, matching
  *   16. Policy gate integration: delegation routing in the execution path
+ *   17. EIP-7702 account type detection
+ *   18. /upgrade command
+ *   19. Sub-delegation: createSubDelegation, ephemeral keypairs, chain encoding
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -1256,7 +1259,7 @@ describe('Delegation Service — revokeByPolicy', () => {
 // ─── 13. Plugin Registration ────────────────────────────────────────────
 
 describe('V7 Plugin Registration', () => {
-  it('plugin registers 111 commands including /delegate, /policymode, and /profile', { timeout: 15000 }, async () => {
+  it('plugin registers 112 commands including /delegate, /policymode, /profile, and /upgrade', { timeout: 15000 }, async () => {
     const commands: any[] = [];
     const mockApi = {
       registerTool: () => {},
@@ -1267,11 +1270,12 @@ describe('V7 Plugin Registration', () => {
     const { default: plugin } = await import('../extensions/crypto/index.js');
     plugin.register(mockApi as any);
 
-    expect(commands).toHaveLength(111);
+    expect(commands).toHaveLength(112);
     expect(commands.find((c: any) => c.name === 'delegate')).toBeDefined();
     expect(commands.find((c: any) => c.name === 'policies')).toBeDefined();
     expect(commands.find((c: any) => c.name === 'policymode')).toBeDefined();
     expect(commands.find((c: any) => c.name === 'profile')).toBeDefined();
+    expect(commands.find((c: any) => c.name === 'upgrade')).toBeDefined();
   });
 
   it('delegate command has correct shape in registered commands', { timeout: 15000 }, async () => {
@@ -1914,5 +1918,376 @@ describe('Policy Gate — Delegation Integration', () => {
     expect(service.storeDelegation).toBeDefined();
     // storeDelegation now accepts optional expiresAt parameter (6th arg → 7th)
     expect(service.storeDelegation.length).toBeGreaterThanOrEqual(5);
+  });
+});
+
+// ─── 22. EIP-7702 Account Type Detection ────────────────────────────────
+
+describe('EIP-7702 Account Type Detection', () => {
+  it('WalletState type includes accountType field', async () => {
+    const state: import('../extensions/crypto/src/lib/types.js').WalletState = {
+      connected: true,
+      address: '0x1234567890abcdef1234567890abcdef12345678',
+      chainId: 8453,
+      mode: 'private_key',
+      policies: [],
+      wcState: null,
+      accountType: 'eoa',
+      hasCode: false,
+    };
+    expect(state.accountType).toBe('eoa');
+    expect(state.hasCode).toBe(false);
+    expect(state.delegationDesignation).toBeUndefined();
+  });
+
+  it('WalletState type accepts smart_account type', async () => {
+    const state: import('../extensions/crypto/src/lib/types.js').WalletState = {
+      connected: true,
+      address: '0x1234567890abcdef1234567890abcdef12345678',
+      chainId: 8453,
+      mode: 'walletconnect',
+      policies: [],
+      wcState: null,
+      accountType: 'smart_account',
+      hasCode: true,
+    };
+    expect(state.accountType).toBe('smart_account');
+    expect(state.hasCode).toBe(true);
+  });
+
+  it('WalletState type accepts eip7702 type with delegation designation', async () => {
+    const state: import('../extensions/crypto/src/lib/types.js').WalletState = {
+      connected: true,
+      address: '0x1234567890abcdef1234567890abcdef12345678',
+      chainId: 8453,
+      mode: 'private_key',
+      policies: [],
+      wcState: null,
+      accountType: 'eip7702',
+      hasCode: true,
+      delegationDesignation: '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd',
+    };
+    expect(state.accountType).toBe('eip7702');
+    expect(state.delegationDesignation).toMatch(/^0x[0-9a-fA-F]{40}$/);
+  });
+
+  it('detectAccountType function is exported', async () => {
+    const service = await import(
+      '../extensions/crypto/src/services/walletconnect-service.js'
+    );
+    expect(service.detectAccountType).toBeDefined();
+    expect(typeof service.detectAccountType).toBe('function');
+  });
+
+  it('clearAccountTypeCache function is exported', async () => {
+    const service = await import(
+      '../extensions/crypto/src/services/walletconnect-service.js'
+    );
+    expect(service.clearAccountTypeCache).toBeDefined();
+    expect(typeof service.clearAccountTypeCache).toBe('function');
+  });
+
+  it('detectAccountType returns null when no wallet connected', async () => {
+    const service = await import(
+      '../extensions/crypto/src/services/walletconnect-service.js'
+    );
+    // Without a connected wallet, detection should return null
+    const result = await service.detectAccountType();
+    expect(result).toBeNull();
+  });
+
+  it('clearAccountTypeCache resets detection state', async () => {
+    const service = await import(
+      '../extensions/crypto/src/services/walletconnect-service.js'
+    );
+    service.clearAccountTypeCache();
+    // After clearing, detection should return null (no wallet connected)
+    const result = await service.detectAccountType();
+    expect(result).toBeNull();
+  });
+});
+
+// ─── 23. /upgrade Command ───────────────────────────────────────────────
+
+describe('/upgrade Command', () => {
+  it('exports upgradeCommand with correct shape', async () => {
+    const { upgradeCommand } = await import(
+      '../extensions/crypto/src/commands/upgrade-command.js'
+    );
+    expect(upgradeCommand).toBeDefined();
+    expect(upgradeCommand.name).toBe('upgrade');
+    expect(upgradeCommand.acceptsArgs).toBe(true);
+    expect(upgradeCommand.requireAuth).toBe(true);
+    expect(typeof upgradeCommand.handler).toBe('function');
+  });
+
+  it('description mentions account type detection', async () => {
+    const { upgradeCommand } = await import(
+      '../extensions/crypto/src/commands/upgrade-command.js'
+    );
+    expect(upgradeCommand.description).toContain('Account type');
+  });
+
+  it('handler returns text when no wallet connected', async () => {
+    const { upgradeCommand } = await import(
+      '../extensions/crypto/src/commands/upgrade-command.js'
+    );
+    const result = await upgradeCommand.handler({ args: '' });
+    expect(result).toBeDefined();
+    expect(result.text).toContain('No wallet connected');
+  });
+
+  it('handler supports guide subcommand', async () => {
+    const { upgradeCommand } = await import(
+      '../extensions/crypto/src/commands/upgrade-command.js'
+    );
+    const result = await upgradeCommand.handler({ args: 'guide' });
+    expect(result).toBeDefined();
+    expect(result.text).toContain('Migration Guide');
+    expect(result.text).toContain('EIP-7702');
+    expect(result.text).toContain('Option 1');
+    expect(result.text).toContain('Option 2');
+    expect(result.text).toContain('Option 3');
+  });
+
+  it('guide mentions MetaMask Delegation Framework', async () => {
+    const { upgradeCommand } = await import(
+      '../extensions/crypto/src/commands/upgrade-command.js'
+    );
+    const result = await upgradeCommand.handler({ args: 'guide' });
+    expect(result.text).toContain('MetaMask Delegation Framework');
+    expect(result.text).toContain('DelegationManager');
+  });
+
+  it('plugin registers /upgrade command (112 commands)', async () => {
+    const commands: any[] = [];
+    const api = {
+      registerTool: () => {},
+      registerCommand: (c: any) => commands.push(c),
+      on: () => {},
+      logger: { info: () => {}, warn: () => {} },
+    };
+    const plugin = await import('../extensions/crypto/index.js');
+    (plugin as any).default.register(api);
+
+    expect(commands.length).toBe(112);
+    const names = commands.map(c => c.name);
+    expect(names).toContain('upgrade');
+  });
+});
+
+// ─── 24. Sub-Delegation ─────────────────────────────────────────────────
+
+describe('Sub-Delegation', () => {
+  it('createSubDelegation is exported from delegation service', async () => {
+    const service = await import(
+      '../extensions/crypto/src/services/delegation-service.js'
+    );
+    expect(service.createSubDelegation).toBeDefined();
+    expect(typeof service.createSubDelegation).toBe('function');
+  });
+
+  it('encodePermissionContextChain is exported', async () => {
+    const service = await import(
+      '../extensions/crypto/src/services/delegation-service.js'
+    );
+    expect(service.encodePermissionContextChain).toBeDefined();
+    expect(typeof service.encodePermissionContextChain).toBe('function');
+  });
+
+  it('encodePermissionContextChain encodes single delegation', async () => {
+    const service = await import(
+      '../extensions/crypto/src/services/delegation-service.js'
+    );
+
+    const mockDelegation = {
+      delegate: '0x1111111111111111111111111111111111111111' as `0x${string}`,
+      delegator: '0x2222222222222222222222222222222222222222' as `0x${string}`,
+      authority: ('0x' + '0'.repeat(64)) as `0x${string}`,
+      caveats: [],
+      salt: 1n,
+      signature: '0xabcd' as `0x${string}`,
+    };
+
+    const result = service.encodePermissionContextChain([mockDelegation]);
+    expect(result).toMatch(/^0x/);
+    expect(result.length).toBeGreaterThan(10);
+  });
+
+  it('encodePermissionContextChain encodes multi-delegation chain', async () => {
+    const service = await import(
+      '../extensions/crypto/src/services/delegation-service.js'
+    );
+
+    const parentDelegation = {
+      delegate: '0x1111111111111111111111111111111111111111' as `0x${string}`,
+      delegator: '0x2222222222222222222222222222222222222222' as `0x${string}`,
+      authority: ('0x' + '0'.repeat(64)) as `0x${string}`,
+      caveats: [],
+      salt: 1n,
+      signature: '0xabcd' as `0x${string}`,
+    };
+
+    const childDelegation = {
+      delegate: '0x3333333333333333333333333333333333333333' as `0x${string}`,
+      delegator: '0x1111111111111111111111111111111111111111' as `0x${string}`,
+      authority: ('0x' + 'ab'.repeat(32)) as `0x${string}`,
+      caveats: [],
+      salt: 2n,
+      signature: '0xef01' as `0x${string}`,
+    };
+
+    const single = service.encodePermissionContextChain([parentDelegation]);
+    const chain = service.encodePermissionContextChain([parentDelegation, childDelegation]);
+
+    // Chain encoding should be longer than single delegation encoding
+    expect(chain.length).toBeGreaterThan(single.length);
+  });
+
+  it('SubAgentDef includes wallet fields', async () => {
+    const { AgentPool } = await import(
+      '../extensions/crypto/src/services/agent-pool.js'
+    );
+    const { rmSync } = await import('node:fs');
+
+    const stateDir = '/tmp/openclawnch-test-agents-subdel-' + Date.now();
+    try { rmSync(stateDir, { recursive: true }); } catch {}
+
+    const pool = new AgentPool({ stateDir });
+    const agent = pool.create({
+      name: 'test_sub_agent',
+      label: 'Test Sub Agent',
+      description: 'A test sub agent for delegation testing',
+      systemPrompt: 'You are a test sub agent for delegation testing.',
+      createdBy: 'test',
+    });
+
+    // New fields should be undefined by default (not assigned until needed)
+    expect(agent.walletAddress).toBeUndefined();
+    expect(agent.walletPrivateKey).toBeUndefined();
+    expect(agent.parentDelegationHash).toBeUndefined();
+    pool.clear();
+    try { rmSync(stateDir, { recursive: true }); } catch {}
+  });
+
+  it('assignEphemeralWallet generates a valid keypair', async () => {
+    const { AgentPool } = await import(
+      '../extensions/crypto/src/services/agent-pool.js'
+    );
+    const { rmSync } = await import('node:fs');
+
+    const stateDir = '/tmp/openclawnch-test-agents-keypair-' + Date.now();
+    try { rmSync(stateDir, { recursive: true }); } catch {}
+
+    const pool = new AgentPool({ stateDir });
+    const agent = pool.create({
+      name: 'test_wallet_agent',
+      label: 'Test Wallet Agent',
+      description: 'A test agent for wallet assignment testing',
+      systemPrompt: 'You are a test agent for wallet assignment.',
+      createdBy: 'test',
+    });
+
+    const wallet = await pool.assignEphemeralWallet(agent.id);
+    expect(wallet).not.toBeNull();
+    expect(wallet!.address).toMatch(/^0x[0-9a-fA-F]{40}$/);
+    expect(wallet!.privateKey).toMatch(/^0x[0-9a-fA-F]{64}$/);
+
+    // Second call should return same keypair (cached)
+    const wallet2 = await pool.assignEphemeralWallet(agent.id);
+    expect(wallet2!.address).toBe(wallet!.address);
+    expect(wallet2!.privateKey).toBe(wallet!.privateKey);
+
+    // getWallet should also return it
+    const retrieved = pool.getWallet(agent.id);
+    expect(retrieved).not.toBeNull();
+    expect(retrieved!.address).toBe(wallet!.address);
+
+    pool.clear();
+    try { rmSync(stateDir, { recursive: true }); } catch {}
+  });
+
+  it('assignEphemeralWallet returns null for unknown agent', async () => {
+    const { AgentPool } = await import(
+      '../extensions/crypto/src/services/agent-pool.js'
+    );
+
+    const pool = new AgentPool({ stateDir: '/tmp/openclawnch-test-agents-null' });
+    const wallet = await pool.assignEphemeralWallet('nonexistent-id');
+    expect(wallet).toBeNull();
+    pool.clear();
+  });
+
+  it('ephemeral wallet keys are NOT serialized to disk', async () => {
+    const { AgentPool } = await import(
+      '../extensions/crypto/src/services/agent-pool.js'
+    );
+    const { readFileSync, existsSync, rmSync } = await import('node:fs');
+    const { join } = await import('node:path');
+
+    const stateDir = '/tmp/openclawnch-test-agents-nosave';
+    try { rmSync(stateDir, { recursive: true }); } catch {}
+
+    const pool = new AgentPool({ stateDir });
+    const agent = pool.create({
+      name: 'test_nosave_agent',
+      label: 'Test NoSave Agent',
+      description: 'A test agent to verify keys are not persisted',
+      systemPrompt: 'You are a test agent for persistence checking.',
+      createdBy: 'test',
+    });
+
+    await pool.assignEphemeralWallet(agent.id);
+
+    // Force a save by making a visible change
+    pool.update(agent.id, { label: 'Updated Label' });
+
+    const filePath = join(stateDir, 'agents.json');
+    if (existsSync(filePath)) {
+      const content = readFileSync(filePath, 'utf8');
+      expect(content).not.toContain('walletPrivateKey');
+      expect(content).not.toContain('walletAddress');
+      expect(content).not.toContain('parentDelegationHash');
+    }
+
+    pool.clear();
+    try { rmSync(stateDir, { recursive: true }); } catch {}
+  });
+
+  it('createSubDelegation fails without CLAWNCHER_PRIVATE_KEY', async () => {
+    const service = await import(
+      '../extensions/crypto/src/services/delegation-service.js'
+    );
+
+    // Clear the env var to test the error path
+    const original = process.env.CLAWNCHER_PRIVATE_KEY;
+    delete process.env.CLAWNCHER_PRIVATE_KEY;
+
+    try {
+      const result = await service.createSubDelegation({
+        parentDelegation: {
+          delegate: '0x1111111111111111111111111111111111111111' as `0x${string}`,
+          delegator: '0x2222222222222222222222222222222222222222' as `0x${string}`,
+          authority: ('0x' + '0'.repeat(64)) as `0x${string}`,
+          caveats: [],
+          salt: 1n,
+          signature: '0xabcd' as `0x${string}`,
+        },
+        parentHash: ('0x' + 'ab'.repeat(32)) as `0x${string}`,
+        chainId: 8453,
+        subAgentAddress: '0x3333333333333333333333333333333333333333' as `0x${string}`,
+        subAgentPrivateKey: '0x' + 'aa'.repeat(32) as `0x${string}`,
+      });
+
+      // Without CLAWNCHER_PRIVATE_KEY the function should return an error
+      expect('error' in result).toBe(true);
+      if ('error' in result) {
+        expect(result.error).toContain('CLAWNCHER_PRIVATE_KEY');
+      }
+    } finally {
+      if (original !== undefined) {
+        process.env.CLAWNCHER_PRIVATE_KEY = original;
+      }
+    }
   });
 });

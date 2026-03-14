@@ -16,6 +16,7 @@ import { Type } from '@sinclair/typebox';
 import { stringEnum, jsonResult, errorResult, readStringParam } from '../lib/tool-helpers.js';
 import { getAgentPool } from '../services/agent-pool.js';
 import { executeSubAgent, detectProvider, getApiKey } from '../services/agent-orchestrator.js';
+import { isDelegationMode } from '../services/policy-types.js';
 import type { ToolDispatcher } from '../services/sandbox-runtime.js';
 
 const ACTIONS = ['delegate', 'list', 'status'] as const;
@@ -108,6 +109,57 @@ async function handleDelegate(
     );
   }
 
+  // Assign ephemeral wallet for sub-delegation (if in delegation mode)
+  let subDelegationInfo: Record<string, unknown> | undefined;
+  if (isDelegationMode()) {
+    try {
+      const wallet = await pool.assignEphemeralWallet(agent.id);
+      if (wallet) {
+        // Attempt to create sub-delegation from any active parent delegation
+        const { getDelegatedPolicies, createSubDelegation } = await import('../services/delegation-service.js');
+        const { getDelegationStore } = await import('../services/delegation-store.js');
+
+        const delegatedPolicies = getDelegatedPolicies('owner');
+        const delegationStore = getDelegationStore();
+
+        for (const policy of delegatedPolicies) {
+          if (!policy.delegation) continue;
+          if (policy.delegation.status !== 'signed' && policy.delegation.status !== 'active') continue;
+
+          const stored = delegationStore.load(policy.id);
+          if (!stored) continue;
+
+          const parentHash = policy.delegation.hash;
+          if (!parentHash || parentHash === '0x') continue;
+
+          const subResult = await createSubDelegation({
+            parentDelegation: stored.delegation,
+            parentHash: parentHash as `0x${string}`,
+            chainId: stored.chainId,
+            subAgentAddress: wallet.address,
+            subAgentPrivateKey: wallet.privateKey,
+          });
+
+          if ('error' in subResult) {
+            // Sub-delegation failed — continue without it
+            subDelegationInfo = { error: subResult.error };
+          } else {
+            subDelegationInfo = {
+              subAgentAddress: wallet.address,
+              parentPolicy: policy.name,
+              chainId: stored.chainId,
+              caveatCount: subResult.delegation.caveats.length,
+            };
+            agent.parentDelegationHash = parentHash as `0x${string}`;
+          }
+          break; // Use the first matching delegation
+        }
+      }
+    } catch {
+      // Sub-delegation is best-effort — don't block execution
+    }
+  }
+
   // Execute
   const result = await executeSubAgent(
     agent,
@@ -133,6 +185,7 @@ async function handleDelegate(
     tokensUsed: result.tokensUsed,
     durationMs: result.durationMs,
     ...(result.error ? { error: result.error } : {}),
+    ...(subDelegationInfo ? { subDelegation: subDelegationInfo } : {}),
   });
 }
 

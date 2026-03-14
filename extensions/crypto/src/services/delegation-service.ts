@@ -19,10 +19,12 @@
 
 import {
   createPublicClient,
+  createWalletClient,
   http,
   encodeAbiParameters,
   decodeAbiParameters,
   encodePacked,
+  keccak256,
   type Address,
   type Hex,
 } from 'viem';
@@ -347,6 +349,155 @@ export async function storeDelegation(
   return info;
 }
 
+// ─── Sub-Delegation (V7 — Agent Hierarchy) ─────────────────────────────
+
+export interface CreateSubDelegationInput {
+  /** The parent signed delegation to derive from. */
+  parentDelegation: SignedDelegation;
+  /** Parent delegation hash (used as authority for chaining). */
+  parentHash: Hex;
+  /** Chain ID for the sub-delegation. */
+  chainId: number;
+  /** Sub-agent's ephemeral wallet address (the new delegate). */
+  subAgentAddress: Address;
+  /** Sub-agent's ephemeral private key (for signing the sub-delegation). */
+  subAgentPrivateKey: Hex;
+  /** Optional: additional caveats to narrow the parent's permissions. */
+  additionalCaveats?: Caveat[];
+  /** Optional: subset of parent's caveats to include (by enforcer address). */
+  caveatFilter?: Address[];
+}
+
+export interface SubDelegationResult {
+  /** The signed sub-delegation. */
+  delegation: SignedDelegation;
+  /** Chain of delegations (parent + child) for redemption. */
+  chain: SignedDelegation[];
+  /** The parent delegation hash used as authority. */
+  authority: Hex;
+}
+
+/**
+ * Create a sub-delegation from a parent delegation.
+ *
+ * Sub-delegation narrows the parent's permissions by:
+ * 1. Setting the `authority` field to the parent delegation's hash
+ *    (creating a delegation chain)
+ * 2. Inheriting the parent's caveats (optionally filtered)
+ * 3. Adding additional restricting caveats (narrowing only — cannot expand)
+ *
+ * The parent agent (current delegate) signs the sub-delegation, granting
+ * the sub-agent a subset of its own permissions.
+ *
+ * DelegationManager verifies the full chain during redemption:
+ *   User → Agent (parent) → Sub-Agent (child)
+ *
+ * Important: caveats can only be made MORE restrictive in sub-delegations.
+ * The on-chain enforcers check both the parent and child caveats during
+ * redemption. Adding a wider spending limit on the child delegation is
+ * harmless — the parent's enforcer still caps the total.
+ */
+export async function createSubDelegation(
+  input: CreateSubDelegationInput,
+): Promise<SubDelegationResult | { error: string }> {
+  const {
+    parentDelegation,
+    parentHash,
+    chainId,
+    subAgentAddress,
+    subAgentPrivateKey,
+    additionalCaveats,
+    caveatFilter,
+  } = input;
+
+  // Build the child delegation's caveats:
+  // Start with parent's caveats (optionally filtered by enforcer)
+  let childCaveats: Caveat[] = [];
+
+  if (caveatFilter && caveatFilter.length > 0) {
+    const filterSet = new Set(caveatFilter.map(a => a.toLowerCase()));
+    childCaveats = parentDelegation.caveats.filter(
+      c => filterSet.has(c.enforcer.toLowerCase()),
+    );
+  } else {
+    // Inherit all parent caveats
+    childCaveats = [...parentDelegation.caveats];
+  }
+
+  // Add any additional narrowing caveats
+  if (additionalCaveats && additionalCaveats.length > 0) {
+    childCaveats.push(...additionalCaveats);
+  }
+
+  // The sub-delegation's delegator is the parent's delegate (the agent),
+  // and the delegate is the sub-agent's ephemeral address.
+  const salt = BigInt('0x' + Array.from(
+    { length: 32 },
+    () => Math.floor(Math.random() * 256).toString(16).padStart(2, '0'),
+  ).join(''));
+
+  const unsigned: UnsignedDelegation = {
+    delegate: subAgentAddress,
+    delegator: parentDelegation.delegate, // parent agent is the delegator
+    authority: parentHash,                // chain to parent delegation
+    caveats: childCaveats,
+    salt,
+  };
+
+  // Sign with the parent agent's key (the current delegate becomes delegator)
+  const domain = getDelegationDomain(chainId);
+  const message = {
+    delegate: unsigned.delegate,
+    delegator: unsigned.delegator,
+    authority: unsigned.authority,
+    caveats: unsigned.caveats.map(c => ({
+      enforcer: c.enforcer,
+      terms: c.terms,
+      args: c.args,
+    })),
+    salt: unsigned.salt,
+  };
+
+  try {
+    // The delegator of the sub-delegation is the parent agent (parentDelegation.delegate).
+    // The agent's private key (CLAWNCHER_PRIVATE_KEY) is needed to sign.
+    const agentPrivateKey = process.env.CLAWNCHER_PRIVATE_KEY as Hex | undefined;
+    if (!agentPrivateKey) {
+      return { error: 'CLAWNCHER_PRIVATE_KEY is required for sub-delegation signing. The agent must have its own private key.' };
+    }
+
+    const chain = CHAIN_CONFIGS[chainId];
+    if (!chain) {
+      return { error: `No chain config for chainId ${chainId}` };
+    }
+
+    const { privateKeyToAccount } = await import('viem/accounts');
+    const agentSignerClient = createWalletClient({
+      account: privateKeyToAccount(agentPrivateKey),
+      chain,
+      transport: http(),
+    });
+
+    const signature = await agentSignerClient.signTypedData({
+      domain,
+      types: DELEGATION_EIP712_TYPES,
+      primaryType: 'Delegation',
+      message,
+    });
+
+    const signed: SignedDelegation = { ...unsigned, signature };
+
+    return {
+      delegation: signed,
+      chain: [parentDelegation, signed], // ordered: root first, child last
+      authority: parentHash,
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { error: `Sub-delegation signing failed: ${msg}` };
+  }
+}
+
 /**
  * Revoke a delegation on-chain via DelegationManager.disableDelegation().
  * Requires the delegator's wallet to send the transaction.
@@ -532,32 +683,40 @@ export async function revokeByPolicy(
 /**
  * Encode the permissionContext for redeemDelegations().
  *
- * The permissionContext is an ABI-encoded delegation chain. For a single
- * root delegation (no parent), it encodes:
- *   abi.encode(Delegation[], bytes[])
- * where Delegation[] is the chain (length 1 for root) and bytes[] is the
- * per-caveat args for each delegation in the chain.
+ * The permissionContext is an ABI-encoded delegation chain. Supports both
+ * single-delegation (root) and multi-delegation (sub-delegation) chains.
+ *
+ * For a single root delegation:
+ *   abi.encode(Delegation[1])
+ *
+ * For a sub-delegation chain (User → Agent → Sub-Agent):
+ *   abi.encode(Delegation[2])  — ordered [parent, child]
+ *
+ * The DelegationManager walks the chain, verifying each delegation's
+ * authority field matches the hash of its parent.
  */
 function encodePermissionContext(delegation: SignedDelegation): Hex {
-  // Single-delegation chain (root delegation, no parent)
-  // The DelegationManager expects the delegation struct + caveat args
-  // packed as: abi.encode(Delegation[], bytes[])
-  //
-  // For a single root delegation with N caveats, the args array has N entries
-  // (one per caveat, usually all '0x' for compile-time enforcers).
+  return encodePermissionContextChain([delegation]);
+}
 
-  const delegationTuple = {
-    delegate: delegation.delegate,
-    delegator: delegation.delegator,
-    authority: delegation.authority,
-    caveats: delegation.caveats.map(c => ({
+/**
+ * Encode a delegation chain as permissionContext.
+ * Accepts an array of SignedDelegations ordered from root (parent) to leaf (child).
+ * For a single root delegation, pass a 1-element array.
+ */
+export function encodePermissionContextChain(chain: SignedDelegation[]): Hex {
+  const delegationTuples = chain.map(d => ({
+    delegate: d.delegate,
+    delegator: d.delegator,
+    authority: d.authority,
+    caveats: d.caveats.map(c => ({
       enforcer: c.enforcer,
       terms: c.terms,
       args: c.args,
     })),
-    salt: delegation.salt,
-    signature: delegation.signature,
-  };
+    salt: d.salt,
+    signature: d.signature,
+  }));
 
   // Encode as: abi.encode(Delegation[])
   // The DelegationManager decodes the permissionContext as a delegation chain.
@@ -580,7 +739,7 @@ function encodePermissionContext(delegation: SignedDelegation): Hex {
         { name: 'signature', type: 'bytes' },
       ],
     }],
-    [[delegationTuple]],
+    [delegationTuples],
   );
 }
 

@@ -22,6 +22,7 @@
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import type { Address, Hex } from 'viem';
 
 // ─── Types ──────────────────────────────────────────────────────────────
 
@@ -58,6 +59,18 @@ export interface SubAgentDef {
   usageCount: number;
   createdAt: number;
   updatedAt: number;
+
+  // ── Sub-delegation identity (V7) ───────────────────────────────────
+  // Ephemeral keypair for sub-delegation. Generated at agent creation,
+  // NOT persisted to disk (regenerated on restart for security).
+  // The address is used as the delegate in child delegations.
+
+  /** Ephemeral wallet address for sub-delegation. */
+  walletAddress?: Address;
+  /** Ephemeral private key (hex). In-memory only, never serialized. */
+  walletPrivateKey?: Hex;
+  /** Parent delegation hash this agent's sub-delegation chains from. */
+  parentDelegationHash?: Hex;
 }
 
 // ─── Preset Agents ──────────────────────────────────────────────────────
@@ -159,6 +172,20 @@ const PRESETS: Omit<SubAgentDef, 'id' | 'usageCount' | 'createdAt' | 'updatedAt'
     createdBy: 'system',
   },
 ];
+
+// ─── Ephemeral Keypair Generation ───────────────────────────────────────
+
+/**
+ * Generate an ephemeral keypair for sub-agent delegation.
+ * Uses viem's generatePrivateKey + privateKeyToAccount.
+ * These are in-memory only and NOT persisted to disk.
+ */
+async function generateEphemeralKeypair(): Promise<{ address: Address; privateKey: Hex }> {
+  const { generatePrivateKey, privateKeyToAccount } = await import('viem/accounts');
+  const privateKey = generatePrivateKey();
+  const account = privateKeyToAccount(privateKey);
+  return { address: account.address, privateKey };
+}
 
 // ─── Validation ─────────────────────────────────────────────────────────
 
@@ -300,6 +327,35 @@ export class AgentPool {
     this.agents.clear();
   }
 
+  /**
+   * Assign an ephemeral keypair to an agent for sub-delegation.
+   * Generated in-memory, never persisted to disk.
+   * Safe to call multiple times — skips if already assigned.
+   */
+  async assignEphemeralWallet(id: string): Promise<{ address: Address; privateKey: Hex } | null> {
+    const agent = this.agents.get(id);
+    if (!agent) return null;
+    if (agent.walletAddress && agent.walletPrivateKey) {
+      return { address: agent.walletAddress, privateKey: agent.walletPrivateKey };
+    }
+
+    const keypair = await generateEphemeralKeypair();
+    agent.walletAddress = keypair.address;
+    agent.walletPrivateKey = keypair.privateKey;
+    agent.updatedAt = Date.now();
+    // DO NOT saveState() — private keys must not be persisted
+    return keypair;
+  }
+
+  /**
+   * Get the ephemeral wallet for an agent (if assigned).
+   */
+  getWallet(id: string): { address: Address; privateKey: Hex } | null {
+    const agent = this.agents.get(id);
+    if (!agent?.walletAddress || !agent?.walletPrivateKey) return null;
+    return { address: agent.walletAddress, privateKey: agent.walletPrivateKey };
+  }
+
   // ── Presets ─────────────────────────────────────────────────────────
 
   private initPresets(): void {
@@ -337,7 +393,12 @@ export class AgentPool {
     try {
       if (!existsSync(this.stateDir)) mkdirSync(this.stateDir, { recursive: true });
       const filePath = join(this.stateDir, 'agents.json');
-      writeFileSync(filePath, JSON.stringify(Array.from(this.agents.values()), null, 2), 'utf8');
+      // Strip ephemeral wallet keys — NEVER persist private keys to disk
+      const serializable = Array.from(this.agents.values()).map(a => {
+        const { walletPrivateKey, walletAddress, parentDelegationHash, ...rest } = a;
+        return rest;
+      });
+      writeFileSync(filePath, JSON.stringify(serializable, null, 2), 'utf8');
     } catch { /* best effort */ }
   }
 }

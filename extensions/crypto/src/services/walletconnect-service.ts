@@ -44,6 +44,11 @@ let _bankrEvmAddress: string | null = null;
 let _bankrSolAddress: string | null = null;
 let _bankrClub: boolean = false;
 
+// Account type detection cache (EIP-7702)
+let _accountType: 'eoa' | 'smart_account' | 'eip7702' | undefined;
+let _hasCode: boolean | undefined;
+let _delegationDesignation: Address | undefined;
+
 // ─── Configuration ───────────────────────────────────────────────────────
 
 interface WalletServiceConfig {
@@ -323,6 +328,9 @@ export function getWalletState(): WalletState {
     bankrEvmAddress: _bankrEvmAddress ?? undefined,
     bankrSolAddress: _bankrSolAddress ?? undefined,
     bankrClub: _bankrClub || undefined,
+    accountType: _accountType,
+    hasCode: _hasCode,
+    delegationDesignation: _delegationDesignation,
   };
 }
 
@@ -419,6 +427,93 @@ export async function getMevWalletClient(): Promise<any> {
   }
 }
 
+// ─── EIP-7702 Account Type Detection ─────────────────────────────────────
+
+/**
+ * EIP-7702 delegation designation prefix.
+ * An EIP-7702 delegated EOA has code: 0xef0100 + 20-byte implementation address.
+ * Total bytecode length = 23 bytes = 46 hex chars + '0x' prefix = 48 chars.
+ */
+const EIP7702_PREFIX = '0xef0100';
+const EIP7702_CODE_LENGTH = 48; // '0x' + 46 hex chars (3 prefix + 20 addr bytes)
+
+export interface AccountTypeResult {
+  /** Account type classification. */
+  accountType: 'eoa' | 'smart_account' | 'eip7702';
+  /** Whether the account has on-chain code deployed. */
+  hasCode: boolean;
+  /** For EIP-7702: the implementation address the EOA delegates to. */
+  delegationDesignation?: Address;
+}
+
+/**
+ * Detect the account type of the connected wallet via eth_getCode.
+ *
+ * - EOA: getCode returns '0x' (no code)
+ * - Smart Account: getCode returns arbitrary bytecode (not EIP-7702 prefix)
+ * - EIP-7702: getCode returns 0xef0100 + 20-byte implementation address
+ *
+ * Results are cached on the wallet state. Call with `force: true` to re-detect.
+ * Returns null if no wallet is connected or no public client is available.
+ */
+export async function detectAccountType(opts?: { force?: boolean }): Promise<AccountTypeResult | null> {
+  // Return cached result unless forced
+  if (!opts?.force && _accountType !== undefined) {
+    return {
+      accountType: _accountType,
+      hasCode: _hasCode ?? false,
+      delegationDesignation: _delegationDesignation,
+    };
+  }
+
+  if (!_connectedAddress || !_publicClient) {
+    return null;
+  }
+
+  try {
+    const code = await _publicClient.getCode({ address: _connectedAddress });
+    const codeHex = (code as string) ?? '0x';
+
+    if (codeHex === '0x' || codeHex === '0x0') {
+      // No code — standard EOA
+      _accountType = 'eoa';
+      _hasCode = false;
+      _delegationDesignation = undefined;
+    } else if (
+      codeHex.toLowerCase().startsWith(EIP7702_PREFIX) &&
+      codeHex.length === EIP7702_CODE_LENGTH
+    ) {
+      // EIP-7702 delegation designation: 0xef0100 + 20-byte address
+      _accountType = 'eip7702';
+      _hasCode = true;
+      _delegationDesignation = ('0x' + codeHex.slice(8)) as Address; // skip '0xef0100'
+    } else {
+      // Arbitrary bytecode — smart account (Safe, ERC-4337, custom)
+      _accountType = 'smart_account';
+      _hasCode = true;
+      _delegationDesignation = undefined;
+    }
+
+    return {
+      accountType: _accountType,
+      hasCode: _hasCode,
+      delegationDesignation: _delegationDesignation,
+    };
+  } catch {
+    // RPC call failed — can't determine account type
+    return null;
+  }
+}
+
+/**
+ * Clear the cached account type detection. Called on disconnect.
+ */
+export function clearAccountTypeCache(): void {
+  _accountType = undefined;
+  _hasCode = undefined;
+  _delegationDesignation = undefined;
+}
+
 // ─── Disconnect ──────────────────────────────────────────────────────────
 
 export async function disconnectWallet(): Promise<void> {
@@ -431,6 +526,7 @@ export async function disconnectWallet(): Promise<void> {
   _bankrSolAddress = null;
   _bankrClub = false;
   _mode = 'none';
+  clearAccountTypeCache();
 }
 
 // ─── Policy Management ───────────────────────────────────────────────────

@@ -51,6 +51,12 @@ export interface WalletState {
   bankrSolAddress?: string;
   /** Bankr Club membership status */
   bankrClub?: boolean;
+  /** Account type — detected via eth_getCode (EIP-7702 detection) */
+  accountType?: 'eoa' | 'smart_account' | 'eip7702';
+  /** Whether the account has on-chain code deployed */
+  hasCode?: boolean;
+  /** EIP-7702 delegation designation address (if detected) */
+  delegationDesignation?: Address;
 }
 
 // ─── Tool Result Helpers ─────────────────────────────────────────────────

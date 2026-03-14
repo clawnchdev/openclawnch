@@ -155,7 +155,7 @@ describe('plugin registration with bankr', () => {
     expect(registered).toContain('bankr_leverage');
   });
 
-  it('registers 111 commands including connect_bankr and automations', async () => {
+  it('registers 112 commands including connect_bankr and automations', async () => {
     const plugin = (await import('../extensions/crypto/index.js')).default;
     const commands: string[] = [];
     const mockApi = {
@@ -165,7 +165,7 @@ describe('plugin registration with bankr', () => {
       logger: { info: vi.fn(), warn: vi.fn() },
     };
     plugin.register(mockApi);
-    expect(commands).toHaveLength(111);
+    expect(commands).toHaveLength(112);
     expect(commands).toContain('connect_bankr');
     expect(commands).toContain('automations');
     expect(commands).toContain('provider');

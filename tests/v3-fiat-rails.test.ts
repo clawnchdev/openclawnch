@@ -432,7 +432,7 @@ describe('V3 plugin registration counts', () => {
     expect(registered).toContain('fiat_payment');
   });
 
-  it('registers 111 commands including fiat, tools, agents, webhooks, skills, interrupt, api, and pull', { timeout: 15000 }, async () => {
+  it('registers 112 commands including fiat, tools, agents, webhooks, skills, interrupt, api, and pull', { timeout: 15000 }, async () => {
     const plugin = (await import('../extensions/crypto/index.js')).default;
     const commands: string[] = [];
     const mockApi = {
@@ -442,7 +442,7 @@ describe('V3 plugin registration counts', () => {
       logger: { info: () => {}, warn: () => {} },
     };
     plugin.register(mockApi);
-    expect(commands).toHaveLength(111);
+    expect(commands).toHaveLength(112);
     expect(commands).toContain('fiat');
     expect(commands).toContain('tools');
   });
