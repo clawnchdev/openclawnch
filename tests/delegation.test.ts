@@ -2291,3 +2291,437 @@ describe('Sub-Delegation', () => {
     }
   });
 });
+
+// ─── 25. Expanded Extractors — ERC-20 and clawnchconnect ────────────────
+
+describe('Delegation Executor — Expanded Extractors', () => {
+  beforeEach(async () => {
+    const { resetPolicyMode } = await import(
+      '../extensions/crypto/src/services/policy-types.js'
+    );
+    resetPolicyMode();
+  });
+
+  it('getDelegationSupportedTools includes transfer and clawnchconnect', async () => {
+    const { getDelegationSupportedTools } = await import(
+      '../extensions/crypto/src/services/delegation-executor.js'
+    );
+    const tools = getDelegationSupportedTools();
+    expect(tools).toContain('transfer');
+    expect(tools).toContain('clawnchconnect');
+    expect(tools.length).toBe(2);
+  });
+
+  it('transfer extractor skips non-send actions', async () => {
+    const { tryDelegationExecution } = await import(
+      '../extensions/crypto/src/services/delegation-executor.js'
+    );
+    const { setPolicyMode } = await import(
+      '../extensions/crypto/src/services/policy-types.js'
+    );
+
+    setPolicyMode('delegation');
+    const result = await tryDelegationExecution(
+      { toolName: 'transfer', userId: 'test-user' },
+      { action: 'balance', address: '0x' + '1'.repeat(40) },
+    );
+    expect(result.executed).toBe(false);
+    expect(result.skipReason).toContain('Could not extract');
+  });
+
+  it('transfer extractor handles ERC-20 token arg (skips at no-delegation gate)', async () => {
+    const { tryDelegationExecution } = await import(
+      '../extensions/crypto/src/services/delegation-executor.js'
+    );
+    const { setPolicyMode } = await import(
+      '../extensions/crypto/src/services/policy-types.js'
+    );
+
+    setPolicyMode('delegation');
+    // Valid ERC-20 transfer args — should extract successfully but fail at
+    // the "no matching delegation" gate (no policies for this user).
+    const result = await tryDelegationExecution(
+      { toolName: 'transfer', userId: 'erc20-test-user' },
+      {
+        action: 'send',
+        to: '0x' + '2'.repeat(40),
+        amount: '100',
+        token: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913', // USDC on Base
+      },
+    );
+    expect(result.executed).toBe(false);
+    // Should pass extraction (ERC-20) but fail at delegation matching
+    expect(result.skipReason).toContain('No matching delegation');
+  });
+
+  it('transfer extractor rejects invalid token address', async () => {
+    const { tryDelegationExecution } = await import(
+      '../extensions/crypto/src/services/delegation-executor.js'
+    );
+    const { setPolicyMode } = await import(
+      '../extensions/crypto/src/services/policy-types.js'
+    );
+
+    setPolicyMode('delegation');
+    const result = await tryDelegationExecution(
+      { toolName: 'transfer', userId: 'test-user' },
+      {
+        action: 'send',
+        to: '0x' + '2'.repeat(40),
+        amount: '100',
+        token: 'not-an-address', // Invalid token — should fall through to null extraction
+      },
+    );
+    expect(result.executed).toBe(false);
+    expect(result.skipReason).toContain('Could not extract');
+  });
+
+  it('transfer extractor treats missing token as native ETH', async () => {
+    const { tryDelegationExecution } = await import(
+      '../extensions/crypto/src/services/delegation-executor.js'
+    );
+    const { setPolicyMode } = await import(
+      '../extensions/crypto/src/services/policy-types.js'
+    );
+
+    setPolicyMode('delegation');
+    // No token arg → native ETH. Should extract OK, fail at delegation matching.
+    const result = await tryDelegationExecution(
+      { toolName: 'transfer', userId: 'native-test-user' },
+      { action: 'send', to: '0x' + '3'.repeat(40), amount: '0.5' },
+    );
+    expect(result.executed).toBe(false);
+    expect(result.skipReason).toContain('No matching delegation');
+  });
+
+  it('transfer extractor rejects zero/negative amounts', async () => {
+    const { tryDelegationExecution } = await import(
+      '../extensions/crypto/src/services/delegation-executor.js'
+    );
+    const { setPolicyMode } = await import(
+      '../extensions/crypto/src/services/policy-types.js'
+    );
+
+    setPolicyMode('delegation');
+    const result = await tryDelegationExecution(
+      { toolName: 'transfer', userId: 'test-user' },
+      { action: 'send', to: '0x' + '1'.repeat(40), amount: '0' },
+    );
+    expect(result.executed).toBe(false);
+    expect(result.skipReason).toContain('Could not extract');
+  });
+
+  it('transfer extractor rejects invalid to address', async () => {
+    const { tryDelegationExecution } = await import(
+      '../extensions/crypto/src/services/delegation-executor.js'
+    );
+    const { setPolicyMode } = await import(
+      '../extensions/crypto/src/services/policy-types.js'
+    );
+
+    setPolicyMode('delegation');
+    const result = await tryDelegationExecution(
+      { toolName: 'transfer', userId: 'test-user' },
+      { action: 'send', to: 'not-an-address', amount: '1.0' },
+    );
+    expect(result.executed).toBe(false);
+    expect(result.skipReason).toContain('Could not extract');
+  });
+
+  it('clawnchconnect extractor skips non-send_tx actions', async () => {
+    const { tryDelegationExecution } = await import(
+      '../extensions/crypto/src/services/delegation-executor.js'
+    );
+    const { setPolicyMode } = await import(
+      '../extensions/crypto/src/services/policy-types.js'
+    );
+
+    setPolicyMode('delegation');
+    const result = await tryDelegationExecution(
+      { toolName: 'clawnchconnect', userId: 'test-user' },
+      { action: 'connect', uri: 'wc:...' },
+    );
+    expect(result.executed).toBe(false);
+    expect(result.skipReason).toContain('Could not extract');
+  });
+
+  it('clawnchconnect extractor handles send_tx with value and data', async () => {
+    const { tryDelegationExecution } = await import(
+      '../extensions/crypto/src/services/delegation-executor.js'
+    );
+    const { setPolicyMode } = await import(
+      '../extensions/crypto/src/services/policy-types.js'
+    );
+
+    setPolicyMode('delegation');
+    // Valid send_tx args. Should extract OK, fail at delegation matching.
+    const result = await tryDelegationExecution(
+      { toolName: 'clawnchconnect', userId: 'cc-test-user' },
+      {
+        action: 'send_tx',
+        to: '0x' + '4'.repeat(40),
+        value: '0.01',
+        data: '0xa9059cbb' + '0'.repeat(128),
+      },
+    );
+    expect(result.executed).toBe(false);
+    expect(result.skipReason).toContain('No matching delegation');
+  });
+
+  it('clawnchconnect extractor handles send_tx with no value or data', async () => {
+    const { tryDelegationExecution } = await import(
+      '../extensions/crypto/src/services/delegation-executor.js'
+    );
+    const { setPolicyMode } = await import(
+      '../extensions/crypto/src/services/policy-types.js'
+    );
+
+    setPolicyMode('delegation');
+    const result = await tryDelegationExecution(
+      { toolName: 'clawnchconnect', userId: 'cc-test-user-2' },
+      { action: 'send_tx', to: '0x' + '5'.repeat(40) },
+    );
+    expect(result.executed).toBe(false);
+    expect(result.skipReason).toContain('No matching delegation');
+  });
+
+  it('clawnchconnect extractor rejects invalid to address', async () => {
+    const { tryDelegationExecution } = await import(
+      '../extensions/crypto/src/services/delegation-executor.js'
+    );
+    const { setPolicyMode } = await import(
+      '../extensions/crypto/src/services/policy-types.js'
+    );
+
+    setPolicyMode('delegation');
+    const result = await tryDelegationExecution(
+      { toolName: 'clawnchconnect', userId: 'test-user' },
+      { action: 'send_tx', to: 'bad-addr', value: '0.01' },
+    );
+    expect(result.executed).toBe(false);
+    expect(result.skipReason).toContain('Could not extract');
+  });
+});
+
+// ─── 26. Profile Auto-Delegation ────────────────────────────────────────
+
+describe('Profile Command — Auto-Delegation', () => {
+  beforeEach(async () => {
+    const { resetPolicyMode } = await import(
+      '../extensions/crypto/src/services/policy-types.js'
+    );
+    const { resetProfileCache } = await import(
+      '../extensions/crypto/src/services/autonomy-profiles.js'
+    );
+    resetPolicyMode();
+    resetProfileCache();
+  });
+
+  it('profile command handler is async (returns promise)', async () => {
+    const { profileCommand } = await import(
+      '../extensions/crypto/src/commands/profile-command.js'
+    );
+    const result = profileCommand.handler({ args: '', senderId: 'test-user' });
+    // Handler should return a promise (async function)
+    expect(result).toBeInstanceOf(Promise);
+    const resolved = await result;
+    expect(resolved.text).toBeDefined();
+  });
+
+  it('activation in simple mode does NOT mention delegations', async () => {
+    const { profileCommand } = await import(
+      '../extensions/crypto/src/commands/profile-command.js'
+    );
+    const { setPolicyMode } = await import(
+      '../extensions/crypto/src/services/policy-types.js'
+    );
+
+    setPolicyMode('simple');
+    const result = await profileCommand.handler({ args: 'training', senderId: 'auto-deleg-test-1' });
+    expect(result.text).toContain('Profile activated');
+    expect(result.text).toContain('Training Wheels');
+    // In simple mode, no delegation auto-signing happens
+    expect(result.text).not.toContain('Signed');
+    expect(result.text).not.toContain('on-chain delegation');
+  });
+
+  it('activation in delegation mode attempts auto-delegation', async () => {
+    const { profileCommand } = await import(
+      '../extensions/crypto/src/commands/profile-command.js'
+    );
+    const { setPolicyMode } = await import(
+      '../extensions/crypto/src/services/policy-types.js'
+    );
+
+    setPolicyMode('delegation');
+    // Auto-delegation will attempt but fail (no wallet connected) — that's expected.
+    // We just verify it reaches the delegation code path.
+    const result = await profileCommand.handler({ args: 'training', senderId: 'auto-deleg-test-2' });
+    expect(result.text).toContain('Profile activated');
+    expect(result.text).toContain('Training Wheels');
+    // Should show either "Signed" (success) or "Failed to sign" (no wallet)
+    const hasDelegationAttempt =
+      result.text.includes('Signed') || result.text.includes('Failed to sign');
+    expect(hasDelegationAttempt).toBe(true);
+  });
+
+  it('supervised profile creates no delegations even in delegation mode', async () => {
+    const { profileCommand } = await import(
+      '../extensions/crypto/src/commands/profile-command.js'
+    );
+    const { setPolicyMode } = await import(
+      '../extensions/crypto/src/services/policy-types.js'
+    );
+
+    setPolicyMode('delegation');
+    const result = await profileCommand.handler({ args: 'supervised', senderId: 'auto-deleg-test-3' });
+    expect(result.text).toContain('Profile activated');
+    expect(result.text).toContain('Supervised');
+    // No policies created → no auto-delegation attempt.
+    // Note: profile summary naturally says "No on-chain delegation created."
+    // so we check for the auto-delegation-specific output strings.
+    expect(result.text).not.toContain('Signed 1');
+    expect(result.text).not.toContain('Failed to sign');
+    expect(result.text).not.toContain('delegation automatically');
+    expect(result.text).toContain('All actions require wallet approval');
+  });
+
+  it('listing profiles in delegation mode shows auto-sign note', async () => {
+    const { profileCommand } = await import(
+      '../extensions/crypto/src/commands/profile-command.js'
+    );
+    const { setPolicyMode } = await import(
+      '../extensions/crypto/src/services/policy-types.js'
+    );
+
+    setPolicyMode('delegation');
+    const result = await profileCommand.handler({ args: '', senderId: 'auto-deleg-test-4' });
+    expect(result.text).toContain('auto-signed');
+  });
+
+  it('profile command imports delegation service functions', async () => {
+    // Verify the module loads without import errors
+    const mod = await import(
+      '../extensions/crypto/src/commands/profile-command.js'
+    );
+    expect(mod.profileCommand).toBeDefined();
+    expect(mod.profileCommand.handler).toBeDefined();
+  });
+});
+
+// ─── 27. encodePermissionContextChain Round-Trip ────────────────────────
+
+describe('encodePermissionContextChain — Round-Trip', () => {
+  it('encodes a single delegation and returns valid hex', async () => {
+    const { encodePermissionContextChain } = await import(
+      '../extensions/crypto/src/services/delegation-service.js'
+    );
+
+    const delegation = {
+      delegate: '0x1111111111111111111111111111111111111111' as `0x${string}`,
+      delegator: '0x2222222222222222222222222222222222222222' as `0x${string}`,
+      authority: ('0x' + '0'.repeat(64)) as `0x${string}`,
+      caveats: [{
+        enforcer: '0x3333333333333333333333333333333333333333' as `0x${string}`,
+        terms: '0xabcd' as `0x${string}`,
+        args: '0x' as `0x${string}`,
+      }],
+      salt: 42n,
+      signature: '0x' + 'ff'.repeat(65) as `0x${string}`,
+    };
+
+    const encoded = encodePermissionContextChain([delegation]);
+    expect(encoded).toMatch(/^0x[0-9a-f]+$/i);
+    // Must be non-trivial (more than just the header)
+    expect(encoded.length).toBeGreaterThan(100);
+  });
+
+  it('encodes a two-delegation chain (parent + child)', async () => {
+    const { encodePermissionContextChain } = await import(
+      '../extensions/crypto/src/services/delegation-service.js'
+    );
+
+    const parent = {
+      delegate: '0x1111111111111111111111111111111111111111' as `0x${string}`,
+      delegator: '0x2222222222222222222222222222222222222222' as `0x${string}`,
+      authority: ('0x' + '0'.repeat(64)) as `0x${string}`,
+      caveats: [],
+      salt: 1n,
+      signature: '0x' + 'aa'.repeat(65) as `0x${string}`,
+    };
+
+    const child = {
+      delegate: '0x4444444444444444444444444444444444444444' as `0x${string}`,
+      delegator: '0x1111111111111111111111111111111111111111' as `0x${string}`,
+      authority: ('0x' + 'bb'.repeat(32)) as `0x${string}`,
+      caveats: [{
+        enforcer: '0x5555555555555555555555555555555555555555' as `0x${string}`,
+        terms: '0x1234' as `0x${string}`,
+        args: '0x' as `0x${string}`,
+      }],
+      salt: 2n,
+      signature: '0x' + 'cc'.repeat(65) as `0x${string}`,
+    };
+
+    const encoded = encodePermissionContextChain([parent, child]);
+    expect(encoded).toMatch(/^0x[0-9a-f]+$/i);
+    // Two delegations should encode to more bytes than one
+    const singleEncoded = encodePermissionContextChain([parent]);
+    expect(encoded.length).toBeGreaterThan(singleEncoded.length);
+  });
+
+  it('round-trips via decodeAbiParameters', async () => {
+    const { encodePermissionContextChain } = await import(
+      '../extensions/crypto/src/services/delegation-service.js'
+    );
+    const { decodeAbiParameters } = await import('viem');
+
+    const delegation = {
+      delegate: '0x1111111111111111111111111111111111111111' as `0x${string}`,
+      delegator: '0x2222222222222222222222222222222222222222' as `0x${string}`,
+      authority: ('0x' + '0'.repeat(64)) as `0x${string}`,
+      caveats: [{
+        enforcer: '0x3333333333333333333333333333333333333333' as `0x${string}`,
+        terms: '0xabcd' as `0x${string}`,
+        args: '0x' as `0x${string}`,
+      }],
+      salt: 99n,
+      signature: '0x' + 'dd'.repeat(65) as `0x${string}`,
+    };
+
+    const encoded = encodePermissionContextChain([delegation]);
+
+    // Decode it back
+    const decoded = decodeAbiParameters(
+      [{
+        type: 'tuple[]',
+        components: [
+          { name: 'delegate', type: 'address' },
+          { name: 'delegator', type: 'address' },
+          { name: 'authority', type: 'bytes32' },
+          {
+            name: 'caveats', type: 'tuple[]',
+            components: [
+              { name: 'enforcer', type: 'address' },
+              { name: 'terms', type: 'bytes' },
+              { name: 'args', type: 'bytes' },
+            ],
+          },
+          { name: 'salt', type: 'uint256' },
+          { name: 'signature', type: 'bytes' },
+        ],
+      }],
+      encoded,
+    );
+
+    const chain = decoded[0] as any[];
+    expect(chain.length).toBe(1);
+
+    const d = chain[0];
+    expect(d.delegate.toLowerCase()).toBe('0x1111111111111111111111111111111111111111');
+    expect(d.delegator.toLowerCase()).toBe('0x2222222222222222222222222222222222222222');
+    expect(d.salt).toBe(99n);
+    expect(d.caveats.length).toBe(1);
+    expect(d.caveats[0].enforcer.toLowerCase()).toBe('0x3333333333333333333333333333333333333333');
+  });
+});

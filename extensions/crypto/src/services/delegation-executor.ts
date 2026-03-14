@@ -49,53 +49,163 @@ export interface DelegationExecutionResult {
 /**
  * Tools that support delegation execution.
  *
- * Each entry maps a tool name to a function that extracts the ExecutionAction
- * (target, value, callData) from the tool's args. Only tools where we can
- * reliably construct the on-chain call are included.
+ * Each entry maps a tool name to an async function that extracts the
+ * ExecutionAction (target, value, callData) from the tool's args.
  *
- * For transfer: we know the target (recipient), value (amount), and calldata (0x for native ETH).
- * For ERC-20 transfer: target is the token contract, calldata is transfer(to, amount).
- * For swap/bridge/etc: the calldata is constructed by the aggregator response and
- * would need the tool to expose it — we skip these for now and let them execute
- * normally via the wallet. The on-chain caveats still enforce limits when the
- * wallet IS the delegator's smart account.
+ * Supported:
+ * - transfer: native ETH sends and ERC-20 transfers
+ * - clawnchconnect: raw transaction sends (send_tx action)
  *
- * This is intentionally conservative: only extract what we can verify.
+ * Not yet supported (calldata constructed by external SDK):
+ * - defi_swap: ClawnchSwapper.swap() handles tx internally, no extractable calldata
+ * - bridge: similar — aggregator constructs calldata server-side
+ *
+ * For unsupported tools, the delegation's on-chain caveats still enforce
+ * limits when the wallet IS the delegator's smart account — the tool
+ * submits the tx through the wallet, and the wallet's caveats are checked.
  */
 
 interface ActionExtractor {
-  (args: Record<string, unknown>): ExecutionAction | null;
+  (args: Record<string, unknown>): Promise<ExecutionAction | null>;
+}
+
+// ─── Well-Known Token Decimals ──────────────────────────────────────────
+// Avoids async on-chain calls for common tokens. Unknown tokens fall back
+// to 18 decimals (standard ERC-20 default).
+
+const WELL_KNOWN_DECIMALS: Record<string, number> = {
+  '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913': 6,  // USDC (Base)
+  '0xfde4c96c8593536e31f229ea8f37b2ada2699bb2': 6,  // USDT (Base)
+  '0x50c5725949a6f0c72e6c4a641f24049a917db0cb': 18, // DAI (Base)
+  '0x4200000000000000000000000000000000000006': 18,   // WETH (Base)
+  '0xa1f72459dfa10bad200ac160ecd78c6b77a747be': 18,  // CLAWNCH (Base)
+};
+
+function getTokenDecimals(address: string): number {
+  return WELL_KNOWN_DECIMALS[address.toLowerCase()] ?? 18;
+}
+
+/**
+ * Encode ERC-20 transfer(address,uint256) calldata.
+ * Selector: 0xa9059cbb
+ */
+function encodeErc20Transfer(to: Address, amount: bigint): Hex {
+  const selector = '0xa9059cbb';
+  const toParam = to.slice(2).toLowerCase().padStart(64, '0');
+  const amountParam = amount.toString(16).padStart(64, '0');
+  return `${selector}${toParam}${amountParam}` as Hex;
+}
+
+/**
+ * Encode ERC-20 approve(address,uint256) calldata.
+ * Selector: 0x095ea7b3
+ */
+function encodeErc20Approve(spender: Address, amount: bigint): Hex {
+  const selector = '0x095ea7b3';
+  const spenderParam = spender.slice(2).toLowerCase().padStart(64, '0');
+  const amountParam = amount.toString(16).padStart(64, '0');
+  return `${selector}${spenderParam}${amountParam}` as Hex;
+}
+
+/**
+ * Parse a human-readable token amount to wei/smallest unit.
+ * e.g., "100" with 6 decimals → 100_000_000n
+ */
+function parseTokenAmount(amount: string, decimals: number): bigint {
+  const num = parseFloat(amount);
+  if (isNaN(num) || num <= 0) return 0n;
+  // Use string math to avoid floating point precision loss
+  const [whole = '0', frac = ''] = amount.split('.');
+  const paddedFrac = (frac + '0'.repeat(decimals)).slice(0, decimals);
+  return BigInt(whole + paddedFrac);
 }
 
 const SUPPORTED_EXTRACTORS: Record<string, ActionExtractor> = {
   /**
-   * transfer tool — native ETH sends.
-   * Args: { action: 'send', to: address, amount: string, token?: 'ETH' }
+   * transfer tool — native ETH sends and ERC-20 transfers.
+   * Args: { action: 'send', to: address, amount: string, token?: string }
+   * token is a contract address (0x...) for ERC-20, absent/ETH for native.
    */
-  transfer: (args) => {
+  transfer: async (args) => {
     const action = args.action as string | undefined;
     if (action !== 'send') return null;
 
     const to = args.to as string | undefined;
     const amount = args.amount as string | undefined;
-    const token = (args.token as string | undefined)?.toUpperCase();
+    const token = args.token as string | undefined;
 
-    // Only handle native ETH transfers for now
-    // ERC-20 transfers need token contract address + transfer() encoding
-    if (token && token !== 'ETH' && token !== 'NATIVE') return null;
     if (!to || !amount) return null;
     if (!/^0x[0-9a-fA-F]{40}$/.test(to)) return null;
 
+    const isErc20 = token && /^0x[0-9a-fA-F]{40}$/.test(token);
+    const isNative = !token || token.toUpperCase() === 'ETH' || token.toUpperCase() === 'NATIVE';
+
+    if (isErc20) {
+      // ERC-20 transfer: target = token contract, calldata = transfer(to, amount)
+      try {
+        const decimals = getTokenDecimals(token);
+        const amountWei = parseTokenAmount(amount, decimals);
+        if (amountWei <= 0n) return null;
+
+        return {
+          target: token as Address,
+          value: 0n,
+          callData: encodeErc20Transfer(to as Address, amountWei),
+        };
+      } catch {
+        return null;
+      }
+    }
+
+    if (isNative) {
+      // Native ETH transfer: target = recipient, value = amount in wei
+      try {
+        const ethAmount = parseFloat(amount);
+        if (isNaN(ethAmount) || ethAmount <= 0) return null;
+        const weiValue = BigInt(Math.floor(ethAmount * 1e18));
+
+        return {
+          target: to as Address,
+          value: weiValue,
+          callData: '0x' as Hex,
+        };
+      } catch {
+        return null;
+      }
+    }
+
+    return null;
+  },
+
+  /**
+   * clawnchconnect tool — raw transaction sends.
+   * Args: { action: 'send_tx', to: address, value?: string (ETH), data?: hex }
+   */
+  clawnchconnect: async (args) => {
+    const action = args.action as string | undefined;
+    if (action !== 'send_tx') return null;
+
+    const to = args.to as string | undefined;
+    if (!to || !/^0x[0-9a-fA-F]{40}$/.test(to)) return null;
+
+    const valueStr = args.value as string | undefined;
+    const data = args.data as string | undefined;
+
     try {
-      // Parse amount as ETH and convert to wei
-      const ethAmount = parseFloat(amount);
-      if (isNaN(ethAmount) || ethAmount <= 0) return null;
-      const weiValue = BigInt(Math.floor(ethAmount * 1e18));
+      let value = 0n;
+      if (valueStr) {
+        const ethAmount = parseFloat(valueStr);
+        if (!isNaN(ethAmount) && ethAmount > 0) {
+          value = BigInt(Math.floor(ethAmount * 1e18));
+        }
+      }
+
+      const callData = (data && data.startsWith('0x') ? data : '0x') as Hex;
 
       return {
         target: to as Address,
-        value: weiValue,
-        callData: '0x' as Hex,
+        value,
+        callData,
       };
     } catch {
       return null;
@@ -130,7 +240,7 @@ export async function tryDelegationExecution(
   }
 
   // Gate 3: extract the on-chain action from tool args
-  const executionAction = extractor(toolArgs);
+  const executionAction = await extractor(toolArgs);
   if (!executionAction) {
     return { executed: false, skipReason: 'Could not extract execution action from tool args.' };
   }
@@ -257,7 +367,9 @@ function policyScopeCovers(policy: { scope: { type: string; tools?: string[]; ca
 
 /**
  * Check if delegation execution is available for a tool.
- * Quick check without actually attempting execution.
+ * Quick sync check — verifies the tool has an extractor and a matching
+ * delegation exists. Does NOT verify the extractor can parse the specific
+ * args (that's async and happens in tryDelegationExecution).
  */
 export function isDelegationExecutionAvailable(toolName: string, userId: string): boolean {
   if (!isDelegationMode()) return false;

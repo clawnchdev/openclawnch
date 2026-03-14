@@ -23,6 +23,11 @@ import {
   type ProfileId,
 } from '../services/autonomy-profiles.js';
 import { getPolicyMode, isDelegationMode } from '../services/policy-types.js';
+import {
+  prepareDelegation,
+  signDelegation,
+  storeDelegation,
+} from '../services/delegation-service.js';
 
 const VALID_PROFILES = new Set(['supervised', 'training', 'autonomous', 'custom']);
 
@@ -88,13 +93,13 @@ function showProfiles(userId: string) {
   lines.push('Activate: `/profile <name>` — Deactivate: `/profile off`');
 
   if (isDelegationMode()) {
-    lines.push('After activating, use `/delegate create profile:<name>` to sign on-chain.');
+    lines.push('Delegations are auto-signed when you activate a profile.');
   }
 
   return { text: lines.join('\n') };
 }
 
-function handleActivate(userId: string, profileId: ProfileId) {
+async function handleActivate(userId: string, profileId: ProfileId) {
   const lines: string[] = [];
 
   try {
@@ -111,10 +116,24 @@ function handleActivate(userId: string, profileId: ProfileId) {
       lines.push('');
       lines.push(`Created ${policies.length} polic${policies.length === 1 ? 'y' : 'ies'} from template.`);
 
-      if (isDelegationMode() && policies[0]) {
-        lines.push('');
-        lines.push('To compile to on-chain delegation:');
-        lines.push(`  \`/delegate create ${policies[0].name}\``);
+      // Auto-create and sign delegations when in delegation mode
+      if (isDelegationMode()) {
+        const delegationResults = await autoDelegateForPolicies(policies, userId);
+        if (delegationResults.signed > 0) {
+          lines.push('');
+          lines.push(`Signed ${delegationResults.signed} on-chain delegation${delegationResults.signed === 1 ? '' : 's'} automatically.`);
+          for (const detail of delegationResults.details) {
+            lines.push(`  ${detail}`);
+          }
+        }
+        if (delegationResults.failed > 0) {
+          lines.push('');
+          lines.push(`Failed to sign ${delegationResults.failed} delegation${delegationResults.failed === 1 ? '' : 's'}:`);
+          for (const err of delegationResults.errors) {
+            lines.push(`  ${err}`);
+          }
+          lines.push('You can retry manually with `/delegate create <policy-name>`.');
+        }
       }
     }
 
@@ -134,6 +153,61 @@ function handleActivate(userId: string, profileId: ProfileId) {
   }
 
   return { text: lines.join('\n') };
+}
+
+// ─── Auto-Delegation Helper ─────────────────────────────────────────────
+
+interface AutoDelegationResults {
+  signed: number;
+  failed: number;
+  details: string[];
+  errors: string[];
+}
+
+/**
+ * Auto-create and sign delegations for newly created profile policies.
+ * Calls prepareDelegation → signDelegation → storeDelegation for each policy.
+ * Non-throwing: captures errors per-policy so partial success is reported.
+ */
+async function autoDelegateForPolicies(
+  policies: import('../services/policy-types.js').Policy[],
+  userId: string,
+): Promise<AutoDelegationResults> {
+  const results: AutoDelegationResults = { signed: 0, failed: 0, details: [], errors: [] };
+
+  for (const policy of policies) {
+    try {
+      // Step 1: Compile policy to delegation
+      const prepResult = await prepareDelegation({ policy });
+      if ('error' in prepResult) {
+        results.failed++;
+        results.errors.push(`${policy.name}: ${prepResult.error}`);
+        continue;
+      }
+
+      const { compilation, chainId } = prepResult;
+
+      // Step 2: Sign the delegation
+      const signResult = await signDelegation(compilation.delegation, chainId);
+      if ('error' in signResult) {
+        results.failed++;
+        results.errors.push(`${policy.name}: ${signResult.error}`);
+        continue;
+      }
+
+      // Step 3: Store the signed delegation
+      const unmappedRules = compilation.unmappedRules.map(r => r.rule.type);
+      await storeDelegation(policy, userId, signResult.signed, chainId, unmappedRules);
+
+      results.signed++;
+      results.details.push(`${policy.name} — chain ${chainId}, ${compilation.mappedRules.length} caveat${compilation.mappedRules.length === 1 ? '' : 's'}`);
+    } catch (err: any) {
+      results.failed++;
+      results.errors.push(`${policy.name}: ${err.message}`);
+    }
+  }
+
+  return results;
 }
 
 function handleDeactivate(userId: string) {
