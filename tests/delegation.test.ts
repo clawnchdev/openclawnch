@@ -583,6 +583,13 @@ describe('Delegation Service', () => {
 // ─── 6. Delegate Command ────────────────────────────────────────────────
 
 describe('/delegate command', () => {
+  beforeEach(async () => {
+    const { setPolicyMode } = await import(
+      '../extensions/crypto/src/services/policy-types.js'
+    );
+    setPolicyMode('delegation');
+  });
+
   it('has correct command shape', async () => {
     const { delegateCommand } = await import(
       '../extensions/crypto/src/commands/delegate-command.js'
@@ -2507,13 +2514,14 @@ describe('Delegation Executor — Expanded Extractors', () => {
 
 describe('Profile Command — Auto-Delegation', () => {
   beforeEach(async () => {
-    const { resetPolicyMode } = await import(
+    const { setPolicyMode } = await import(
       '../extensions/crypto/src/services/policy-types.js'
     );
     const { resetProfileCache } = await import(
       '../extensions/crypto/src/services/autonomy-profiles.js'
     );
-    resetPolicyMode();
+    // Ensure delegation mode for consistent starting state
+    setPolicyMode('delegation');
     resetProfileCache();
   });
 
@@ -2609,7 +2617,170 @@ describe('Profile Command — Auto-Delegation', () => {
   });
 });
 
-// ─── 27. encodePermissionContextChain Round-Trip ────────────────────────
+// ─── 27. On-Chain Monitoring ─────────────────────────────────────────────
+
+describe('On-Chain Monitoring', () => {
+  it('exports readOnChainUsage function', async () => {
+    const { readOnChainUsage } = await import(
+      '../extensions/crypto/src/services/delegation-monitor.js'
+    );
+    expect(typeof readOnChainUsage).toBe('function');
+  });
+
+  it('exports checkDelegationsWithOnChain function', async () => {
+    const { checkDelegationsWithOnChain } = await import(
+      '../extensions/crypto/src/services/delegation-monitor.js'
+    );
+    expect(typeof checkDelegationsWithOnChain).toBe('function');
+  });
+
+  it('exports formatOnChainUsage function', async () => {
+    const { formatOnChainUsage } = await import(
+      '../extensions/crypto/src/services/delegation-monitor.js'
+    );
+    expect(typeof formatOnChainUsage).toBe('function');
+  });
+
+  it('readOnChainUsage returns empty result for invalid hash', async () => {
+    const { readOnChainUsage } = await import(
+      '../extensions/crypto/src/services/delegation-monitor.js'
+    );
+
+    const result = await readOnChainUsage(
+      'test-policy',
+      '0x' as `0x${string}`,
+      8453,
+      {
+        policyId: 'test-policy',
+        policyName: 'test',
+        chainId: 8453,
+        status: 'signed',
+        spentUsd: null,
+        limitUsd: null,
+        usagePercent: null,
+        expiresInSec: null,
+        actionsUsed: null,
+        actionsLimit: null,
+      },
+    );
+
+    expect(result.nativeSpentWei).toBeNull();
+    expect(result.erc20Spent).toBeNull();
+    expect(result.callCount).toBeNull();
+    expect(result.driftDetected).toBe(false);
+    expect(result.queriedAt).toBeGreaterThan(0);
+  });
+
+  it('readOnChainUsage returns empty result for unsupported chain', async () => {
+    const { readOnChainUsage } = await import(
+      '../extensions/crypto/src/services/delegation-monitor.js'
+    );
+
+    const result = await readOnChainUsage(
+      'test-policy',
+      ('0x' + 'ab'.repeat(32)) as `0x${string}`,
+      999999, // unsupported chain
+      {
+        policyId: 'test-policy',
+        policyName: 'test',
+        chainId: 999999,
+        status: 'signed',
+        spentUsd: null,
+        limitUsd: null,
+        usagePercent: null,
+        expiresInSec: null,
+        actionsUsed: null,
+        actionsLimit: null,
+      },
+    );
+
+    expect(result.nativeSpentWei).toBeNull();
+    expect(result.driftDetected).toBe(false);
+  });
+
+  it('formatOnChainUsage formats ETH spending', async () => {
+    const { formatOnChainUsage } = await import(
+      '../extensions/crypto/src/services/delegation-monitor.js'
+    );
+
+    const output = formatOnChainUsage({
+      nativeSpentWei: 1_500_000_000_000_000_000n, // 1.5 ETH
+      erc20Spent: null,
+      callCount: 5n,
+      driftDetected: false,
+      queriedAt: Date.now(),
+    });
+
+    expect(output).toContain('1.500000 ETH');
+    expect(output).toContain('call count: 5');
+  });
+
+  it('formatOnChainUsage shows drift warning', async () => {
+    const { formatOnChainUsage } = await import(
+      '../extensions/crypto/src/services/delegation-monitor.js'
+    );
+
+    const output = formatOnChainUsage({
+      nativeSpentWei: null,
+      erc20Spent: null,
+      callCount: 10n,
+      driftDetected: true,
+      driftDetails: 'calls: local=5, on-chain=10',
+      queriedAt: Date.now(),
+    });
+
+    expect(output).toContain('Drift');
+    expect(output).toContain('local=5, on-chain=10');
+  });
+
+  it('checkDelegationsWithOnChain returns empty when not in delegation mode', async () => {
+    const { checkDelegationsWithOnChain } = await import(
+      '../extensions/crypto/src/services/delegation-monitor.js'
+    );
+    const { setPolicyMode, resetPolicyMode } = await import(
+      '../extensions/crypto/src/services/policy-types.js'
+    );
+
+    resetPolicyMode();
+    setPolicyMode('simple');
+
+    const result = await checkDelegationsWithOnChain('test-user');
+    expect(result.health).toHaveLength(0);
+    expect(result.alerts).toHaveLength(0);
+
+    // Restore delegation mode to avoid polluting subsequent tests
+    setPolicyMode('delegation');
+    resetPolicyMode();
+  });
+
+  it('enforcer ABI types are exported from delegation-types', async () => {
+    const types = await import(
+      '../extensions/crypto/src/services/delegation-types.js'
+    );
+    expect(types.NATIVE_PERIOD_ENFORCER_ABI).toBeDefined();
+    expect(types.ERC20_PERIOD_ENFORCER_ABI).toBeDefined();
+    expect(types.LIMITED_CALLS_ENFORCER_ABI).toBeDefined();
+
+    // Each ABI should have the expected function name
+    expect(types.NATIVE_PERIOD_ENFORCER_ABI[0].name).toBe('spentMap');
+    expect(types.ERC20_PERIOD_ENFORCER_ABI[0].name).toBe('spentMap');
+    expect(types.LIMITED_CALLS_ENFORCER_ABI[0].name).toBe('callCounts');
+  });
+
+  it('OnChainUsage type has all expected fields', async () => {
+    const usage: import('../extensions/crypto/src/services/delegation-monitor.js').OnChainUsage = {
+      nativeSpentWei: 0n,
+      erc20Spent: null,
+      callCount: null,
+      driftDetected: false,
+      queriedAt: Date.now(),
+    };
+    expect(usage.nativeSpentWei).toBe(0n);
+    expect(usage.driftDetected).toBe(false);
+  });
+});
+
+// ─── 28. encodePermissionContextChain Round-Trip ────────────────────────
 
 describe('encodePermissionContextChain — Round-Trip', () => {
   it('encodes a single delegation and returns valid hex', async () => {

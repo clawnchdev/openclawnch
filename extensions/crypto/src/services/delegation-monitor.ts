@@ -11,11 +11,19 @@
  * or can be invoked on-demand via /delegate status.
  */
 
+import { createPublicClient, http, type Address, type Hex } from 'viem';
+import { base, mainnet, arbitrum, optimism, polygon, sepolia, linea, baseSepolia } from 'viem/chains';
 import type { Policy, DelegationInfo } from './policy-types.js';
 import { isDelegationMode } from './policy-types.js';
 import { getPolicyStore } from './policy-store.js';
 import { getDelegationStore } from './delegation-store.js';
 import { getDelegatedPolicies } from './delegation-service.js';
+import {
+  DELEGATION_CONTRACTS,
+  NATIVE_PERIOD_ENFORCER_ABI,
+  ERC20_PERIOD_ENFORCER_ABI,
+  LIMITED_CALLS_ENFORCER_ABI,
+} from './delegation-types.js';
 
 // ─── Types ──────────────────────────────────────────────────────────────
 
@@ -47,6 +55,23 @@ export interface DelegationHealth {
   /** Actions used vs limit. Null if no action limit. */
   actionsUsed: number | null;
   actionsLimit: number | null;
+  /** On-chain state reads (populated by checkOnChainState). */
+  onChain?: OnChainUsage;
+}
+
+export interface OnChainUsage {
+  /** Native token (ETH) spent on-chain in wei. Null if no period enforcer. */
+  nativeSpentWei: bigint | null;
+  /** ERC-20 spent on-chain in smallest unit. Null if no period enforcer. */
+  erc20Spent: bigint | null;
+  /** Call count from on-chain LimitedCallsEnforcer. Null if no enforcer. */
+  callCount: bigint | null;
+  /** Whether on-chain data diverges from local tracking. */
+  driftDetected: boolean;
+  /** Human-readable drift description if any. */
+  driftDetails?: string;
+  /** Timestamp of the on-chain query (epoch ms). */
+  queriedAt: number;
 }
 
 // ─── Constants ──────────────────────────────────────────────────────────
@@ -330,4 +355,202 @@ function getPeriodMs(period: string): number {
     case 'monthly': return 30 * 24 * 60 * 60 * 1000;
     default:        return 24 * 60 * 60 * 1000;
   }
+}
+
+// ─── On-Chain State Reading ─────────────────────────────────────────────
+
+const CHAIN_CONFIGS: Record<number, any> = {
+  1: mainnet, 8453: base, 42161: arbitrum, 10: optimism,
+  137: polygon, 59144: linea, 11155111: sepolia, 84532: baseSepolia,
+};
+
+const _clientCache = new Map<number, any>();
+
+function getMonitorClient(chainId: number): any {
+  let client = _clientCache.get(chainId);
+  if (client) return client;
+  const chain = CHAIN_CONFIGS[chainId];
+  if (!chain) return null;
+  client = createPublicClient({ chain, transport: http() });
+  _clientCache.set(chainId, client);
+  return client;
+}
+
+/**
+ * Read on-chain enforcer state for a delegation.
+ *
+ * Queries the enforcer contracts that track cumulative usage:
+ * - NativeTokenPeriodTransferEnforcer.spentMap → ETH spent
+ * - ERC20PeriodTransferEnforcer.spentMap → ERC-20 spent
+ * - LimitedCallsEnforcer.callCounts → call count
+ *
+ * Compares on-chain state with local tracking and flags drift.
+ * All reads are best-effort: RPC errors are caught silently.
+ */
+export async function readOnChainUsage(
+  policyId: string,
+  delegationHash: Hex,
+  chainId: number,
+  localHealth: DelegationHealth,
+): Promise<OnChainUsage> {
+  const client = getMonitorClient(chainId);
+  const result: OnChainUsage = {
+    nativeSpentWei: null,
+    erc20Spent: null,
+    callCount: null,
+    driftDetected: false,
+    queriedAt: Date.now(),
+  };
+
+  if (!client || !delegationHash || delegationHash === '0x') {
+    return result;
+  }
+
+  const dmAddr = DELEGATION_CONTRACTS.DelegationManager;
+
+  // Read NativeTokenPeriodTransferEnforcer
+  try {
+    const [spent] = await client.readContract({
+      address: DELEGATION_CONTRACTS.NativeTokenPeriodTransferEnforcer,
+      abi: NATIVE_PERIOD_ENFORCER_ABI,
+      functionName: 'spentMap',
+      args: [dmAddr, delegationHash],
+    }) as [bigint, bigint];
+    result.nativeSpentWei = spent;
+  } catch {
+    // Enforcer not used or RPC error — skip
+  }
+
+  // Read ERC20PeriodTransferEnforcer
+  try {
+    const [spent] = await client.readContract({
+      address: DELEGATION_CONTRACTS.ERC20PeriodTransferEnforcer,
+      abi: ERC20_PERIOD_ENFORCER_ABI,
+      functionName: 'spentMap',
+      args: [dmAddr, delegationHash],
+    }) as [bigint, bigint];
+    result.erc20Spent = spent;
+  } catch {
+    // Enforcer not used or RPC error — skip
+  }
+
+  // Read LimitedCallsEnforcer
+  try {
+    const count = await client.readContract({
+      address: DELEGATION_CONTRACTS.LimitedCallsEnforcer,
+      abi: LIMITED_CALLS_ENFORCER_ABI,
+      functionName: 'callCounts',
+      args: [dmAddr, delegationHash],
+    }) as bigint;
+    result.callCount = count;
+  } catch {
+    // Enforcer not used or RPC error — skip
+  }
+
+  // Detect drift between on-chain and local tracking
+  result.driftDetected = false;
+  const driftNotes: string[] = [];
+
+  if (result.callCount !== null && localHealth.actionsUsed !== null) {
+    const onChainCalls = Number(result.callCount);
+    if (onChainCalls !== localHealth.actionsUsed) {
+      driftNotes.push(`calls: local=${localHealth.actionsUsed}, on-chain=${onChainCalls}`);
+    }
+  }
+
+  // For spending, we can only compare if we have ETH price to convert wei→USD.
+  // Flag drift if on-chain shows usage but local shows zero, or vice versa.
+  if (result.nativeSpentWei !== null && result.nativeSpentWei > 0n) {
+    if (localHealth.spentUsd === null || localHealth.spentUsd === 0) {
+      driftNotes.push('on-chain shows ETH spending but local tracking is empty');
+    }
+  }
+
+  if (driftNotes.length > 0) {
+    result.driftDetected = true;
+    result.driftDetails = driftNotes.join('; ');
+  }
+
+  return result;
+}
+
+/**
+ * Enhanced health check that includes on-chain state reads.
+ * Slower than checkDelegations (makes RPC calls) — use for /delegate status detail.
+ */
+export async function checkDelegationsWithOnChain(userId: string): Promise<{
+  health: DelegationHealth[];
+  alerts: DelegationAlert[];
+}> {
+  const base = checkDelegations(userId);
+  if (base.health.length === 0) return base;
+
+  const delegationStore = getDelegationStore();
+
+  // Enrich each health entry with on-chain data
+  const enriched = await Promise.all(
+    base.health.map(async (h) => {
+      const stored = delegationStore.load(h.policyId);
+      if (!stored) return h;
+
+      const policies = getDelegatedPolicies(userId);
+      const policy = policies.find(p => p.id === h.policyId);
+      const hash = policy?.delegation?.hash;
+      if (!hash || hash === '0x') return h;
+
+      try {
+        const onChain = await readOnChainUsage(
+          h.policyId,
+          hash as Hex,
+          h.chainId,
+          h,
+        );
+        h.onChain = onChain;
+
+        // Add drift alerts
+        if (onChain.driftDetected && onChain.driftDetails) {
+          base.alerts.push({
+            severity: 'warning',
+            policyId: h.policyId,
+            policyName: h.policyName,
+            chainId: h.chainId,
+            message: `Usage drift detected for "${h.policyName}": ${onChain.driftDetails}`,
+            action: 'Local tracking may be stale. On-chain enforcers have the authoritative state.',
+          });
+        }
+      } catch {
+        // On-chain read failed — keep local-only health
+      }
+
+      return h;
+    }),
+  );
+
+  return { health: enriched, alerts: base.alerts };
+}
+
+/**
+ * Format on-chain usage for display (appended to health output).
+ */
+export function formatOnChainUsage(onChain: OnChainUsage): string {
+  const lines: string[] = [];
+
+  if (onChain.nativeSpentWei !== null) {
+    const ethSpent = Number(onChain.nativeSpentWei) / 1e18;
+    lines.push(`  On-chain ETH spent: ${ethSpent.toFixed(6)} ETH`);
+  }
+
+  if (onChain.erc20Spent !== null && onChain.erc20Spent > 0n) {
+    lines.push(`  On-chain ERC-20 spent: ${onChain.erc20Spent.toString()} (raw units)`);
+  }
+
+  if (onChain.callCount !== null) {
+    lines.push(`  On-chain call count: ${onChain.callCount.toString()}`);
+  }
+
+  if (onChain.driftDetected) {
+    lines.push(`  [!] Drift: ${onChain.driftDetails}`);
+  }
+
+  return lines.join('\n');
 }

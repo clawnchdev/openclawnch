@@ -319,3 +319,59 @@ export const DELEGATION_MANAGER_ABI = [
     outputs: [{ name: '', type: 'bool' }],
   },
 ] as const;
+
+// ─── Enforcer ABIs (for on-chain state reads) ──────────────────────────
+//
+// Period-based enforcers track cumulative spending on-chain via a
+// `spentMap` mapping: (address delegationManager, bytes32 delegationHash) → SpentInfo.
+// We read this to compare on-chain usage against local tracking.
+
+/** ABI for NativeTokenPeriodTransferEnforcer.spentMap (read cumulative ETH usage). */
+export const NATIVE_PERIOD_ENFORCER_ABI = [
+  {
+    name: 'spentMap',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [
+      { name: '_delegationManager', type: 'address' },
+      { name: '_delegationHash', type: 'bytes32' },
+    ],
+    outputs: [
+      { name: 'spent', type: 'uint256' },
+      { name: 'lastUpdated', type: 'uint256' },
+    ],
+  },
+] as const;
+
+/** ABI for ERC20PeriodTransferEnforcer.spentMap (read cumulative ERC-20 usage). */
+export const ERC20_PERIOD_ENFORCER_ABI = [
+  {
+    name: 'spentMap',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [
+      { name: '_delegationManager', type: 'address' },
+      { name: '_delegationHash', type: 'bytes32' },
+    ],
+    outputs: [
+      { name: 'spent', type: 'uint256' },
+      { name: 'lastUpdated', type: 'uint256' },
+    ],
+  },
+] as const;
+
+/** ABI for LimitedCallsEnforcer.callCounts (read cumulative call count). */
+export const LIMITED_CALLS_ENFORCER_ABI = [
+  {
+    name: 'callCounts',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [
+      { name: '_delegationManager', type: 'address' },
+      { name: '_delegationHash', type: 'bytes32' },
+    ],
+    outputs: [
+      { name: '', type: 'uint256' },
+    ],
+  },
+] as const;
