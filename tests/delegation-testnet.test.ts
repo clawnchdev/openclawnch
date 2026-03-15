@@ -58,6 +58,8 @@ const CONTRACTS = {
   /** MinimalDelegator v2 smart account — executeFromExecutor + isValidSignature.
    *  Owner: 0x8826D91C...  DelegationManager: 0xdb9B1e94... */
   TestSmartAccount: '0xA88bEFC44411018232A30644cC48b11eB5876DC0' as Address,
+  /** TestToken (TST, 18 decimals) — minted 1000 to TestSmartAccount */
+  TestToken: '0xD88066C2e84B549E5c7e58bef0B05b7f7cE72a7c' as Address,
 };
 
 // ─── Shared Client ──────────────────────────────────────────────────────
@@ -245,7 +247,7 @@ describe('Base Sepolia — Contract Deployment Verification', () => {
     );
 
     // Every MetaMask framework address should match (skip test-only contracts)
-    const SKIP = new Set(['TestSmartAccount']);
+    const SKIP = new Set(['TestSmartAccount', 'TestToken']);
     for (const [name, addr] of Object.entries(CONTRACTS)) {
       if (SKIP.has(name)) continue;
       const typesAddr = (DELEGATION_CONTRACTS as Record<string, string>)[name];
@@ -743,21 +745,26 @@ describe('Base Sepolia — encodePermissionContext Validation', () => {
 
 // ═════════════════════════════════════════════════════════════════════════
 // 2. Write Tests — Require DELEGATION_TESTNET_PK with funded wallet
+//
+// All write describe blocks share a single account/walletClient to avoid
+// nonceManager contention (multiple instances from the same PK diverge).
 // ═════════════════════════════════════════════════════════════════════════
+
+// Shared across all write describe blocks — created once, reused everywhere
+const sharedAccount = TESTNET_PK ? privateKeyToAccount(TESTNET_PK, { nonceManager }) : null;
+const sharedWalletClient = sharedAccount ? createWalletClient({
+  account: sharedAccount,
+  chain: baseSepolia,
+  transport: http(),
+}) : null;
 
 describeWrite('Base Sepolia — Delegation Lifecycle (write)', () => {
   let account: ReturnType<typeof privateKeyToAccount>;
-  // Use 'any' to avoid strict viem type requirements on walletClient
-  // when the describe block is skipped (no DELEGATION_TESTNET_PK).
   let walletClient: any;
 
   beforeAll(() => {
-    account = privateKeyToAccount(TESTNET_PK!, { nonceManager });
-    walletClient = createWalletClient({
-      account,
-      chain: baseSepolia,
-      transport: http(),
-    });
+    account = sharedAccount!;
+    walletClient = sharedWalletClient!;
   });
 
   it('testnet wallet has balance', async () => {
@@ -1089,16 +1096,11 @@ const EXECUTE_MODE_DEFAULT = ('0x' + '0'.repeat(64)) as Hex;
 describeWrite('Base Sepolia — redeemDelegations End-to-End', () => {
   let account: ReturnType<typeof privateKeyToAccount>;
   let walletClient: any;
-  // Burn address as recipient — unique per test run to avoid collisions
   const recipient = ('0x' + 'dead' + Date.now().toString(16).padStart(36, '0')) as Address;
 
   beforeAll(() => {
-    account = privateKeyToAccount(TESTNET_PK!, { nonceManager });
-    walletClient = createWalletClient({
-      account,
-      chain: baseSepolia,
-      transport: http(),
-    });
+    account = sharedAccount!;
+    walletClient = sharedWalletClient!;
   });
 
   it('smart account is deployed and funded', async () => {
