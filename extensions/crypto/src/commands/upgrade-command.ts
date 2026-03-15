@@ -19,13 +19,27 @@
  * The command educates and guides but never auto-upgrades.
  */
 
-import { getWalletState, detectAccountType, type AccountTypeResult } from '../services/walletconnect-service.js';
+import { getWalletState, detectAccountType, getWalletClient, type AccountTypeResult } from '../services/walletconnect-service.js';
 import { isDelegationMode } from '../services/policy-types.js';
 import { DELEGATION_CONTRACTS, CHAIN_NAMES } from '../services/delegation-types.js';
+import type { Address } from 'viem';
+
+// Known DeleGator implementation contracts per chain.
+// These implement executeFromExecutor + isValidSignature for delegation.
+const DELEGATOR_IMPL: Record<number, Address> = {
+  84532: '0xA88bEFC44411018232A30644cC48b11eB5876DC0' as Address, // Base Sepolia — MinimalDelegator v2
+};
+
+/** Override via env var for custom implementations. */
+function getDelegatorImpl(chainId: number): Address | null {
+  const envImpl = process.env.DELEGATOR_IMPL_ADDRESS;
+  if (envImpl?.startsWith('0x') && envImpl.length === 42) return envImpl as Address;
+  return DELEGATOR_IMPL[chainId] ?? null;
+}
 
 export const upgradeCommand = {
   name: 'upgrade',
-  description: 'Account type detection & smart account upgrade guide: /upgrade [detect|guide]',
+  description: 'Account type detection & smart account upgrade: /upgrade [detect|guide|7702]',
   acceptsArgs: true,
   requireAuth: true,
 
@@ -34,6 +48,9 @@ export const upgradeCommand = {
 
     if (args === 'guide') {
       return showMigrationGuide();
+    }
+    if (args === '7702') {
+      return handle7702Upgrade();
     }
 
     // Default and 'detect' both run detection
@@ -211,6 +228,92 @@ function showMigrationGuide() {
   lines.push('---');
   lines.push('');
   lines.push('Run `/upgrade` to check your current account type.');
+
+  return { text: lines.join('\n') };
+}
+
+// ─── EIP-7702 Upgrade ───────────────────────────────────────────────────
+
+async function handle7702Upgrade() {
+  const wallet = getWalletState();
+  const lines: string[] = [];
+
+  if (!wallet.connected || !wallet.address) {
+    return { text: 'No wallet connected. Connect with `/connect` or set `CLAWNCHER_PRIVATE_KEY` first.' };
+  }
+
+  if (wallet.mode !== 'private_key') {
+    lines.push('**EIP-7702 Upgrade — Requires Private Key Mode**');
+    lines.push('');
+    lines.push('`signAuthorization` requires direct private key access.');
+    lines.push('WalletConnect wallets must use their own 7702 UI (MetaMask 12.8+, Rabby).');
+    lines.push('');
+    lines.push('1. Switch to private key mode and run `/upgrade 7702` again');
+    lines.push('2. Use your wallet\'s native EIP-7702 support');
+    lines.push('3. Deploy a Smart Wallet — see `/upgrade guide`');
+    return { text: lines.join('\n') };
+  }
+
+  const acctType = await detectAccountType({ force: true });
+  if (acctType?.accountType === 'smart_account' || acctType?.accountType === 'eip7702') {
+    lines.push('**Already a Smart Account**');
+    lines.push(`Type: ${acctType.accountType}`);
+    if (acctType.delegationDesignation) {
+      lines.push(`Delegates to: \`${acctType.delegationDesignation}\``);
+    }
+    lines.push('No upgrade needed. Use `/delegate create <policy>` to start.');
+    return { text: lines.join('\n') };
+  }
+
+  const chainId = wallet.chainId ?? 0;
+  const impl = getDelegatorImpl(chainId);
+  if (!impl) {
+    lines.push('**No DeleGator implementation for this chain.**');
+    lines.push(`Chain: ${CHAIN_NAMES[chainId] ?? chainId}`);
+    lines.push('Set `DELEGATOR_IMPL_ADDRESS` env var or switch to Base Sepolia (84532).');
+    return { text: lines.join('\n') };
+  }
+
+  lines.push('**EIP-7702 Upgrade**');
+  lines.push('');
+  lines.push(`Address: \`${wallet.address}\``);
+  lines.push(`Chain: ${CHAIN_NAMES[chainId] ?? chainId}`);
+  lines.push(`Implementation: \`${impl}\``);
+  lines.push('');
+
+  try {
+    const wc = getWalletClient();
+    if (!wc) return { text: 'Wallet client not available.' };
+
+    lines.push('Signing EIP-7702 authorization...');
+    const authorization = await (wc as any).signAuthorization({ contractAddress: impl });
+
+    lines.push('Submitting type-4 transaction...');
+    const txHash = await (wc as any).sendTransaction({
+      to: wallet.address, value: 0n, authorizationList: [authorization],
+    });
+    lines.push(`Transaction: \`${txHash}\``);
+
+    const updated = await detectAccountType({ force: true });
+    lines.push('');
+    if (updated?.accountType === 'eip7702') {
+      lines.push('**Upgrade successful.**');
+      lines.push(`Implementation: \`${updated.delegationDesignation ?? impl}\``);
+      lines.push('Next: `/policymode delegation` then `/delegate create <policy>`');
+    } else if (updated?.accountType === 'smart_account') {
+      lines.push('**Upgrade successful.** Detected as smart account.');
+    } else {
+      lines.push('Transaction confirmed. Run `/upgrade detect` to verify.');
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes('not supported') || msg.includes('invalid type') || msg.includes('unknown type')) {
+      lines.push(`**${CHAIN_NAMES[chainId] ?? 'This chain'} does not support EIP-7702.**`);
+      lines.push('Requires the Pectra hard fork. See `/upgrade guide` for alternatives.');
+    } else {
+      lines.push(`**Upgrade failed:** ${msg.slice(0, 200)}`);
+    }
+  }
 
   return { text: lines.join('\n') };
 }
