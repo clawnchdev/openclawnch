@@ -26,6 +26,7 @@ import type { ActionContext } from './policy-types.js';
 import { isDelegationMode } from './policy-types.js';
 import { getPolicyStore } from './policy-store.js';
 import { canRedeem, redeemDelegation, getDelegatedPolicies } from './delegation-service.js';
+import { detectAccountType } from './walletconnect-service.js';
 import type { ExecutionAction } from './delegation-types.js';
 import type { Address, Hex } from 'viem';
 
@@ -233,6 +234,23 @@ export async function tryDelegationExecution(
     return { executed: false, skipReason: 'Not in delegation mode.' };
   }
 
+  // Gate 1b: delegator must be a smart account (not a plain EOA)
+  // redeemDelegations() calls executeFromExecutor() on the delegator —
+  // this reverts for plain EOAs since they can't receive function calls.
+  // EIP-7702 EOAs and smart accounts both work.
+  try {
+    const acctType = await detectAccountType();
+    if (acctType && acctType.accountType === 'eoa') {
+      return {
+        executed: false,
+        skipReason: 'Delegator wallet is a plain EOA. On-chain delegation requires a smart account (EIP-7702 or ERC-4337). Use /upgrade to convert.',
+      };
+    }
+  } catch {
+    // detectAccountType can fail if no wallet connected — proceed and let
+    // later gates catch the issue, don't block on a diagnostic check.
+  }
+
   // Gate 2: tool must have a supported action extractor
   const extractor = SUPPORTED_EXTRACTORS[actionCtx.toolName];
   if (!extractor) {
@@ -257,12 +275,20 @@ export async function tryDelegationExecution(
     return { executed: false, skipReason: readiness.reason ?? 'Delegation not ready.' };
   }
 
-  // Check expiry
+  // Check expiry (P2-2: client-side TimestampEnforcer check)
   if (matchResult.expiresAt) {
     const expiryMs = new Date(matchResult.expiresAt).getTime();
     if (!isNaN(expiryMs) && Date.now() > expiryMs) {
       return { executed: false, skipReason: 'Delegation has expired. Create a new one with /delegate create.' };
     }
+  }
+
+  // Check chain match (P2-4: delegation must be for the current chain)
+  if (actionCtx.chain && matchResult.chainId && actionCtx.chain !== matchResult.chainId) {
+    return {
+      executed: false,
+      skipReason: `Delegation is for chain ${matchResult.chainId} but wallet is on chain ${actionCtx.chain}. Switch chains or create a new delegation.`,
+    };
   }
 
   // All gates passed — attempt redemption

@@ -268,6 +268,9 @@ const plugin = {
                   };
                 }
                 // Delegation not available or failed — fall through to normal execution
+                if (delegationResult.skipReason || delegationResult.error) {
+                  console.info(`[delegation] Bypassed for ${tool.name}: ${delegationResult.skipReason ?? delegationResult.error}`);
+                }
                 const result = await originalExecute.call(tool, toolCallId, args, ctx);
                 if (!result?.isError) {
                   try { recordToolExecution(actionCtx); } catch { /* best-effort */ }
@@ -295,6 +298,9 @@ const plugin = {
             };
           }
           // Delegation not available or failed — normal tool execution
+          if (delegationResult.skipReason || delegationResult.error) {
+            console.info(`[delegation] Bypassed for ${tool.name}: ${delegationResult.skipReason ?? delegationResult.error}`);
+          }
           const result = await originalExecute.call(tool, toolCallId, args, ctx);
           // Record usage on success (not on error)
           if (!result?.isError) {

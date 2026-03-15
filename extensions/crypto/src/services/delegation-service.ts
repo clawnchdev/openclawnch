@@ -754,6 +754,33 @@ function encodeExecution(action: ExecutionAction): Hex {
   );
 }
 
+// ─── Error Parsing ──────────────────────────────────────────────────────
+
+/** Known DelegationManager error signatures → human-readable messages. */
+const DELEGATION_ERROR_SIGS: Record<string, string> = {
+  '0x155ff427': 'Signature verification failed (InvalidERC1271Signature). The delegation signature does not match the delegator account.',
+  '0xded4370e': 'Invalid authority chain (InvalidAuthority). Root delegations must use authority 0xfff...f.',
+  '0x8baa579f': 'Invalid signature (InvalidSignature). ECDSA recovery did not match the delegator.',
+  '0xb5863604': 'Invalid delegate (InvalidDelegate). The caller is not the authorized delegate.',
+  '0xa9e649e9': 'Invalid delegation struct (InvalidDelegation).',
+  '0xac241e11': 'Empty signature (EmptySignature). The delegation has no signature.',
+  '0x0ab29062': 'No delegations provided (NoDelegations).',
+};
+
+function parseDelegationError(errMsg: string): string {
+  // Check for known error signatures in the message
+  for (const [sig, humanMsg] of Object.entries(DELEGATION_ERROR_SIGS)) {
+    if (errMsg.includes(sig)) {
+      return `Delegation simulation reverted: ${humanMsg}`;
+    }
+  }
+  // Generic revert
+  if (errMsg.includes('revert')) {
+    return `Delegation simulation reverted: ${errMsg.slice(0, 200)}`;
+  }
+  return `Delegation simulation failed: ${errMsg.slice(0, 200)}`;
+}
+
 export interface RedemptionResult {
   /** Transaction hash from the redeemDelegations call. */
   txHash: string;
@@ -788,18 +815,47 @@ export async function redeemDelegation(
 
   const { delegation, chainId } = stored;
 
-  // Check policy status
+  // Check policy status — try wallet address first, fall back to 'owner'
   const policyStore = getPolicyStore();
-  // Find the policy across all users (agent may not know userId)
-  // For now, the policyId is globally unique
-  const policies = policyStore.listPolicies('owner');
+  const wallet = await getWallet();
+  const userId = wallet.address?.toLowerCase() ?? 'owner';
+  let policies = policyStore.listPolicies(userId);
+  if (policies.length === 0 && userId !== 'owner') {
+    policies = policyStore.listPolicies('owner');
+  }
   const policy = policies.find(p => p.id === policyId);
   if (policy?.delegation?.status === 'revoked') {
     return { error: 'Delegation has been revoked. Cannot redeem.' };
   }
 
-  // Get the agent's wallet (delegate)
-  const wallet = await getWallet();
+  // P2-3: Check on-chain revocation (catches revocations made outside our tool)
+  try {
+    const publicClient = getDelegationPublicClient(chainId);
+    const delegationHash = await publicClient.readContract({
+      address: DELEGATION_CONTRACTS.DelegationManager,
+      abi: DELEGATION_MANAGER_ABI,
+      functionName: 'getDelegationHash',
+      args: [delegation],
+    });
+    const isDisabled = await publicClient.readContract({
+      address: DELEGATION_CONTRACTS.DelegationManager,
+      abi: DELEGATION_MANAGER_ABI,
+      functionName: 'disabledDelegations',
+      args: [delegationHash],
+    });
+    if (isDisabled) {
+      // Update local state to match on-chain
+      if (policy?.delegation) {
+        policy.delegation.status = 'revoked' as DelegationStatus;
+      }
+      return { error: 'Delegation has been revoked on-chain. Cannot redeem.' };
+    }
+  } catch {
+    // Non-fatal: if the on-chain check fails (network error), proceed with
+    // redemption and let the contract itself enforce revocation.
+  }
+
+  // Verify wallet is connected (already fetched above for userId)
   if (wallet.mode === 'none' || !wallet.walletClient) {
     return { error: 'No wallet connected. The agent needs a connected wallet to redeem delegations.' };
   }
@@ -808,19 +864,34 @@ export async function redeemDelegation(
   const permissionContext = encodePermissionContext(delegation);
   const executionCallData = encodeExecution(action);
 
-  try {
-    const txHash = await wallet.walletClient.writeContract({
-      address: DELEGATION_CONTRACTS.DelegationManager,
-      abi: DELEGATION_MANAGER_ABI,
-      functionName: 'redeemDelegations',
-      args: [
-        [permissionContext],          // bytes[] _permissionContexts
-        [EXECUTE_MODE_DEFAULT],       // bytes32[] _modes
-        [executionCallData],          // bytes[] _executionCallData
-      ],
-      chain: CHAIN_CONFIGS[chainId],
-    });
+  const contractCallArgs = {
+    address: DELEGATION_CONTRACTS.DelegationManager,
+    abi: DELEGATION_MANAGER_ABI,
+    functionName: 'redeemDelegations' as const,
+    args: [
+      [permissionContext],          // bytes[] _permissionContexts
+      [EXECUTE_MODE_DEFAULT],       // bytes32[] _modes
+      [executionCallData],          // bytes[] _executionCallData
+    ],
+    chain: CHAIN_CONFIGS[chainId],
+  };
 
+  // Simulate first to catch reverts before spending gas
+  try {
+    const publicClient = getDelegationPublicClient(chainId);
+    if (publicClient) {
+      await publicClient.simulateContract({
+        ...contractCallArgs,
+        account: wallet.address!,
+      });
+    }
+  } catch (simErr) {
+    const msg = simErr instanceof Error ? simErr.message : String(simErr);
+    return { error: parseDelegationError(msg) };
+  }
+
+  try {
+    const txHash = await wallet.walletClient.writeContract(contractCallArgs);
     return { txHash: txHash as string, chainId };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
