@@ -164,6 +164,10 @@ export const CHAIN_NAMES: Record<number, string> = {
 // Used for signing delegations. The delegator signs an EIP-712 typed
 // message containing the delegation struct.
 
+// NOTE: The on-chain DelegationManager's DELEGATION_TYPEHASH uses
+// Caveat(address enforcer,bytes terms) — WITHOUT the `args` field.
+// The `args` field exists in the ABI struct for runtime data passed
+// during caveat enforcement, but is NOT part of the EIP-712 signature.
 export const DELEGATION_EIP712_TYPES = {
   Delegation: [
     { name: 'delegate', type: 'address' },
@@ -175,7 +179,6 @@ export const DELEGATION_EIP712_TYPES = {
   Caveat: [
     { name: 'enforcer', type: 'address' },
     { name: 'terms', type: 'bytes' },
-    { name: 'args', type: 'bytes' },
   ],
 } as const;
 
@@ -196,6 +199,12 @@ export function getDelegationDomain(chainId: number) {
 // DelegationManager.redeemDelegations uses ERC-7579 execution modes.
 // Mode is a bytes32 encoding: callType (1 byte) + execType (1 byte) + unused (4) + modeSelector (4) + modePayload (22).
 // For single calls with default execution: 0x00...00.
+
+/**
+ * Root authority for top-level delegations (no parent).
+ * The DelegationManager uses 0xfff...f as the sentinel value.
+ */
+export const ROOT_AUTHORITY = ('0x' + 'f'.repeat(64)) as Hex;
 
 /**
  * Default single-call execution mode.

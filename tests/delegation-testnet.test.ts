@@ -28,8 +28,8 @@ import {
   http,
   encodeAbiParameters,
   decodeAbiParameters,
+  encodePacked,
   getAddress,
-
   type Address,
   type Hex,
 } from 'viem';
@@ -55,6 +55,9 @@ const CONTRACTS = {
   TimestampEnforcer: '0x1046bb45C8d673d4ea75321280DB34899413c069' as Address,
   ValueLteEnforcer: '0x92Bf12322527cAA612fd31a0e810472BBB106A8F' as Address,
   NonceEnforcer: '0xDE4f2FAC4B3D87A1d9953Ca5FC09FCa7F366254f' as Address,
+  /** MinimalDelegator v2 smart account — executeFromExecutor + isValidSignature.
+   *  Owner: 0x8826D91C...  DelegationManager: 0xdb9B1e94... */
+  TestSmartAccount: '0xA88bEFC44411018232A30644cC48b11eB5876DC0' as Address,
 };
 
 // ─── Shared Client ──────────────────────────────────────────────────────
@@ -101,6 +104,17 @@ const DELEGATION_MANAGER_ABI = [
     stateMutability: 'view' as const,
     inputs: [{ name: '_delegationHash', type: 'bytes32' as const }],
     outputs: [{ name: '', type: 'bool' as const }],
+  },
+  {
+    name: 'redeemDelegations',
+    type: 'function' as const,
+    stateMutability: 'nonpayable' as const,
+    inputs: [
+      { name: '_permissionContexts', type: 'bytes[]' as const },
+      { name: '_modes', type: 'bytes32[]' as const },
+      { name: '_executionCallData', type: 'bytes[]' as const },
+    ],
+    outputs: [],
   },
   {
     name: 'disableDelegation',
@@ -187,7 +201,7 @@ function makeDelegation(overrides?: Partial<{
   return {
     delegate: overrides?.delegate ?? '0x1111111111111111111111111111111111111111' as Address,
     delegator: overrides?.delegator ?? '0x2222222222222222222222222222222222222222' as Address,
-    authority: overrides?.authority ?? ('0x' + '0'.repeat(64)) as Hex,
+    authority: overrides?.authority ?? ('0x' + 'f'.repeat(64)) as Hex, // ROOT_AUTHORITY
     caveats: overrides?.caveats ?? [],
     salt: overrides?.salt ?? 1n,
     signature: overrides?.signature ?? ('0x' + 'ab'.repeat(65)) as Hex,
@@ -230,8 +244,10 @@ describe('Base Sepolia — Contract Deployment Verification', () => {
       '../extensions/crypto/src/services/delegation-types.js'
     );
 
-    // Every address in our types file should match the canonical addresses
+    // Every MetaMask framework address should match (skip test-only contracts)
+    const SKIP = new Set(['TestSmartAccount']);
     for (const [name, addr] of Object.entries(CONTRACTS)) {
+      if (SKIP.has(name)) continue;
       const typesAddr = (DELEGATION_CONTRACTS as Record<string, string>)[name];
       expect(typesAddr, `${name} should exist in DELEGATION_CONTRACTS`).toBeDefined();
       expect(typesAddr!.toLowerCase()).toBe(addr.toLowerCase());
@@ -1056,4 +1072,316 @@ describeWrite('Base Sepolia — Delegation Lifecycle (write)', () => {
 
     setCompilationContext({});
   }, 30_000);
+});
+
+// ═════════════════════════════════════════════════════════════════════════
+// 3. redeemDelegations — Full Execution Flow (write)
+//
+// Tests the critical last mile: delegate (our wallet) calls
+// redeemDelegations() on DelegationManager, which calls execute() on
+// the delegator smart account to transfer ETH to a recipient.
+//
+// Requires: DELEGATION_TESTNET_PK + funded TestSmartAccount
+// ═════════════════════════════════════════════════════════════════════════
+
+const EXECUTE_MODE_DEFAULT = ('0x' + '0'.repeat(64)) as Hex;
+
+describeWrite('Base Sepolia — redeemDelegations End-to-End', () => {
+  let account: ReturnType<typeof privateKeyToAccount>;
+  let walletClient: any;
+  // Burn address as recipient — unique per test run to avoid collisions
+  const recipient = ('0x' + 'dead' + Date.now().toString(16).padStart(36, '0')) as Address;
+
+  beforeAll(() => {
+    account = privateKeyToAccount(TESTNET_PK!, { nonceManager });
+    walletClient = createWalletClient({
+      account,
+      chain: baseSepolia,
+      transport: http(),
+    });
+  });
+
+  it('smart account is deployed and funded', async () => {
+    const code = await publicClient.getCode({ address: CONTRACTS.TestSmartAccount });
+    expect(code!.length).toBeGreaterThan(2);
+
+    const balance = await publicClient.getBalance({ address: CONTRACTS.TestSmartAccount });
+    expect(balance).toBeGreaterThan(0n);
+    console.log(`Smart account balance: ${Number(balance) / 1e18} ETH`);
+  }, 15_000);
+
+  it('redeemDelegations transfers ETH from smart account to recipient', async () => {
+    const { getDelegationDomain, DELEGATION_EIP712_TYPES } = await import(
+      '../extensions/crypto/src/services/delegation-types.js'
+    );
+
+    const transferAmount = 1_000_000_000_000n; // 0.000001 ETH (1e12 wei)
+
+    // 1. Create delegation: delegator=smart_account, delegate=our_wallet
+    const delegation = makeDelegation({
+      delegator: CONTRACTS.TestSmartAccount,
+      delegate: account.address,
+      salt: BigInt(Date.now()) + 100n,
+    });
+
+    // 2. Sign with our wallet (smart account owner)
+    const domain = getDelegationDomain(BASE_SEPOLIA_CHAIN_ID);
+    const signature = await walletClient.signTypedData({
+      domain,
+      types: DELEGATION_EIP712_TYPES,
+      primaryType: 'Delegation',
+      message: {
+        delegate: delegation.delegate,
+        delegator: delegation.delegator,
+        authority: delegation.authority,
+        caveats: delegation.caveats,
+        salt: delegation.salt,
+      },
+    });
+
+    const signedDelegation = { ...delegation, signature };
+
+    // 3. Encode permissionContext: abi.encode(Delegation[])
+    const permissionContext = encodeAbiParameters(
+      [{
+        type: 'tuple[]',
+        components: [
+          { name: 'delegate', type: 'address' },
+          { name: 'delegator', type: 'address' },
+          { name: 'authority', type: 'bytes32' },
+          {
+            name: 'caveats', type: 'tuple[]',
+            components: [
+              { name: 'enforcer', type: 'address' },
+              { name: 'terms', type: 'bytes' },
+              { name: 'args', type: 'bytes' },
+            ],
+          },
+          { name: 'salt', type: 'uint256' },
+          { name: 'signature', type: 'bytes' },
+        ],
+      }],
+      [[{
+        delegate: signedDelegation.delegate,
+        delegator: signedDelegation.delegator,
+        authority: signedDelegation.authority,
+        caveats: signedDelegation.caveats,
+        salt: signedDelegation.salt,
+        signature: signedDelegation.signature,
+      }]],
+    );
+
+    // 4. Encode execution: encodePacked(target, value, callData)
+    const executionCallData = encodePacked(
+      ['address', 'uint256', 'bytes'],
+      [recipient, transferAmount, '0x'],
+    );
+
+    // 5. Check recipient balance before
+    const balanceBefore = await publicClient.getBalance({ address: recipient });
+
+    // 6. Call redeemDelegations as the delegate
+    const txHash = await walletClient.writeContract({
+      address: CONTRACTS.DelegationManager,
+      abi: DELEGATION_MANAGER_ABI,
+      functionName: 'redeemDelegations',
+      args: [
+        [permissionContext],
+        [EXECUTE_MODE_DEFAULT],
+        [executionCallData],
+      ],
+    });
+
+    expect(txHash).toMatch(/^0x[0-9a-f]{64}$/);
+
+    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+    expect(receipt.status).toBe('success');
+
+    // 7. Verify recipient received ETH
+    const balanceAfter = await readWithRetry(() =>
+      publicClient.getBalance({ address: recipient }).then(b =>
+        b > balanceBefore ? b : false as any,
+      ),
+    );
+    expect(balanceAfter).toBe(balanceBefore + transferAmount);
+
+    console.log(`redeemDelegations tx: ${txHash}`);
+    console.log(`  Delegator (smart account): ${CONTRACTS.TestSmartAccount}`);
+    console.log(`  Delegate (our wallet):     ${account.address}`);
+    console.log(`  Recipient:                 ${recipient}`);
+    console.log(`  Amount:                    ${transferAmount} wei`);
+  }, 60_000);
+
+  it('redeemDelegations with ValueLte caveat succeeds within limit', async () => {
+    const { getDelegationDomain, DELEGATION_EIP712_TYPES } = await import(
+      '../extensions/crypto/src/services/delegation-types.js'
+    );
+
+    const valueLimit = 5_000_000_000_000n; // 0.000005 ETH
+    const transferAmount = 1_000_000_000_000n; // 0.000001 ETH (within limit)
+
+    const delegation = makeDelegation({
+      delegator: CONTRACTS.TestSmartAccount,
+      delegate: account.address,
+      caveats: [{
+        enforcer: CONTRACTS.ValueLteEnforcer,
+        terms: encodeAbiParameters([{ type: 'uint256' }], [valueLimit]),
+        args: '0x' as Hex,
+      }],
+      salt: BigInt(Date.now()) + 200n,
+    });
+
+    const domain = getDelegationDomain(BASE_SEPOLIA_CHAIN_ID);
+    const signature = await walletClient.signTypedData({
+      domain,
+      types: DELEGATION_EIP712_TYPES,
+      primaryType: 'Delegation',
+      message: {
+        delegate: delegation.delegate,
+        delegator: delegation.delegator,
+        authority: delegation.authority,
+        caveats: delegation.caveats,
+        salt: delegation.salt,
+      },
+    });
+
+    const signedDelegation = { ...delegation, signature };
+
+    const permissionContext = encodeAbiParameters(
+      [{
+        type: 'tuple[]',
+        components: [
+          { name: 'delegate', type: 'address' },
+          { name: 'delegator', type: 'address' },
+          { name: 'authority', type: 'bytes32' },
+          {
+            name: 'caveats', type: 'tuple[]',
+            components: [
+              { name: 'enforcer', type: 'address' },
+              { name: 'terms', type: 'bytes' },
+              { name: 'args', type: 'bytes' },
+            ],
+          },
+          { name: 'salt', type: 'uint256' },
+          { name: 'signature', type: 'bytes' },
+        ],
+      }],
+      [[{
+        delegate: signedDelegation.delegate,
+        delegator: signedDelegation.delegator,
+        authority: signedDelegation.authority,
+        caveats: signedDelegation.caveats,
+        salt: signedDelegation.salt,
+        signature: signedDelegation.signature,
+      }]],
+    );
+
+    const recipient2 = ('0x' + 'cafe' + Date.now().toString(16).padStart(36, '0')) as Address;
+    const executionCallData = encodePacked(
+      ['address', 'uint256', 'bytes'],
+      [recipient2, transferAmount, '0x'],
+    );
+
+    const txHash = await walletClient.writeContract({
+      address: CONTRACTS.DelegationManager,
+      abi: DELEGATION_MANAGER_ABI,
+      functionName: 'redeemDelegations',
+      args: [[permissionContext], [EXECUTE_MODE_DEFAULT], [executionCallData]],
+    });
+
+    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+    expect(receipt.status).toBe('success');
+
+    const balance = await readWithRetry(() =>
+      publicClient.getBalance({ address: recipient2 }).then(b =>
+        b > 0n ? b : false as any,
+      ),
+    );
+    expect(balance).toBe(transferAmount);
+
+    console.log(`redeemDelegations (ValueLte within limit) tx: ${txHash}`);
+  }, 60_000);
+
+  it('redeemDelegations reverts when exceeding ValueLte caveat', async () => {
+    const { getDelegationDomain, DELEGATION_EIP712_TYPES } = await import(
+      '../extensions/crypto/src/services/delegation-types.js'
+    );
+
+    const valueLimit = 1_000_000_000_000n; // 0.000001 ETH limit
+    const overLimitAmount = 5_000_000_000_000n; // 0.000005 ETH (exceeds)
+
+    const delegation = makeDelegation({
+      delegator: CONTRACTS.TestSmartAccount,
+      delegate: account.address,
+      caveats: [{
+        enforcer: CONTRACTS.ValueLteEnforcer,
+        terms: encodeAbiParameters([{ type: 'uint256' }], [valueLimit]),
+        args: '0x' as Hex,
+      }],
+      salt: BigInt(Date.now()) + 300n,
+    });
+
+    const domain = getDelegationDomain(BASE_SEPOLIA_CHAIN_ID);
+    const signature = await walletClient.signTypedData({
+      domain,
+      types: DELEGATION_EIP712_TYPES,
+      primaryType: 'Delegation',
+      message: {
+        delegate: delegation.delegate,
+        delegator: delegation.delegator,
+        authority: delegation.authority,
+        caveats: delegation.caveats,
+        salt: delegation.salt,
+      },
+    });
+
+    const signedDelegation = { ...delegation, signature };
+
+    const permissionContext = encodeAbiParameters(
+      [{
+        type: 'tuple[]',
+        components: [
+          { name: 'delegate', type: 'address' },
+          { name: 'delegator', type: 'address' },
+          { name: 'authority', type: 'bytes32' },
+          {
+            name: 'caveats', type: 'tuple[]',
+            components: [
+              { name: 'enforcer', type: 'address' },
+              { name: 'terms', type: 'bytes' },
+              { name: 'args', type: 'bytes' },
+            ],
+          },
+          { name: 'salt', type: 'uint256' },
+          { name: 'signature', type: 'bytes' },
+        ],
+      }],
+      [[{
+        delegate: signedDelegation.delegate,
+        delegator: signedDelegation.delegator,
+        authority: signedDelegation.authority,
+        caveats: signedDelegation.caveats,
+        salt: signedDelegation.salt,
+        signature: signedDelegation.signature,
+      }]],
+    );
+
+    const recipient3 = ('0x' + 'f00d' + Date.now().toString(16).padStart(36, '0')) as Address;
+    const executionCallData = encodePacked(
+      ['address', 'uint256', 'bytes'],
+      [recipient3, overLimitAmount, '0x'],
+    );
+
+    // Should revert — value exceeds the ValueLte caveat
+    await expect(
+      walletClient.writeContract({
+        address: CONTRACTS.DelegationManager,
+        abi: DELEGATION_MANAGER_ABI,
+        functionName: 'redeemDelegations',
+        args: [[permissionContext], [EXECUTE_MODE_DEFAULT], [executionCallData]],
+      }),
+    ).rejects.toThrow();
+
+    console.log('redeemDelegations correctly reverted for over-limit value');
+  }, 60_000);
 });

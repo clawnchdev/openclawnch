@@ -95,7 +95,7 @@ describe('Delegation Types', () => {
     expect(DELEGATION_EIP712_TYPES.Delegation).toBeDefined();
     expect(DELEGATION_EIP712_TYPES.Caveat).toBeDefined();
     expect(DELEGATION_EIP712_TYPES.Delegation.length).toBeGreaterThan(0);
-    expect(DELEGATION_EIP712_TYPES.Caveat.length).toBe(3); // enforcer, terms, args
+    expect(DELEGATION_EIP712_TYPES.Caveat.length).toBe(2); // enforcer, terms (args excluded from EIP-712 signing)
   });
 
   it('DELEGATION_MANAGER_ABI has required functions', async () => {
@@ -475,7 +475,7 @@ describe('Delegation Compiler — compilePolicyToDelegation', () => {
     expect(comp.delegation.delegator).toBe(delegator);
     expect(comp.delegation.delegate).toBe(delegate);
     expect(comp.delegation.authority).toBe(
-      '0x0000000000000000000000000000000000000000000000000000000000000000',
+      '0x' + 'f'.repeat(64), // ROOT_AUTHORITY
     );
   });
 });

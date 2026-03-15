@@ -446,7 +446,7 @@ export function compilePolicyToDelegation(
   const delegation: UnsignedDelegation = {
     delegate,
     delegator,
-    authority: '0x0000000000000000000000000000000000000000000000000000000000000000' as Hex,
+    authority: ('0x' + 'f'.repeat(64)) as Hex, // ROOT_AUTHORITY — sentinel for top-level delegations
     caveats: allCaveats,
     salt,
   };
