@@ -21,7 +21,7 @@
  * The testnet wallet address is: 0x8826D91C6bD56B00f40594941776cB5De359111A
  */
 
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import {
   createPublicClient,
   createWalletClient,
@@ -1569,5 +1569,169 @@ describeWrite('Base Sepolia — Sub-Delegation Chain', () => {
     console.log(`  Sub-agent (child delegate): ${subAgentAccount.address}`);
     console.log(`  Recipient:                 ${recipient}`);
     console.log(`  Amount:                    ${transferAmount} wei`);
+  }, 90_000);
+});
+
+// ═════════════════════════════════════════════════════════════════════════
+// 5. Product-Path E2E — tool.execute() → policy gate → redeemDelegations
+//
+// Tests the full product flow: init wallet, register plugin, store a
+// signed delegation, call the wrapped transfer tool's execute(), and
+// verify it routes through tryDelegationExecution → redeemDelegation →
+// redeemDelegations on-chain. This is the first test that exercises the
+// actual product code path end-to-end.
+// ═════════════════════════════════════════════════════════════════════════
+
+describeWrite('Base Sepolia — Product-Path E2E', () => {
+  let transferTool: any;
+
+  beforeAll(async () => {
+    // 1. Init wallet service on Base Sepolia with testnet PK
+    const { initWalletService } = await import(
+      '../extensions/crypto/src/services/walletconnect-service.js'
+    );
+    await initWalletService({
+      privateKey: TESTNET_PK!,
+      network: 'sepolia',
+    });
+
+    // 2. Set delegation mode
+    const { setPolicyMode } = await import(
+      '../extensions/crypto/src/services/policy-types.js'
+    );
+    setPolicyMode('delegation');
+
+    // 3. Store a policy with delegation info pointing to our smart account
+    const account = sharedAccount!;
+    const { getPolicyStore, resetPolicyStore } = await import(
+      '../extensions/crypto/src/services/policy-store.js'
+    );
+    // Reset clears in-memory cache; force fresh read from disk on next access
+    resetPolicyStore();
+    const policyStore = getPolicyStore();
+
+    // Remove any stale delegation policies from prior test runs
+    const existingPolicies = policyStore.listPolicies('owner');
+    for (const p of existingPolicies) {
+      if (p.delegation) {
+        policyStore.deletePolicy('owner', p.id);
+      }
+    }
+    policyStore.savePolicy({
+      id: 'e2e-product-path',
+      name: 'e2e-product-path-test',
+      description: 'Product-path e2e test policy',
+      rules: [],
+      scope: { type: 'all_write' as any },
+      status: 'active' as any,
+      confirmedAt: Date.now(),
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      userId: 'owner',
+      delegation: {
+        chainId: BASE_SEPOLIA_CHAIN_ID,
+        hash: '0xe2e',
+        delegationManager: CONTRACTS.DelegationManager,
+        status: 'signed' as any,
+        delegate: account.address,
+        delegator: CONTRACTS.TestSmartAccount,
+        salt: '1',
+        createdAt: new Date().toISOString(),
+      },
+    });
+
+    // 4. Store a signed delegation in the delegation store
+    const { getDelegationDomain, DELEGATION_EIP712_TYPES } = await import(
+      '../extensions/crypto/src/services/delegation-types.js'
+    );
+    const { getDelegationStore, resetDelegationStore } = await import(
+      '../extensions/crypto/src/services/delegation-store.js'
+    );
+    resetDelegationStore();
+    const delegStore = getDelegationStore();
+
+    const delegation = makeDelegation({
+      delegator: CONTRACTS.TestSmartAccount,
+      delegate: account.address,
+      salt: BigInt(Date.now()) + 900n,
+    });
+
+    const domain = getDelegationDomain(BASE_SEPOLIA_CHAIN_ID);
+    const walletClientForSig = sharedWalletClient!;
+    const signature = await walletClientForSig.signTypedData({
+      domain,
+      types: DELEGATION_EIP712_TYPES,
+      primaryType: 'Delegation',
+      message: {
+        delegate: delegation.delegate,
+        delegator: delegation.delegator,
+        authority: delegation.authority,
+        caveats: delegation.caveats,
+        salt: delegation.salt,
+      },
+    });
+
+    delegStore.save(
+      { ...delegation, signature },
+      BASE_SEPOLIA_CHAIN_ID,
+      'e2e-product-path',
+    );
+
+    // 5. Register plugin to get wrapped tools
+    const { default: plugin } = await import('../extensions/crypto/index.js');
+    const tools: any[] = [];
+    const mockApi = {
+      registerTool: (tool: any) => tools.push(tool),
+      registerCommand: () => {},
+      on: () => {},
+    } as any;
+    plugin.register(mockApi);
+    transferTool = tools.find((t: any) => t.name === 'transfer');
+    expect(transferTool).toBeDefined();
+
+    console.log(`Product-path e2e: wallet ${account.address}, tools registered: ${tools.length}`);
+  });
+
+  afterAll(async () => {
+    const { disconnectWallet } = await import(
+      '../extensions/crypto/src/services/walletconnect-service.js'
+    );
+    const { setPolicyMode } = await import(
+      '../extensions/crypto/src/services/policy-types.js'
+    );
+    await disconnectWallet();
+    setPolicyMode('delegation');
+  });
+
+  it('transfer tool routes through delegation and executes on-chain', async () => {
+    const recipient = ('0x' + 'e2e0' + Date.now().toString(16).padStart(36, '0')) as Address;
+    const transferAmount = 1_000_000_000_000n; // 0.000001 ETH
+
+    // Call the WRAPPED transfer tool (goes through policy gate)
+    const result = await transferTool.execute('e2e-test-call', {
+      action: 'send',
+      to: recipient,
+      amount: '0.000001',
+    });
+
+    // The result should contain delegation execution info
+    const text = typeof result === 'string' ? result :
+      result?.content?.[0]?.text ?? result?.text ?? JSON.stringify(result);
+
+    console.log(`Product-path result: ${text.slice(0, 300)}`);
+
+    // Verify: either delegation succeeded (has txHash) or we got a delegation-specific response
+    const isDelegation = text.includes('delegation') || text.includes('0x');
+    expect(isDelegation).toBe(true);
+
+    // Verify recipient balance on-chain
+    const balance = await readWithRetry(() =>
+      publicClient.getBalance({ address: recipient }).then(b =>
+        b > 0n ? b : false as any,
+      ),
+    );
+    expect(balance).toBe(transferAmount);
+
+    console.log(`Product-path e2e: delegation executed, recipient ${recipient} received ${transferAmount} wei`);
   }, 90_000);
 });

@@ -26,7 +26,7 @@ import type { ActionContext } from './policy-types.js';
 import { isDelegationMode } from './policy-types.js';
 import { getPolicyStore } from './policy-store.js';
 import { canRedeem, redeemDelegation, getDelegatedPolicies } from './delegation-service.js';
-import { detectAccountType } from './walletconnect-service.js';
+// detectAccountType removed — EOA check now uses getCode on the delegation's delegator address
 import type { ExecutionAction } from './delegation-types.js';
 import type { Address, Hex } from 'viem';
 
@@ -484,22 +484,10 @@ export async function tryDelegationExecution(
     return { executed: false, skipReason: 'Not in delegation mode.' };
   }
 
-  // Gate 1b: delegator must be a smart account (not a plain EOA)
-  // redeemDelegations() calls executeFromExecutor() on the delegator —
-  // this reverts for plain EOAs since they can't receive function calls.
-  // EIP-7702 EOAs and smart accounts both work.
-  try {
-    const acctType = await detectAccountType();
-    if (acctType && acctType.accountType === 'eoa') {
-      return {
-        executed: false,
-        skipReason: 'Delegator wallet is a plain EOA. On-chain delegation requires a smart account (EIP-7702 or ERC-4337). Use /upgrade to convert.',
-      };
-    }
-  } catch {
-    // detectAccountType can fail if no wallet connected — proceed and let
-    // later gates catch the issue, don't block on a diagnostic check.
-  }
+  // Note: EOA check on the DELEGATOR happens after gate 4 (when we know
+  // which delegation will be used). The connected wallet is the DELEGATE
+  // (agent), which is always an EOA. The gas simulation in redeemDelegation()
+  // also catches delegator-is-EOA reverts before spending gas.
 
   // Gate 2: tool must have a supported action extractor
   const extractor = SUPPORTED_EXTRACTORS[actionCtx.toolName];
@@ -541,6 +529,26 @@ export async function tryDelegationExecution(
     };
   }
 
+  // Gate 6b: check if the delegation's delegator is a smart account
+  // redeemDelegations calls executeFromExecutor on the delegator — plain EOAs revert.
+  if (matchResult.delegator) {
+    try {
+      const { getPublicClient } = await import('./walletconnect-service.js');
+      const pub = getPublicClient();
+      if (pub) {
+        const code = await pub.getCode({ address: matchResult.delegator as Address });
+        if (!code || code === '0x' || code === '0x0') {
+          return {
+            executed: false,
+            skipReason: `Delegator ${matchResult.delegator} is a plain EOA. On-chain delegation requires a smart account. Use /upgrade to convert.`,
+          };
+        }
+      }
+    } catch {
+      // Non-fatal: if the check fails, let the gas simulation catch it
+    }
+  }
+
   // All gates passed — attempt redemption
   try {
     const result = await redeemDelegation(matchResult.policyId, executionAction);
@@ -567,6 +575,7 @@ interface DelegationMatch {
   policyId: string;
   policyName: string;
   chainId: number;
+  delegator?: string;
   expiresAt?: string;
 }
 
@@ -598,6 +607,7 @@ function findMatchingDelegation(ctx: ActionContext): DelegationMatch | null {
       policyId: policy.id,
       policyName: policy.name,
       chainId: info.chainId,
+      delegator: info.delegator,
       expiresAt: info.expiresAt,
     };
   }
