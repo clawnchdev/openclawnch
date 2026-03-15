@@ -702,10 +702,14 @@ function encodePermissionContext(delegation: SignedDelegation): Hex {
 /**
  * Encode a delegation chain as permissionContext.
  * Accepts an array of SignedDelegations ordered from root (parent) to leaf (child).
- * For a single root delegation, pass a 1-element array.
+ * Internally reverses to leaf-first order as required by the DelegationManager
+ * (delegations[0].delegate must equal msg.sender).
+ * For a single root delegation, pass a 1-element array (no reversal needed).
  */
 export function encodePermissionContextChain(chain: SignedDelegation[]): Hex {
-  const delegationTuples = chain.map(d => ({
+  // DM expects leaf-first: [child, parent, grandparent, ...]
+  const ordered = chain.length > 1 ? [...chain].reverse() : chain;
+  const delegationTuples = ordered.map(d => ({
     delegate: d.delegate,
     delegator: d.delegator,
     authority: d.authority,

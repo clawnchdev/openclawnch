@@ -34,7 +34,7 @@ import {
   type Hex,
 } from 'viem';
 import { baseSepolia } from 'viem/chains';
-import { privateKeyToAccount, nonceManager } from 'viem/accounts';
+import { privateKeyToAccount, nonceManager, generatePrivateKey } from 'viem/accounts';
 
 // ─── Constants ──────────────────────────────────────────────────────────
 
@@ -731,15 +731,15 @@ describe('Base Sepolia — encodePermissionContext Validation', () => {
     const chain = decoded[0] as any[];
     expect(chain.length).toBe(2);
 
-    // Parent is first
-    expect(chain[0].delegator.toLowerCase()).toBe(addrB.toLowerCase());
-    expect(chain[0].delegate.toLowerCase()).toBe(addrA.toLowerCase());
-    expect(chain[0].authority).toBe('0x' + '0'.repeat(64)); // root
+    // Leaf-first order: child is first (DM expects delegations[0].delegate == msg.sender)
+    expect(chain[0].delegator.toLowerCase()).toBe(addrA.toLowerCase());
+    expect(chain[0].delegate.toLowerCase()).toBe(addrC.toLowerCase());
+    expect((chain[0].authority as string).toLowerCase()).toBe((parentHash as string).toLowerCase());
 
-    // Child is second, authority = parent hash
-    expect(chain[1].delegator.toLowerCase()).toBe(addrA.toLowerCase());
-    expect(chain[1].delegate.toLowerCase()).toBe(addrC.toLowerCase());
-    expect((chain[1].authority as string).toLowerCase()).toBe((parentHash as string).toLowerCase());
+    // Parent (root) is second
+    expect(chain[1].delegator.toLowerCase()).toBe(addrB.toLowerCase());
+    expect(chain[1].delegate.toLowerCase()).toBe(addrA.toLowerCase());
+    expect(chain[1].authority).toBe('0x' + '0'.repeat(64)); // root
   }, 20_000);
 });
 
@@ -1386,4 +1386,188 @@ describeWrite('Base Sepolia — redeemDelegations End-to-End', () => {
 
     console.log('redeemDelegations correctly reverted for over-limit value');
   }, 60_000);
+});
+
+// ═════════════════════════════════════════════════════════════════════════
+// 4. Sub-Delegation Chain — User → Agent → Sub-Agent (write)
+//
+// Tests the multi-delegation chain: parent delegation from smart account
+// to our wallet, child delegation from our wallet to a fresh sub-agent.
+// Sub-agent calls redeemDelegations with [parent, child] permissionContext.
+// ═════════════════════════════════════════════════════════════════════════
+
+describeWrite('Base Sepolia — Sub-Delegation Chain', () => {
+  let agentAccount: ReturnType<typeof privateKeyToAccount>;
+  let agentWalletClient: any;
+
+  beforeAll(() => {
+    agentAccount = sharedAccount!;
+    agentWalletClient = sharedWalletClient!;
+  });
+
+  it('sub-agent redeems a 2-element delegation chain', async () => {
+    const { getDelegationDomain, DELEGATION_EIP712_TYPES } = await import(
+      '../extensions/crypto/src/services/delegation-types.js'
+    );
+
+    // Generate ephemeral sub-agent keypair
+    const subAgentPk = generatePrivateKey();
+    const subAgentAccount = privateKeyToAccount(subAgentPk);
+    const subAgentWalletClient = createWalletClient({
+      account: subAgentAccount,
+      chain: baseSepolia,
+      transport: http(),
+    });
+
+    // Fund sub-agent with gas (tiny amount) and wait for balance to propagate
+    const fundTx = await agentWalletClient.sendTransaction({
+      to: subAgentAccount.address,
+      value: 5_000_000_000_000_000n, // 0.005 ETH for gas
+    });
+    await publicClient.waitForTransactionReceipt({ hash: fundTx });
+    // Wait for balance to propagate (public RPC consistency)
+    await readWithRetry(() =>
+      publicClient.getBalance({ address: subAgentAccount.address }).then(b =>
+        b > 0n ? b : false as any,
+      ),
+    );
+    console.log(`Funded sub-agent ${subAgentAccount.address} with 0.005 ETH`);
+
+    const domain = getDelegationDomain(BASE_SEPOLIA_CHAIN_ID);
+    const transferAmount = 1_000_000_000_000n; // 0.000001 ETH
+    const recipient = ('0x' + 'eeee' + Date.now().toString(16).padStart(36, '0')) as Address;
+
+    // 1. Parent delegation: Smart Account → Agent (our wallet)
+    const parentDelegation = makeDelegation({
+      delegator: CONTRACTS.TestSmartAccount,
+      delegate: agentAccount.address,
+      salt: BigInt(Date.now()) + 700n,
+    });
+
+    const parentSig = await agentWalletClient.signTypedData({
+      domain,
+      types: DELEGATION_EIP712_TYPES,
+      primaryType: 'Delegation',
+      message: {
+        delegate: parentDelegation.delegate,
+        delegator: parentDelegation.delegator,
+        authority: parentDelegation.authority,
+        caveats: parentDelegation.caveats,
+        salt: parentDelegation.salt,
+      },
+    });
+
+    const signedParent = { ...parentDelegation, signature: parentSig };
+
+    // Get parent delegation hash from the contract
+    const parentHash = await publicClient.readContract({
+      address: CONTRACTS.DelegationManager,
+      abi: DELEGATION_MANAGER_ABI,
+      functionName: 'getDelegationHash',
+      args: [signedParent],
+    });
+    console.log(`Parent delegation hash: ${parentHash}`);
+
+    // 2. Child delegation: Agent → Sub-Agent, authority = parent hash
+    const childDelegation = makeDelegation({
+      delegator: agentAccount.address,
+      delegate: subAgentAccount.address,
+      authority: parentHash as Hex,
+      salt: BigInt(Date.now()) + 701n,
+    });
+
+    // Agent signs the child delegation (EOA ECDSA — DM uses ecrecover)
+    const childSig = await agentWalletClient.signTypedData({
+      domain,
+      types: DELEGATION_EIP712_TYPES,
+      primaryType: 'Delegation',
+      message: {
+        delegate: childDelegation.delegate,
+        delegator: childDelegation.delegator,
+        authority: childDelegation.authority,
+        caveats: childDelegation.caveats,
+        salt: childDelegation.salt,
+      },
+    });
+
+    const signedChild = { ...childDelegation, signature: childSig };
+
+    // 3. Encode permissionContext with [parent, child] chain
+    const permissionContext = encodeAbiParameters(
+      [{
+        type: 'tuple[]',
+        components: [
+          { name: 'delegate', type: 'address' },
+          { name: 'delegator', type: 'address' },
+          { name: 'authority', type: 'bytes32' },
+          {
+            name: 'caveats', type: 'tuple[]',
+            components: [
+              { name: 'enforcer', type: 'address' },
+              { name: 'terms', type: 'bytes' },
+              { name: 'args', type: 'bytes' },
+            ],
+          },
+          { name: 'salt', type: 'uint256' },
+          { name: 'signature', type: 'bytes' },
+        ],
+      }],
+      [[
+        // Leaf first (child/most recent), then root (parent)
+        // DM expects delegations[0].delegate == msg.sender
+        {
+          delegate: signedChild.delegate,
+          delegator: signedChild.delegator,
+          authority: signedChild.authority,
+          caveats: signedChild.caveats,
+          salt: signedChild.salt,
+          signature: signedChild.signature,
+        },
+        {
+          delegate: signedParent.delegate,
+          delegator: signedParent.delegator,
+          authority: signedParent.authority,
+          caveats: signedParent.caveats,
+          salt: signedParent.salt,
+          signature: signedParent.signature,
+        },
+      ]],
+    );
+
+    // 4. Encode execution: transfer ETH to recipient
+    const executionCallData = encodePacked(
+      ['address', 'uint256', 'bytes'],
+      [recipient, transferAmount, '0x'],
+    );
+
+    // 5. Sub-agent calls redeemDelegations
+    const txHash = await subAgentWalletClient.writeContract({
+      address: CONTRACTS.DelegationManager,
+      abi: DELEGATION_MANAGER_ABI,
+      functionName: 'redeemDelegations',
+      args: [
+        [permissionContext],
+        [EXECUTE_MODE_DEFAULT],
+        [executionCallData],
+      ],
+    });
+
+    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+    expect(receipt.status).toBe('success');
+
+    // 6. Verify recipient got ETH
+    const balance = await readWithRetry(() =>
+      publicClient.getBalance({ address: recipient }).then(b =>
+        b > 0n ? b : false as any,
+      ),
+    );
+    expect(balance).toBe(transferAmount);
+
+    console.log(`Sub-delegation chain redeemDelegations tx: ${txHash}`);
+    console.log(`  Delegator (smart account): ${CONTRACTS.TestSmartAccount}`);
+    console.log(`  Agent (parent delegate):   ${agentAccount.address}`);
+    console.log(`  Sub-agent (child delegate): ${subAgentAccount.address}`);
+    console.log(`  Recipient:                 ${recipient}`);
+    console.log(`  Amount:                    ${transferAmount} wei`);
+  }, 90_000);
 });
