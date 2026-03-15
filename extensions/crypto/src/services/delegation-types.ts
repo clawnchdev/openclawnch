@@ -99,6 +99,18 @@ export const DELEGATION_CONTRACTS = {
   /** Core delegation manager — handles creation, redemption, revocation. */
   DelegationManager: '0xdb9B1e94B5b69Df7e401DDbedE43491141047dB3' as Address,
 
+  // ── DeleGator Implementations ────────────────────────────────────────
+
+  /** MetaMask EIP-7702 Stateless DeleGator — production audited implementation.
+   *  Use as the designation target for `/upgrade 7702`. Deterministic CREATE2 across all chains. */
+  EIP7702StatelessDeleGator: '0x63c0c19a282a1B52b07dD5a65b58948A07DAE32B' as Address,
+
+  /** MetaMask HybridDeleGator — ERC-4337 + EIP-712 hybrid account implementation. */
+  HybridDeleGator: '0x48dBe696A4D990079e039489bA2053B36E8FFEC4' as Address,
+
+  /** MetaMask MultiSigDeleGator — multi-signature DeleGator implementation. */
+  MultiSigDeleGator: '0x56a9EdB16a0105eb5a4C54f4C062e2868844f3A7' as Address,
+
   // ── Caveat Enforcers ─────────────────────────────────────────────────
 
   /** Limits total ERC-20 transfer amount. Terms: (address token, uint256 amount) */

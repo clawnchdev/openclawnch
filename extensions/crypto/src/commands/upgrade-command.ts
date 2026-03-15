@@ -24,17 +24,19 @@ import { isDelegationMode } from '../services/policy-types.js';
 import { DELEGATION_CONTRACTS, CHAIN_NAMES } from '../services/delegation-types.js';
 import type { Address } from 'viem';
 
-// Known DeleGator implementation contracts per chain.
-// These implement executeFromExecutor + isValidSignature for delegation.
-const DELEGATOR_IMPL: Record<number, Address> = {
-  84532: '0xA88bEFC44411018232A30644cC48b11eB5876DC0' as Address, // Base Sepolia — MinimalDelegator v2
-};
+// MetaMask's EIP7702StatelessDeleGatorImpl — audited, deployed via CREATE2 on all chains.
+// Implements executeFromExecutor + isValidSignature for delegation framework compatibility.
+// Source: https://github.com/MetaMask/delegation-framework/blob/main/documents/Deployments.md
+const EIP7702_DELEGATOR_IMPL = '0x63c0c19a282a1B52b07dD5a65b58948A07DAE32B' as Address;
 
-/** Override via env var for custom implementations. */
-function getDelegatorImpl(chainId: number): Address | null {
+// Per-chain override map (falls back to the universal MetaMask impl above).
+const DELEGATOR_IMPL_OVERRIDES: Record<number, Address> = {};
+
+/** Override via env var, then per-chain map, then universal MetaMask impl. */
+function getDelegatorImpl(chainId: number): Address {
   const envImpl = process.env.DELEGATOR_IMPL_ADDRESS;
   if (envImpl?.startsWith('0x') && envImpl.length === 42) return envImpl as Address;
-  return DELEGATOR_IMPL[chainId] ?? null;
+  return DELEGATOR_IMPL_OVERRIDES[chainId] ?? EIP7702_DELEGATOR_IMPL;
 }
 
 export const upgradeCommand = {
@@ -267,12 +269,6 @@ async function handle7702Upgrade() {
 
   const chainId = wallet.chainId ?? 0;
   const impl = getDelegatorImpl(chainId);
-  if (!impl) {
-    lines.push('**No DeleGator implementation for this chain.**');
-    lines.push(`Chain: ${CHAIN_NAMES[chainId] ?? chainId}`);
-    lines.push('Set `DELEGATOR_IMPL_ADDRESS` env var or switch to Base Sepolia (84532).');
-    return { text: lines.join('\n') };
-  }
 
   lines.push('**EIP-7702 Upgrade**');
   lines.push('');

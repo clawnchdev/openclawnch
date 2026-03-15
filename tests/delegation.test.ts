@@ -58,7 +58,11 @@ describe('Delegation Types', () => {
     expect(keys).toContain('NativeTokenPeriodTransferEnforcer');
     expect(keys).toContain('ValueLteEnforcer');
     expect(keys).toContain('NonceEnforcer');
-    expect(keys.length).toBe(11);
+    // DeleGator implementations (3) + DelegationManager (1) + enforcers (10)
+    expect(keys).toContain('EIP7702StatelessDeleGator');
+    expect(keys).toContain('HybridDeleGator');
+    expect(keys).toContain('MultiSigDeleGator');
+    expect(keys.length).toBe(14);
   });
 
   it('supports expected chain IDs', async () => {
