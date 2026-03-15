@@ -2320,7 +2320,15 @@ describe('Delegation Executor — Expanded Extractors', () => {
     const tools = getDelegationSupportedTools();
     expect(tools).toContain('transfer');
     expect(tools).toContain('clawnchconnect');
-    expect(tools.length).toBe(2);
+    // Tier 1-3 extractors
+    expect(tools).toContain('approvals');
+    expect(tools).toContain('permit2');
+    expect(tools).toContain('nft');
+    expect(tools).toContain('defi_lend');
+    expect(tools).toContain('defi_stake');
+    expect(tools).toContain('governance');
+    expect(tools).toContain('yield');
+    expect(tools.length).toBe(9);
   });
 
   it('transfer extractor skips non-send actions', async () => {

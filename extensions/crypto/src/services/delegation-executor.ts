@@ -57,9 +57,17 @@ export interface DelegationExecutionResult {
  * - transfer: native ETH sends and ERC-20 transfers
  * - clawnchconnect: raw transaction sends (send_tx action)
  *
- * Not yet supported (calldata constructed by external SDK):
- * - defi_swap: ClawnchSwapper.swap() handles tx internally, no extractable calldata
- * - bridge: similar — aggregator constructs calldata server-side
+ * Tier 1 (simple extraction): transfer, clawnchconnect, approvals, permit2, nft
+ * Tier 2 (known ABIs): defi_lend (borrow/withdraw), defi_stake, governance
+ * Tier 3 (approval-gated): yield (withdraw only)
+ *
+ * Not extractable (calldata from external APIs/SDKs):
+ * - defi_swap: DEX aggregator constructs calldata (0x/1inch/Paraswap)
+ * - bridge: LI.FI aggregator constructs calldata
+ * - liquidity: Uniswap SDK multicall with complex math
+ * - privacy: ZK proof generation via Veil SDK
+ * - bankr_*: natural-language prompt API, opaque
+ * - farcaster/clawnx: API-only, no on-chain tx
  *
  * For unsupported tools, the delegation's on-chain caveats still enforce
  * limits when the wallet IS the delegator's smart account — the tool
@@ -211,6 +219,248 @@ const SUPPORTED_EXTRACTORS: Record<string, ActionExtractor> = {
     } catch {
       return null;
     }
+  },
+
+  // ── Tier 1: Simple arg extraction ────────────────────────────────────
+
+  /**
+   * approvals tool — revoke ERC-20 approvals.
+   * Args: { action: 'revoke', token: address, spender: address }
+   */
+  approvals: async (args) => {
+    const action = args.action as string | undefined;
+    if (action !== 'revoke') return null;
+
+    const token = args.token as string | undefined;
+    const spender = args.spender as string | undefined;
+    if (!token || !spender) return null;
+    if (!/^0x[0-9a-fA-F]{40}$/.test(token) || !/^0x[0-9a-fA-F]{40}$/.test(spender)) return null;
+
+    return {
+      target: token as Address,
+      value: 0n,
+      callData: encodeErc20Approve(spender as Address, 0n),
+    };
+  },
+
+  /**
+   * permit2 tool — approve tokens to the Permit2 contract.
+   * Args: { action: 'approve', token: address }
+   */
+  permit2: async (args) => {
+    const action = args.action as string | undefined;
+    if (action !== 'approve') return null;
+
+    const token = args.token as string | undefined;
+    if (!token || !/^0x[0-9a-fA-F]{40}$/.test(token)) return null;
+
+    const PERMIT2 = '0x000000000022D473030F116dDEE9F6B43aC78BA3' as Address;
+    const MAX_UINT256 = (2n ** 256n) - 1n;
+
+    return {
+      target: token as Address,
+      value: 0n,
+      callData: encodeErc20Approve(PERMIT2, MAX_UINT256),
+    };
+  },
+
+  /**
+   * nft tool — transfer ERC-721 tokens.
+   * Args: { action: 'transfer', contract: address, token_id: string, to: address }
+   */
+  nft: async (args) => {
+    const action = args.action as string | undefined;
+    if (action !== 'transfer') return null;
+
+    const contract = args.contract as string | undefined;
+    const tokenId = args.token_id as string | undefined;
+    const to = args.to as string | undefined;
+    if (!contract || !tokenId || !to) return null;
+    if (!/^0x[0-9a-fA-F]{40}$/.test(contract) || !/^0x[0-9a-fA-F]{40}$/.test(to)) return null;
+
+    // ERC-721 transferFrom(address from, address to, uint256 tokenId)
+    // Selector: 0x23b872dd
+    // Note: uses transferFrom not safeTransferFrom to avoid callback complexity
+    const selector = '0x23b872dd';
+    const fromParam = '0'.repeat(64); // filled at execution time from delegator address
+    const toParam = to.slice(2).toLowerCase().padStart(64, '0');
+    const idParam = BigInt(tokenId).toString(16).padStart(64, '0');
+
+    return {
+      target: contract as Address,
+      value: 0n,
+      callData: `${selector}${fromParam}${toParam}${idParam}` as Hex,
+    };
+  },
+
+  // ── Tier 2: Known ABIs, deterministic args ───────────────────────────
+
+  /**
+   * defi_lend tool — Aave V3 borrow/withdraw (no prior approval needed).
+   * Args: { action: 'borrow'|'withdraw'|'supply'|'repay', asset: string, amount: string }
+   */
+  defi_lend: async (args) => {
+    const action = args.action as string | undefined;
+    // Only extract actions that don't require a prior approval tx
+    if (action !== 'borrow' && action !== 'withdraw') return null;
+
+    const asset = args.asset as string | undefined;
+    const amount = args.amount as string | undefined;
+    if (!asset || !amount) return null;
+
+    // Resolve asset symbol to address (Base mainnet)
+    const AAVE_ASSETS: Record<string, { address: Address; decimals: number }> = {
+      'eth': { address: '0x4200000000000000000000000000000000000006' as Address, decimals: 18 },
+      'weth': { address: '0x4200000000000000000000000000000000000006' as Address, decimals: 18 },
+      'usdc': { address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' as Address, decimals: 6 },
+      'usdbc': { address: '0xd9aAEc86B65D86f6A7B5B1b0c42FFA531710b6CA' as Address, decimals: 6 },
+      'cbeth': { address: '0x2Ae3F1Ec7F1F5012CFEab0185bfc7aa3cf0DEc22' as Address, decimals: 18 },
+    };
+
+    const assetLower = asset.toLowerCase();
+    const assetInfo = AAVE_ASSETS[assetLower];
+    // If asset is already a 0x address, use it directly
+    const assetAddr = assetInfo?.address ?? ((/^0x[0-9a-fA-F]{40}$/.test(asset)) ? asset as Address : null);
+    if (!assetAddr) return null;
+
+    const decimals = assetInfo?.decimals ?? 18;
+    const amountWei = parseTokenAmount(amount, decimals);
+    if (amountWei <= 0n) return null;
+
+    const AAVE_POOL = '0xA238Dd80C259a72e81d7e4664a9801593F98d1c5' as Address; // Base
+
+    if (action === 'borrow') {
+      // borrow(address asset, uint256 amount, uint256 interestRateMode, uint16 referralCode, address onBehalfOf)
+      // Selector: 0xa415bcad
+      const sel = '0xa415bcad';
+      const p1 = assetAddr.slice(2).toLowerCase().padStart(64, '0');
+      const p2 = amountWei.toString(16).padStart(64, '0');
+      const p3 = (2n).toString(16).padStart(64, '0'); // variable rate
+      const p4 = (0n).toString(16).padStart(64, '0'); // referralCode
+      const p5 = '0'.repeat(64); // onBehalfOf = delegator (filled at execution)
+      return { target: AAVE_POOL, value: 0n, callData: `${sel}${p1}${p2}${p3}${p4}${p5}` as Hex };
+    }
+
+    // withdraw(address asset, uint256 amount, address to)
+    // Selector: 0x69328dec
+    const sel = '0x69328dec';
+    const p1 = assetAddr.slice(2).toLowerCase().padStart(64, '0');
+    const p2 = amountWei.toString(16).padStart(64, '0');
+    const p3 = '0'.repeat(64); // to = delegator (filled at execution)
+    return { target: AAVE_POOL, value: 0n, callData: `${sel}${p1}${p2}${p3}` as Hex };
+  },
+
+  /**
+   * defi_stake tool — Lido/Rocket Pool staking.
+   * Args: { action: 'stake'|'unstake'|'unwrap', protocol: string, amount: string }
+   */
+  defi_stake: async (args) => {
+    const action = args.action as string | undefined;
+    const protocol = (args.protocol as string | undefined)?.toLowerCase();
+    const amount = args.amount as string | undefined;
+    if (!action || !amount) return null;
+
+    const weiValue = parseTokenAmount(amount, 18);
+    if (weiValue <= 0n) return null;
+
+    // Lido stake: stETH.submit(referral) with ETH value
+    if (action === 'stake' && (!protocol || protocol === 'lido')) {
+      const STETH = '0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84' as Address;
+      // submit(address _referral) — selector: 0xa1903eab
+      const sel = '0xa1903eab';
+      const ref = '0'.repeat(64); // no referral
+      return { target: STETH, value: weiValue, callData: `${sel}${ref}` as Hex };
+    }
+
+    // Rocket Pool stake: depositPool.deposit() with ETH value
+    if (action === 'stake' && protocol === 'rocketpool') {
+      const DEPOSIT_POOL = '0xDD3f50F8A6CafbE9b31a427582963f465E745AF8' as Address;
+      // deposit() — selector: 0xd0e30db0 (same as WETH deposit)
+      return { target: DEPOSIT_POOL, value: weiValue, callData: '0xd0e30db0' as Hex };
+    }
+
+    // Rocket Pool unstake: rETH.burn(amount)
+    if (action === 'unstake' && protocol === 'rocketpool') {
+      const RETH = '0xae78736Cd615f374D3085123A210448E74Fc6393' as Address;
+      // burn(uint256 _rethAmount) — selector: 0x42966c68
+      const sel = '0x42966c68';
+      const p1 = weiValue.toString(16).padStart(64, '0');
+      return { target: RETH, value: 0n, callData: `${sel}${p1}` as Hex };
+    }
+
+    // Lido unwrap: wstETH.unwrap(amount)
+    if (action === 'unwrap') {
+      const WSTETH = '0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0' as Address;
+      // unwrap(uint256 _wstETHAmount) — selector: 0xde0e9a3e
+      const sel = '0xde0e9a3e';
+      const p1 = weiValue.toString(16).padStart(64, '0');
+      return { target: WSTETH, value: 0n, callData: `${sel}${p1}` as Hex };
+    }
+
+    return null;
+  },
+
+  /**
+   * governance tool — on-chain voting and token delegation.
+   * Args (vote): { action: 'vote', governor: address, proposal_id: string, support: number }
+   * Args (delegate): { action: 'delegate', token: address, delegatee: address }
+   */
+  governance: async (args) => {
+    const action = args.action as string | undefined;
+
+    if (action === 'vote') {
+      const governor = args.governor as string | undefined;
+      const proposalId = args.proposal_id as string | undefined;
+      const support = args.support as number | undefined;
+      if (!governor || !proposalId || support === undefined) return null;
+      if (!/^0x[0-9a-fA-F]{40}$/.test(governor)) return null;
+
+      // castVote(uint256 proposalId, uint8 support) — selector: 0x56781388
+      const sel = '0x56781388';
+      const p1 = BigInt(proposalId).toString(16).padStart(64, '0');
+      const p2 = BigInt(support).toString(16).padStart(64, '0');
+      return { target: governor as Address, value: 0n, callData: `${sel}${p1}${p2}` as Hex };
+    }
+
+    if (action === 'delegate') {
+      const token = args.token as string | undefined;
+      const delegatee = args.delegatee as string | undefined;
+      if (!token || !delegatee) return null;
+      if (!/^0x[0-9a-fA-F]{40}$/.test(token) || !/^0x[0-9a-fA-F]{40}$/.test(delegatee)) return null;
+
+      // delegate(address delegatee) — selector: 0x5c19a95c
+      const sel = '0x5c19a95c';
+      const p1 = delegatee.slice(2).toLowerCase().padStart(64, '0');
+      return { target: token as Address, value: 0n, callData: `${sel}${p1}` as Hex };
+    }
+
+    return null;
+  },
+
+  // ── Tier 3: Extractable but may need prior approval ──────────────────
+
+  /**
+   * yield tool — ERC-4626 vault withdraw (no approval needed).
+   * Args: { action: 'withdraw', vault: address, amount: string }
+   */
+  yield: async (args) => {
+    const action = args.action as string | undefined;
+    if (action !== 'withdraw') return null;
+
+    const vault = args.vault as string | undefined;
+    const amount = args.amount as string | undefined;
+    if (!vault || !amount) return null;
+    if (!/^0x[0-9a-fA-F]{40}$/.test(vault)) return null;
+
+    const amountWei = parseTokenAmount(amount, 18); // ERC-4626 uses share decimals
+    if (amountWei <= 0n) return null;
+
+    // withdraw(uint256 assets, address receiver, address owner) — selector: 0xb460af94
+    const sel = '0xb460af94';
+    const p1 = amountWei.toString(16).padStart(64, '0');
+    const p2 = '0'.repeat(64); // receiver = delegator
+    const p3 = '0'.repeat(64); // owner = delegator
+    return { target: vault as Address, value: 0n, callData: `${sel}${p1}${p2}${p3}` as Hex };
   },
 };
 
