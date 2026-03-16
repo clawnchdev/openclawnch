@@ -1846,8 +1846,8 @@ describe('Delegation Executor', () => {
 
     setPolicyMode('delegation');
     const result = await tryDelegationExecution(
-      { toolName: 'liquidity', userId: 'test-user' },
-      { action: 'v3_mint', tokenA: 'ETH', tokenB: 'USDC' },
+      { toolName: 'privacy', userId: 'test-user' },
+      { action: 'deposit', amount: '1' },
     );
     expect(result.executed).toBe(false);
     expect(result.skipReason).toContain('does not support delegation execution');
@@ -2358,7 +2358,8 @@ describe('Delegation Executor — Expanded Extractors', () => {
     expect(tools).toContain('yield');
     expect(tools).toContain('defi_swap');
     expect(tools).toContain('bridge');
-    expect(tools.length).toBe(11);
+    expect(tools).toContain('liquidity');
+    expect(tools.length).toBe(12);
   });
 
   it('transfer extractor skips non-send actions', async () => {
