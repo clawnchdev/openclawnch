@@ -74,6 +74,8 @@ export const delegateCommand = {
         return handleRevoke(userId, rest);
       case 'revoke-all':
         return handleRevokeAll(userId);
+      case 'permissions':
+        return handleRequestPermissions(userId, rest);
       case 'status':
         return showStatus(userId);
       case 'chains':
@@ -128,6 +130,7 @@ function showOverview(userId: string) {
   lines.push('  `/delegate create <name>` — compile a policy to a delegation');
   lines.push('  `/delegate revoke <name>` — revoke an on-chain delegation');
   lines.push('  `/delegate revoke-all` — revoke ALL active delegations');
+  lines.push('  `/delegate permissions <name>` — request MetaMask Advanced Permissions');
   lines.push('  `/delegate status` — detailed delegation status');
   lines.push('  `/delegate chains` — list supported chains');
 
@@ -354,6 +357,144 @@ async function handleRevokeAll(userId: string) {
 
   lines.push('');
   lines.push(`Done. ${succeeded} revoked, ${failed} failed.`);
+
+  return { text: lines.join('\n') };
+}
+
+// ─── Request Advanced Permissions (MetaMask ERC-7715) ───────────────────
+
+async function handleRequestPermissions(userId: string, policyName: string) {
+  const lines: string[] = [];
+
+  if (!policyName) {
+    return { text: 'Usage: `/delegate permissions <policy-name>`\n\nRequests Advanced Permissions from MetaMask for the specified policy. The connected MetaMask wallet must be a smart account (EIP-7702).' };
+  }
+
+  const { getWalletState, getWalletClient } = await import('../services/walletconnect-service.js');
+  const wallet = getWalletState();
+
+  if (!wallet.connected || !wallet.address) {
+    return { text: 'No wallet connected. Connect via WalletConnect first.' };
+  }
+
+  // Find the policy
+  const policyStore = getPolicyStore();
+  const policy = policyStore.getPolicyByName(userId, policyName) ?? policyStore.getPolicy(userId, policyName);
+  if (!policy) {
+    return { text: `Policy "${policyName}" not found. Use \`/policies\` to see available policies.` };
+  }
+
+  const chainId = wallet.chainId ?? 8453;
+  const expiry = Math.floor(Date.now() / 1000) + 604800; // 1 week
+
+  lines.push('**Requesting Advanced Permissions from MetaMask...**');
+  lines.push('');
+  lines.push(`Policy: ${policy.name}`);
+  lines.push(`Chain: ${CHAIN_NAMES[chainId] ?? chainId}`);
+  lines.push(`Expiry: ${new Date(expiry * 1000).toISOString()}`);
+  lines.push('');
+
+  try {
+    const wc = getWalletClient();
+    if (!wc) return { text: 'Wallet client not available.' };
+
+    // Build permission requests from policy rules
+    const { erc7715ProviderActions } = await import('@metamask/smart-accounts-kit/actions');
+    const extendedClient = (wc as any).extend(erc7715ProviderActions());
+
+    // For now, request a native token transfer permission based on policy rules
+    // Future: map each rule type to its corresponding Advanced Permission type
+    const permissionRequests: any[] = [];
+
+    for (const rule of policy.rules) {
+      if (rule.type === 'spending_limit' || rule.type === 'max_amount') {
+        const maxUsd = 'maxAmountUsd' in rule ? rule.maxAmountUsd : 1000;
+        // Approximate USD to ETH (rough conversion for permission request)
+        const ethAmount = BigInt(Math.floor(maxUsd / 3000 * 1e18));
+        permissionRequests.push({
+          chainId,
+          expiry,
+          signer: { type: 'account', data: { address: wallet.address } },
+          permission: {
+            type: 'native-token-transfer',
+            data: { maxAmount: ethAmount },
+          },
+          isAdjustmentAllowed: true,
+        });
+      }
+
+      if (rule.type === 'erc20_limit') {
+        const [whole = '0', frac = ''] = rule.maxAmount.split('.');
+        const paddedFrac = (frac + '0'.repeat(rule.decimals)).slice(0, rule.decimals);
+        const amount = BigInt(whole + paddedFrac);
+        permissionRequests.push({
+          chainId,
+          expiry,
+          signer: { type: 'account', data: { address: wallet.address } },
+          permission: {
+            type: 'erc20-token-periodic',
+            data: {
+              tokenAddress: rule.token,
+              periodAmount: amount,
+              periodDuration: 86400, // 1 day
+              justification: `Policy: ${policy.name}`,
+            },
+          },
+          isAdjustmentAllowed: true,
+        });
+      }
+    }
+
+    if (permissionRequests.length === 0) {
+      lines.push('No policy rules could be mapped to Advanced Permissions.');
+      lines.push('Supported rule types: `spending_limit`, `max_amount`, `erc20_limit`.');
+      return { text: lines.join('\n') };
+    }
+
+    lines.push(`Requesting ${permissionRequests.length} permission(s)...`);
+    lines.push('MetaMask will prompt for approval.');
+    lines.push('');
+
+    const granted = await extendedClient.requestExecutionPermissions(permissionRequests);
+
+    // Store the granted permissions
+    const { storeGrantedPermissions } = await import('../services/advanced-permissions.js');
+    storeGrantedPermissions(policy.id, granted);
+
+    // Update policy delegation info
+    if (!policy.delegation) {
+      policy.delegation = {
+        chainId,
+        hash: '0xadvanced-permissions',
+        delegationManager: granted[0]?.signerMeta?.delegationManager ?? '',
+        status: 'signed',
+        delegate: wallet.address,
+        delegator: wallet.address,
+        salt: '0',
+        createdAt: new Date().toISOString(),
+      } as any;
+      policyStore.savePolicy(policy);
+    }
+
+    lines.push(`**${granted.length} permission(s) granted.**`);
+    lines.push('');
+    lines.push('The agent can now execute actions within these permissions.');
+    lines.push('Permissions expire in 1 week. Use `/delegate permissions` to renew.');
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes('User rejected') || msg.includes('denied')) {
+      lines.push('Permission request was rejected by the user.');
+    } else if (msg.includes('not supported') || msg.includes('does not exist')) {
+      lines.push('**MetaMask does not support Advanced Permissions on this wallet.**');
+      lines.push('');
+      lines.push('Requirements:');
+      lines.push('- MetaMask Flask 13.5.0+ or MetaMask 13.9.0+');
+      lines.push('- Account must be upgraded to a MetaMask Smart Account');
+      lines.push('- Run `/upgrade detect` to check account type');
+    } else {
+      lines.push(`**Permission request failed:** ${msg.slice(0, 200)}`);
+    }
+  }
 
   return { text: lines.join('\n') };
 }

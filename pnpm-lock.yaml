@@ -17,6 +17,9 @@ importers:
       '@clawnch/sdk':
         specifier: ^2.2.1
         version: 2.2.1(@walletconnect/sign-client@2.23.6(typescript@5.9.3)(zod@4.3.6))(viem@2.46.3(typescript@5.9.3)(zod@4.3.6))
+      '@metamask/smart-accounts-kit':
+        specifier: 0.4.0-beta.1
+        version: 0.4.0-beta.1(viem@2.46.3(typescript@5.9.3)(zod@4.3.6))
       '@noble/hashes':
         specifier: ^2.0.1
         version: 2.0.1
@@ -1125,13 +1128,43 @@ packages:
     resolution: {integrity: sha512-cjoRghLbeAHV0tTJeHgZXaryUi5zzBZofeZ7uJun1gztnckLLRjoVeaPTujNlc5BIfyKvFqhh1QWCZng/MXlpg==}
     engines: {node: '>=20.0.0'}
 
+  '@metamask/7715-permission-types@0.5.0':
+    resolution: {integrity: sha512-UTlAXhfVM83/dCtghIqZiPqJmeGa4KI2HhkKYjmeP0oFtwzsgDwFfNakdICC4VX82338AiyVVtbEFyx6t7SE1w==}
+    engines: {node: ^18.18 || >=20}
+
   '@metamask/abi-utils@2.0.4':
     resolution: {integrity: sha512-StnIgUB75x7a7AgUhiaUZDpCsqGp7VkNnZh2XivXkJ6mPkE83U8ARGQj5MbRis7VJY8BC5V1AbB1fjdh0hupPQ==}
     engines: {node: '>=16.0.0'}
 
+  '@metamask/abi-utils@3.0.0':
+    resolution: {integrity: sha512-a/l0DiSIr7+CBYVpHygUa3ztSlYLFCQMsklLna+t6qmNY9+eIO5TedNxhyIyvaJ+4cN7TLy0NQFbp9FV3X2ktg==}
+    engines: {node: ^18.18 || ^20.14 || >=22}
+
+  '@metamask/delegation-abis@0.12.0-beta.0':
+    resolution: {integrity: sha512-2I+nk15BSCWy2YTNE3bxMxqTDUqUJBque5A91wXqn0e3NYLzSg3DEdtc8VebUVbgP9IoFhRhHioPwzd/z+xPoQ==}
+    engines: {node: ^18.18 || >=20}
+
+  '@metamask/delegation-core@0.3.0':
+    resolution: {integrity: sha512-a0vMu0pIOKD8AydSdSI991SY6BN0XzGhyXoaKbNg55NchyTyNMBuoAXZ92GS8+/jGtyIouQBglh6CUxhZZHmVw==}
+    engines: {node: ^18.18 || >=20}
+
+  '@metamask/delegation-deployments@0.16.0':
+    resolution: {integrity: sha512-Fm+m+ZPQ1RC0V/PK0Qsoznaeom1ihAoQ7LX2qZl9OmmIKdoyVZQH3gp59hwpPuMyeSgNZ8Cqe3TBi61B7Ja+Pw==}
+    engines: {node: ^18.18 || >=20}
+
+  '@metamask/smart-accounts-kit@0.4.0-beta.1':
+    resolution: {integrity: sha512-VSU27YjSpo3AEKvpLY3niwUSruMlnXu1R59eQgY4pqGE1xjKPi29kANbTrGzpH9KGq2PtJmpG5oIhuA7YX2+5g==}
+    engines: {node: ^18.18 || >=20}
+    peerDependencies:
+      viem: ^2.31.4
+
   '@metamask/superstruct@3.2.1':
     resolution: {integrity: sha512-fLgJnDOXFmuVlB38rUN5SmU7hAFQcCjrg3Vrxz67KTY7YHFnSNEKvX4avmEBdOI0yTCxZjwMCFEqsC8k2+Wd3g==}
     engines: {node: '>=16.0.0'}
+
+  '@metamask/utils@11.10.0':
+    resolution: {integrity: sha512-+bWmTOANx1MbBW6RFM8Se4ZoigFYGXiuIrkhjj4XnG5Aez8uWaTSZ76yn9srKKClv+PoEVoAuVtcUOogFEMUNA==}
+    engines: {node: ^18.18 || ^20.14 || >=22}
 
   '@metamask/utils@9.3.0':
     resolution: {integrity: sha512-w8CVbdkDrVXFJbfBSlDfafDR6BAkpDmv1bC1UJVCoVny5tW2RKAdn9i68Xf7asYT4TnUhl/hN4zfUiKQq9II4g==}
@@ -2331,6 +2364,9 @@ packages:
   '@types/jsonwebtoken@9.0.10':
     resolution: {integrity: sha512-asx5hIG9Qmf/1oStypjanR7iKTv0gXQ1Ov/jfrX6kS/EO0OFni8orbmGCn0672NHR3kXHwpAwR+B368ZGN/2rA==}
 
+  '@types/lodash@4.17.24':
+    resolution: {integrity: sha512-gIW7lQLZbue7lRSWEFql49QJJWThrTFFeIMJdp3eH4tKoxm1OvEPg02rm4wCCSHS0cL3/Fizimb35b7k8atwsQ==}
+
   '@types/long@4.0.2':
     resolution: {integrity: sha512-MqTGEo5bj5t157U6fA/BiDynNkn0YknVdh48CMPkTSpFTVmvao5UQmm7uEF6xBEo7qIMAlY/JSleYaE6VOdpaA==}
 
@@ -2760,6 +2796,9 @@ packages:
 
   buffer@5.7.1:
     resolution: {integrity: sha512-EHcyIPBQ4BSGlvjB16k5KgAJ27CIsHY/2JBmCRReo48y9rQ3MaUzWX3KVlBa4U7MyX02HdVj0K7C3WaB3ju7FQ==}
+
+  buffer@6.0.3:
+    resolution: {integrity: sha512-FTiCpNxtwiZZHEZbcbTIcZjERVICn9yq/pDFkTl95/AxzD1naBctN7YO68riM/gLSDY7sdrMby8hofADYuuqOA==}
 
   bun-types@1.3.9:
     resolution: {integrity: sha512-+UBWWOakIP4Tswh0Bt0QD0alpTY8cb5hvgiYeWCMet9YukHbzuruIEeXC2D7nMJPB12kbh8C7XJykSexEqGKJg==}
@@ -5287,6 +5326,9 @@ packages:
     resolution: {integrity: sha512-d2JWLCivmZYTSIoge9MsgFCZrt571BikcWGYkjC1khllbTeDlGqZ2D8vD8E/lJa8WGWbb7Plm8/XJYV7IJHZZw==}
     engines: {node: '>= 8'}
 
+  webauthn-p256@0.0.10:
+    resolution: {integrity: sha512-EeYD+gmIT80YkSIDb2iWq0lq2zbHo1CxHlQTeJ+KkCILWpVy3zASH3ByD4bopzfk0uCwXxLqKGLqp2W4O28VFA==}
+
   webidl-conversions@3.0.1:
     resolution: {integrity: sha512-2JAn3z8AR6rjK8Sm8orRC0h/bcl/DqL7tRPdGZ4I1CjdF+EaMLmYxBHyXuKL849eucPFhvBoxMsflfOb8kxaeQ==}
 
@@ -6922,6 +6964,8 @@ snapshots:
     optionalDependencies:
       koffi: 2.15.1
 
+  '@metamask/7715-permission-types@0.5.0': {}
+
   '@metamask/abi-utils@2.0.4':
     dependencies:
       '@metamask/superstruct': 3.2.1
@@ -6929,7 +6973,54 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  '@metamask/abi-utils@3.0.0':
+    dependencies:
+      '@metamask/superstruct': 3.2.1
+      '@metamask/utils': 11.10.0
+    transitivePeerDependencies:
+      - supports-color
+
+  '@metamask/delegation-abis@0.12.0-beta.0': {}
+
+  '@metamask/delegation-core@0.3.0':
+    dependencies:
+      '@metamask/abi-utils': 3.0.0
+      '@metamask/utils': 11.10.0
+      '@noble/hashes': 1.8.0
+    transitivePeerDependencies:
+      - supports-color
+
+  '@metamask/delegation-deployments@0.16.0': {}
+
+  '@metamask/smart-accounts-kit@0.4.0-beta.1(viem@2.46.3(typescript@5.9.3)(zod@4.3.6))':
+    dependencies:
+      '@metamask/7715-permission-types': 0.5.0
+      '@metamask/delegation-abis': 0.12.0-beta.0
+      '@metamask/delegation-core': 0.3.0
+      '@metamask/delegation-deployments': 0.16.0
+      buffer: 6.0.3
+      viem: 2.46.3(typescript@5.9.3)(zod@4.3.6)
+      webauthn-p256: 0.0.10
+    transitivePeerDependencies:
+      - supports-color
+
   '@metamask/superstruct@3.2.1': {}
+
+  '@metamask/utils@11.10.0':
+    dependencies:
+      '@ethereumjs/tx': 4.2.0
+      '@metamask/superstruct': 3.2.1
+      '@noble/hashes': 1.8.0
+      '@scure/base': 1.2.6
+      '@types/debug': 4.1.12
+      '@types/lodash': 4.17.24
+      debug: 4.4.3(supports-color@8.1.1)
+      lodash: 4.17.23
+      pony-cause: 2.1.11
+      semver: 7.7.4
+      uuid: 9.0.1
+    transitivePeerDependencies:
+      - supports-color
 
   '@metamask/utils@9.3.0':
     dependencies:
@@ -8150,6 +8241,8 @@ snapshots:
       '@types/ms': 2.1.0
       '@types/node': 22.19.15
 
+  '@types/lodash@4.17.24': {}
+
   '@types/long@4.0.2': {}
 
   '@types/mime-types@2.1.4': {}
@@ -8795,6 +8888,11 @@ snapshots:
   buffer-from@1.1.2: {}
 
   buffer@5.7.1:
+    dependencies:
+      base64-js: 1.5.1
+      ieee754: 1.2.1
+
+  buffer@6.0.3:
     dependencies:
       base64-js: 1.5.1
       ieee754: 1.2.1
@@ -11615,6 +11713,11 @@ snapshots:
       defaults: 1.0.4
 
   web-streams-polyfill@3.3.3: {}
+
+  webauthn-p256@0.0.10:
+    dependencies:
+      '@noble/curves': 1.9.7
+      '@noble/hashes': 1.8.0
 
   webidl-conversions@3.0.1: {}
 

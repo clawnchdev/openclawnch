@@ -705,7 +705,63 @@ export async function tryDelegationExecution(
     return { executed: false, skipReason: 'Could not extract execution action from tool args.' };
   }
 
-  // Gate 4: find a matching delegation
+  // Gate 3b: check for MetaMask Advanced Permissions (parallel path)
+  // If the user granted permissions via ERC-7715, use those instead of raw delegation.
+  try {
+    const { hasAdvancedPermissions, getPermissionContext } = await import('./advanced-permissions.js');
+    const { getWalletClient } = await import('./walletconnect-service.js');
+
+    // Check all delegated policies for stored Advanced Permissions
+    const policies = getDelegatedPolicies(actionCtx.userId);
+    for (const p of policies) {
+      if (!p.delegation || !hasAdvancedPermissions(p.id)) continue;
+      if (!policyScopeCovers(p, actionCtx.toolName)) continue;
+
+      const permCtx = getPermissionContext(p.id);
+      if (!permCtx) continue;
+
+      // Found Advanced Permissions — redeem via SDK path
+      const wc = getWalletClient();
+      if (!wc) continue;
+
+      try {
+        const { DelegationManager: DM } = await import('@metamask/smart-accounts-kit/contracts');
+        const { createExecution, ExecutionMode } = await import('@metamask/smart-accounts-kit');
+
+        const execution = createExecution({
+          target: executionAction.target,
+          value: executionAction.value,
+          callData: executionAction.callData,
+        });
+
+        // Build and send the redeem tx
+        const redeemCalldata = DM.encode.redeemDelegations({
+          delegations: [[]], // permissionsContext handles the delegation chain
+          modes: [ExecutionMode.SingleDefault],
+          executions: [[execution]],
+        });
+
+        const txHash = await (wc as any).sendTransaction({
+          to: permCtx.delegationManager,
+          data: redeemCalldata,
+        });
+
+        return {
+          executed: true,
+          txHash: txHash as string,
+          chainId: p.delegation.chainId,
+        };
+      } catch (apErr) {
+        // Advanced Permissions redemption failed — continue to raw delegation path
+        const msg = apErr instanceof Error ? apErr.message : String(apErr);
+        console.info(`[delegation] Advanced Permissions failed for ${p.name}: ${msg.slice(0, 100)}`);
+      }
+    }
+  } catch {
+    // advanced-permissions module not available or import failed — continue to raw path
+  }
+
+  // Gate 4: find a matching delegation (raw viem path)
   const matchResult = findMatchingDelegation(actionCtx);
   if (!matchResult) {
     return { executed: false, skipReason: 'No matching delegation found for this action.' };
