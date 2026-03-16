@@ -1846,8 +1846,8 @@ describe('Delegation Executor', () => {
 
     setPolicyMode('delegation');
     const result = await tryDelegationExecution(
-      { toolName: 'defi_swap', userId: 'test-user' },
-      { action: 'execute', fromToken: 'ETH', toToken: 'USDC' },
+      { toolName: 'liquidity', userId: 'test-user' },
+      { action: 'v3_mint', tokenA: 'ETH', tokenB: 'USDC' },
     );
     expect(result.executed).toBe(false);
     expect(result.skipReason).toContain('does not support delegation execution');
@@ -2356,7 +2356,9 @@ describe('Delegation Executor — Expanded Extractors', () => {
     expect(tools).toContain('defi_stake');
     expect(tools).toContain('governance');
     expect(tools).toContain('yield');
-    expect(tools.length).toBe(9);
+    expect(tools).toContain('defi_swap');
+    expect(tools).toContain('bridge');
+    expect(tools.length).toBe(11);
   });
 
   it('transfer extractor skips non-send actions', async () => {
@@ -3071,18 +3073,20 @@ describe('Policy Gate E2E — delegation routing through plugin', () => {
     expect(result.skipReason).toContain('Could not extract');
   });
 
-  it('defi_swap tool skips delegation (no extractor)', async () => {
+  it('defi_swap extractor returns null without wallet context', async () => {
     const { tryDelegationExecution } = await import(
       '../extensions/crypto/src/services/delegation-executor.js'
     );
 
+    // defi_swap now has an extractor but it needs wallet context for the API call.
+    // Without a connected wallet, it returns null (graceful fallback).
     const result = await tryDelegationExecution(
-      { toolName: 'defi_swap', action: 'swap', userId: 'owner' },
-      { action: 'swap', tokenIn: 'ETH', tokenOut: 'USDC', amount: '1' },
+      { toolName: 'defi_swap', action: 'execute', userId: 'owner' },
+      { action: 'execute', token_in: 'ETH', token_out: 'USDC', amount: '1' },
     );
 
     expect(result.executed).toBe(false);
-    expect(result.skipReason).toContain('does not support delegation');
+    expect(result.skipReason).toContain('Could not extract');
   });
 
   it('delegation mode off skips delegation', async () => {

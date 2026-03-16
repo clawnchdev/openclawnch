@@ -74,8 +74,14 @@ export interface DelegationExecutionResult {
  * submits the tx through the wallet, and the wallet's caveats are checked.
  */
 
+/** Context passed to extractors for API-based calldata resolution. */
+interface ExtractorContext {
+  walletAddress?: Address;
+  chainId?: number;
+}
+
 interface ActionExtractor {
-  (args: Record<string, unknown>): Promise<ExecutionAction | null>;
+  (args: Record<string, unknown>, ctx?: ExtractorContext): Promise<ExecutionAction | null>;
 }
 
 // ─── Redemption Rate Limiter ────────────────────────────────────────────
@@ -492,7 +498,168 @@ const SUPPORTED_EXTRACTORS: Record<string, ActionExtractor> = {
     const p3 = '0'.repeat(64); // owner = delegator
     return { target: vault as Address, value: 0n, callData: `${sel}${p1}${p2}${p3}` as Hex };
   },
+
+  // ── P6: API-based extractors (async, fetch calldata from external APIs) ──
+
+  /**
+   * defi_swap tool — fetch swap calldata from Clawnch/0x API.
+   * Args: { action: 'execute', token_in, token_out, amount, slippage? }
+   */
+  defi_swap: async (args, ctx) => {
+    const action = args.action as string | undefined;
+    if (action !== 'execute') return null;
+    if (!ctx?.walletAddress) return null;
+
+    const tokenIn = args.token_in as string | undefined;
+    const tokenOut = args.token_out as string | undefined;
+    const amount = args.amount as string | undefined;
+    const slippage = (args.slippage as number | undefined) ?? 1.0;
+    if (!tokenIn || !tokenOut || !amount) return null;
+
+    // Resolve token symbols to addresses (Base)
+    const inAddr = resolveSwapToken(tokenIn);
+    const outAddr = resolveSwapToken(tokenOut);
+    if (!inAddr || !outAddr) return null;
+
+    // Parse amount to wei
+    const isNativeIn = inAddr.toLowerCase() === NATIVE_TOKEN_ADDRESS.toLowerCase();
+    const decimals = isNativeIn ? 18 : getTokenDecimals(inAddr);
+    const sellAmountWei = parseTokenAmount(amount, decimals);
+    if (sellAmountWei <= 0n) return null;
+
+    try {
+      const apiBase = process.env.CLAWNCHER_API_URL || 'https://clawn.ch';
+      const chainId = ctx.chainId ?? 8453;
+      const params = new URLSearchParams({
+        chainId: String(chainId),
+        sellToken: inAddr,
+        buyToken: outAddr,
+        sellAmount: sellAmountWei.toString(),
+        slippageBps: String(Math.round(slippage * 100)),
+        taker: ctx.walletAddress,
+      });
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
+      const resp = await fetch(`${apiBase}/api/swap/quote?${params}`, {
+        headers: { Accept: 'application/json' },
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+
+      if (!resp.ok) return null;
+      const data = await resp.json() as any;
+      if (!data.transaction?.to || !data.transaction?.data) return null;
+
+      return {
+        target: data.transaction.to as Address,
+        value: BigInt(data.transaction.value || '0'),
+        callData: data.transaction.data as Hex,
+      };
+    } catch {
+      // API timeout or error — fall through to normal execution
+      return null;
+    }
+  },
+
+  /**
+   * bridge tool — fetch bridge calldata from LI.FI API.
+   * Args: { action: 'execute', from_chain, to_chain, from_token, to_token, amount, slippage? }
+   */
+  bridge: async (args, ctx) => {
+    const action = args.action as string | undefined;
+    if (action !== 'execute') return null;
+    if (!ctx?.walletAddress) return null;
+
+    const fromChain = args.from_chain as string | undefined;
+    const toChain = args.to_chain as string | undefined;
+    const amount = args.amount as string | undefined;
+    if (!toChain || !amount) return null;
+
+    const fromToken = (args.from_token as string | undefined) ?? '0x0000000000000000000000000000000000000000';
+    const toToken = (args.to_token as string | undefined) ?? '0x0000000000000000000000000000000000000000';
+    const slippage = (args.slippage as number | undefined) ?? 0.005;
+
+    // Resolve chain names to IDs
+    const fromChainId = resolveChainId(fromChain ?? 'base') ?? ctx.chainId ?? 8453;
+    const toChainId = resolveChainId(toChain);
+    if (!toChainId) return null;
+
+    try {
+      const params = new URLSearchParams({
+        fromChain: String(fromChainId),
+        toChain: String(toChainId),
+        fromToken,
+        toToken,
+        fromAmount: amount,
+        fromAddress: ctx.walletAddress,
+        slippage: String(slippage),
+      });
+
+      const headers: Record<string, string> = { Accept: 'application/json' };
+      const apiKey = process.env.LIFI_API_KEY;
+      if (apiKey) headers['x-lifi-api-key'] = apiKey;
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
+      const resp = await fetch(`https://li.quest/v1/quote?${params}`, {
+        headers,
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+
+      if (!resp.ok) return null;
+      const data = await resp.json() as any;
+      const txReq = data.transactionRequest;
+      if (!txReq?.to || !txReq?.data) return null;
+
+      return {
+        target: txReq.to as Address,
+        value: txReq.value ? BigInt(txReq.value) : 0n,
+        callData: txReq.data as Hex,
+      };
+    } catch {
+      return null;
+    }
+  },
 };
+
+// ─── Token / Chain Resolution Helpers ───────────────────────────────────
+
+const NATIVE_TOKEN_ADDRESS = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE';
+
+/** Resolve token symbol or address for swap API. */
+function resolveSwapToken(token: string): string | null {
+  if (/^0x[0-9a-fA-F]{40}$/.test(token)) return token;
+  const SYMBOLS: Record<string, string> = {
+    eth: NATIVE_TOKEN_ADDRESS,
+    weth: '0x4200000000000000000000000000000000000006',
+    usdc: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+    usdt: '0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2',
+    dai: '0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb',
+    cbeth: '0x2Ae3F1Ec7F1F5012CFEab0185bfc7aa3cf0DEc22',
+  };
+  return SYMBOLS[token.toLowerCase()] ?? null;
+}
+
+/** Resolve chain name to chain ID. */
+function resolveChainId(chain: string): number | null {
+  const n = parseInt(chain, 10);
+  if (!isNaN(n)) return n;
+  const CHAINS: Record<string, number> = {
+    ethereum: 1, eth: 1, mainnet: 1,
+    base: 8453,
+    arbitrum: 42161, arb: 42161,
+    optimism: 10, op: 10,
+    polygon: 137, matic: 137,
+    avalanche: 43114, avax: 43114,
+    bnb: 56, bsc: 56,
+    linea: 59144,
+    zksync: 324,
+    scroll: 534352,
+  };
+  return CHAINS[chain.toLowerCase()] ?? null;
+}
 
 // ─── Core Executor ──────────────────────────────────────────────────────
 
@@ -526,7 +693,14 @@ export async function tryDelegationExecution(
   }
 
   // Gate 3: extract the on-chain action from tool args
-  const executionAction = await extractor(toolArgs);
+  // Pass wallet context for extractors that need to fetch quotes (swap, bridge)
+  const { getWalletState } = await import('./walletconnect-service.js');
+  const walletState = getWalletState();
+  const extractorCtx: ExtractorContext = {
+    walletAddress: walletState.address as Address | undefined,
+    chainId: walletState.chainId ?? actionCtx.chain,
+  };
+  const executionAction = await extractor(toolArgs, extractorCtx);
   if (!executionAction) {
     return { executed: false, skipReason: 'Could not extract execution action from tool args.' };
   }
