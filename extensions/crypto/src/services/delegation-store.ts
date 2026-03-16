@@ -179,9 +179,16 @@ export class DelegationStore {
       const data = JSON.parse(decrypt(raw)) as StoredDelegation;
       this.cache.set(policyId, data);
       return { delegation: fromStored(data), chainId: data.chainId };
-    } catch {
-      // Corrupted file — remove it
-      try { unlinkSync(path); } catch { /* best effort */ }
+    } catch (err) {
+      // H4/H5: Don't delete corrupted files — rename to .corrupt for recovery.
+      // The on-chain delegation still exists; deleting the file makes it
+      // irrevocable through this tool.
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[delegation-store] Failed to load ${policyId}: ${msg}. File preserved as .corrupt`);
+      try {
+        const corruptPath = path + '.corrupt.' + Date.now();
+        renameSync(path, corruptPath);
+      } catch { /* best effort */ }
       return null;
     }
   }

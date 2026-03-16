@@ -77,6 +77,7 @@ export interface DelegationExecutionResult {
 /** Context passed to extractors for API-based calldata resolution. */
 interface ExtractorContext {
   walletAddress?: Address;
+  delegatorAddress?: Address;
   chainId?: number;
 }
 
@@ -93,25 +94,31 @@ const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX_ATTEMPTS = 3;
 const _redemptionAttempts = new Map<string, number[]>();
 
-function isRateLimited(policyId: string): boolean {
+// H1: Key on (userId, toolName) composite to prevent bypass via multiple policies
+function rateLimitKey(userId: string, toolName: string): string {
+  return `${userId}:${toolName}`;
+}
+
+function isRateLimited(userId: string, toolName: string): boolean {
+  const key = rateLimitKey(userId, toolName);
   const now = Date.now();
-  const attempts = _redemptionAttempts.get(policyId) ?? [];
+  const attempts = _redemptionAttempts.get(key) ?? [];
   const recent = attempts.filter(t => now - t < RATE_LIMIT_WINDOW_MS);
   return recent.length >= RATE_LIMIT_MAX_ATTEMPTS;
 }
 
-function recordRedemptionAttempt(policyId: string): void {
+function recordRedemptionAttempt(userId: string, toolName: string): void {
+  const key = rateLimitKey(userId, toolName);
   const now = Date.now();
-  const attempts = _redemptionAttempts.get(policyId) ?? [];
-  // Prune old entries
+  const attempts = _redemptionAttempts.get(key) ?? [];
   const recent = attempts.filter(t => now - t < RATE_LIMIT_WINDOW_MS);
   recent.push(now);
-  _redemptionAttempts.set(policyId, recent);
+  _redemptionAttempts.set(key, recent);
 }
 
-/** Clear rate limit for a policy (call on successful redemption). */
-export function clearRateLimit(policyId: string): void {
-  _redemptionAttempts.delete(policyId);
+/** Clear rate limit for a user+tool (call on successful redemption). */
+export function clearRateLimit(userId: string, toolName: string): void {
+  _redemptionAttempts.delete(rateLimitKey(userId, toolName));
 }
 
 // ─── Well-Known Token Decimals ──────────────────────────────────────────
@@ -165,6 +172,33 @@ function parseTokenAmount(amount: string, decimals: number): bigint {
   return BigInt(whole + paddedFrac);
 }
 
+// ─── Target Address Validation ──────────────────────────────────────────
+// API-sourced extractors (swap, bridge) must validate that the returned
+// target address matches a known router/bridge contract to prevent
+// arbitrary code execution if the API is compromised.
+
+const KNOWN_SWAP_TARGETS = new Set([
+  '0xdef1c0ded9bec7f1a1670819833240f027b25eff', // 0x Exchange Proxy (multi-chain)
+  '0x1111111254eeb25477b68fb85ed929f73a960582', // 1inch Router V5
+  '0x111111125421ca6dc452d289314280a0f8842a65', // 1inch Router V6
+  '0xdef171fe48cf0115b1d80b88dc8eab59176fee57', // ParaSwap Augustus
+  '0x6131b5fae19ea4f9d964eac0408e4408b66337b5', // KyberSwap
+  '0x000000000022d473030f116ddee9f6b43ac78ba3', // Permit2 (AllowanceHolder)
+].map(a => a.toLowerCase()));
+
+const KNOWN_BRIDGE_TARGETS = new Set([
+  '0x1231deb6f5749ef6ce6943a275a1d3e7486f4eae', // LI.FI Diamond
+  '0x341e94069f53234fE6DabeF707aD424830525715', // LI.FI Diamond V2
+].map(a => a.toLowerCase()));
+
+function isKnownSwapTarget(addr: string): boolean {
+  return KNOWN_SWAP_TARGETS.has(addr.toLowerCase());
+}
+
+function isKnownBridgeTarget(addr: string): boolean {
+  return KNOWN_BRIDGE_TARGETS.has(addr.toLowerCase());
+}
+
 /** Encode a signed int24 as a 32-byte ABI word (two's complement). */
 function toInt24Hex(val: number): string {
   if (val >= 0) return val.toString(16).padStart(64, '0');
@@ -213,9 +247,9 @@ const SUPPORTED_EXTRACTORS: Record<string, ActionExtractor> = {
     if (isNative) {
       // Native ETH transfer: target = recipient, value = amount in wei
       try {
-        const ethAmount = parseFloat(amount);
-        if (isNaN(ethAmount) || ethAmount <= 0) return null;
-        const weiValue = BigInt(Math.floor(ethAmount * 1e18));
+        // C3: Use string-math, not floating point (avoids precision loss)
+        const weiValue = parseTokenAmount(amount, 18);
+        if (weiValue <= 0n) return null;
 
         return {
           target: to as Address,
@@ -247,10 +281,9 @@ const SUPPORTED_EXTRACTORS: Record<string, ActionExtractor> = {
     try {
       let value = 0n;
       if (valueStr) {
-        const ethAmount = parseFloat(valueStr);
-        if (!isNaN(ethAmount) && ethAmount > 0) {
-          value = BigInt(Math.floor(ethAmount * 1e18));
-        }
+        // C3: Use string-math parsing, not floating point (avoids precision loss)
+        value = parseTokenAmount(valueStr, 18);
+        if (value < 0n) value = 0n;
       }
 
       const callData = (data && data.startsWith('0x') ? data : '0x') as Hex;
@@ -775,6 +808,12 @@ const SUPPORTED_EXTRACTORS: Record<string, ActionExtractor> = {
       const data = await resp.json() as any;
       if (!data.transaction?.to || !data.transaction?.data) return null;
 
+      // C1: Validate target is a known swap router (prevent arbitrary execution if API compromised)
+      if (!isKnownSwapTarget(data.transaction.to)) {
+        console.info(`[delegation] Swap API returned unknown target: ${data.transaction.to}`);
+        return null;
+      }
+
       return {
         target: data.transaction.to as Address,
         value: BigInt(data.transaction.value || '0'),
@@ -836,6 +875,12 @@ const SUPPORTED_EXTRACTORS: Record<string, ActionExtractor> = {
       const data = await resp.json() as any;
       const txReq = data.transactionRequest;
       if (!txReq?.to || !txReq?.data) return null;
+
+      // C1: Validate target is a known bridge contract
+      if (!isKnownBridgeTarget(txReq.to)) {
+        console.info(`[delegation] Bridge API returned unknown target: ${txReq.to}`);
+        return null;
+      }
 
       return {
         target: txReq.to as Address,
@@ -991,6 +1036,17 @@ export async function tryDelegationExecution(
     return { executed: false, skipReason: 'No matching delegation found for this action.' };
   }
 
+  // M4: Fill zero-address placeholders with the delegator address
+  // Extractors use 0x000...0 for onBehalfOf/from/receiver/owner params
+  // because the delegator isn't known until after matching.
+  if (matchResult.delegator && executionAction.callData.length > 10) {
+    const zeroAddr = '0'.repeat(64);
+    const delegatorPadded = matchResult.delegator.slice(2).toLowerCase().padStart(64, '0');
+    if (executionAction.callData.includes(zeroAddr)) {
+      executionAction.callData = executionAction.callData.replaceAll(zeroAddr, delegatorPadded) as Hex;
+    }
+  }
+
   // Gate 5: delegation must be redeemable
   const readiness = canRedeem(matchResult.policyId);
   if (!readiness.ready) {
@@ -1034,15 +1090,15 @@ export async function tryDelegationExecution(
   }
 
   // Gate 7: rate limiter — prevent gas-burning loops on repeated failures
-  if (isRateLimited(matchResult.policyId)) {
+  if (isRateLimited(actionCtx.userId, actionCtx.toolName)) {
     return {
       executed: false,
-      skipReason: `Delegation ${matchResult.policyName} is rate-limited (too many recent attempts). Wait before retrying.`,
+      skipReason: `Delegation rate-limited for ${actionCtx.toolName} (too many recent attempts). Wait before retrying.`,
     };
   }
 
   // All gates passed — attempt redemption
-  recordRedemptionAttempt(matchResult.policyId);
+  recordRedemptionAttempt(actionCtx.userId, actionCtx.toolName);
   try {
     const result = await redeemDelegation(matchResult.policyId, executionAction);
 
@@ -1052,7 +1108,7 @@ export async function tryDelegationExecution(
     }
 
     // Success — clear rate limit
-    clearRateLimit(matchResult.policyId);
+    clearRateLimit(actionCtx.userId, actionCtx.toolName);
 
     return {
       executed: true,

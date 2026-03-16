@@ -833,30 +833,33 @@ export async function redeemDelegation(
   }
 
   // P2-3: Check on-chain revocation (catches revocations made outside our tool)
+  // H2: On-chain revocation check with 5s timeout (prevent RPC DoS)
   try {
     const publicClient = getDelegationPublicClient(chainId);
-    const delegationHash = await publicClient.readContract({
-      address: DELEGATION_CONTRACTS.DelegationManager,
-      abi: DELEGATION_MANAGER_ABI,
-      functionName: 'getDelegationHash',
-      args: [delegation],
-    });
-    const isDisabled = await publicClient.readContract({
-      address: DELEGATION_CONTRACTS.DelegationManager,
-      abi: DELEGATION_MANAGER_ABI,
-      functionName: 'disabledDelegations',
-      args: [delegationHash],
-    });
+    const revocationCheck = async () => {
+      const delegationHash = await publicClient.readContract({
+        address: DELEGATION_CONTRACTS.DelegationManager,
+        abi: DELEGATION_MANAGER_ABI,
+        functionName: 'getDelegationHash',
+        args: [delegation],
+      });
+      return publicClient.readContract({
+        address: DELEGATION_CONTRACTS.DelegationManager,
+        abi: DELEGATION_MANAGER_ABI,
+        functionName: 'disabledDelegations',
+        args: [delegationHash],
+      });
+    };
+    const timeout = new Promise<false>((resolve) => setTimeout(() => resolve(false), 5000));
+    const isDisabled = await Promise.race([revocationCheck(), timeout]);
     if (isDisabled) {
-      // Update local state to match on-chain
       if (policy?.delegation) {
         policy.delegation.status = 'revoked' as DelegationStatus;
       }
       return { error: 'Delegation has been revoked on-chain. Cannot redeem.' };
     }
   } catch {
-    // Non-fatal: if the on-chain check fails (network error), proceed with
-    // redemption and let the contract itself enforce revocation.
+    // Non-fatal: proceed and let the contract enforce revocation.
   }
 
   // Verify wallet is connected (already fetched above for userId)

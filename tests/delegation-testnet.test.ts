@@ -1400,9 +1400,12 @@ describeWrite('Base Sepolia — Sub-Delegation Chain', () => {
   let agentAccount: ReturnType<typeof privateKeyToAccount>;
   let agentWalletClient: any;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     agentAccount = sharedAccount!;
     agentWalletClient = sharedWalletClient!;
+    // Cooldown: 7702-delegated accounts hit stricter nonce enforcement
+    // on Base Sepolia sequencer after many sequential txs
+    await new Promise(r => setTimeout(r, 3000));
   });
 
   it('sub-agent redeems a 2-element delegation chain', async () => {
