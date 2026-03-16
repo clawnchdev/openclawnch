@@ -13,9 +13,11 @@
  */
 
 import { getPolicyStore } from '../services/policy-store.js';
-import { getPolicyMode, isDelegationMode } from '../services/policy-types.js';
+import { getPolicyMode, isDelegationMode, describeRule } from '../services/policy-types.js';
+import type { Policy } from '../services/policy-types.js';
 import { buildPolicyDisplay, renderPolicyDisplay } from '../services/policy-evaluator.js';
-import { formatDelegationStatus } from '../services/delegation-service.js';
+import { formatDelegationStatus, canRedeem } from '../services/delegation-service.js';
+import { CHAIN_NAMES } from '../services/delegation-types.js';
 
 export const policiesCommand = {
   name: 'policies',
@@ -45,6 +47,8 @@ export const policiesCommand = {
         return setStatus(userId, name, 'disabled');
       case 'delete':
         return deletePol(userId, name);
+      case 'overview':
+        return showOverview(userId);
       default:
         // Treat as policy name lookup
         return viewPolicy(userId, args);
@@ -105,7 +109,113 @@ function viewPolicy(userId: string, nameOrId: string) {
   }
 
   const display = buildPolicyDisplay(policy, userId);
-  return { text: renderPolicyDisplay(display) };
+  const lines: string[] = [renderPolicyDisplay(display)];
+
+  // Include delegation info (same as list view)
+  if (isDelegationMode() && policy.delegation) {
+    lines.push('');
+    lines.push('**On-chain delegation:**');
+    lines.push(formatDelegationStatus(policy.delegation));
+
+    // Show expiry if set
+    if (policy.delegation.expiresAt) {
+      const exp = new Date(policy.delegation.expiresAt);
+      const remaining = exp.getTime() - Date.now();
+      if (remaining > 0) {
+        const hours = Math.floor(remaining / 3_600_000);
+        const days = Math.floor(hours / 24);
+        lines.push(`  Expires: ${exp.toISOString()} (${days > 0 ? `${days}d ` : ''}${hours % 24}h remaining)`);
+      } else {
+        lines.push('  Expires: **EXPIRED**');
+      }
+    }
+  }
+
+  return { text: lines.join('\n') };
+}
+
+// ─── Overview ───────────────────────────────────────────────────────────
+
+function showOverview(userId: string) {
+  const store = getPolicyStore();
+  const policies = store.listPolicies(userId);
+  const mode = getPolicyMode();
+  const delegation = isDelegationMode();
+
+  const lines: string[] = [];
+  lines.push('**Policy Overview**');
+  lines.push('');
+
+  // Mode
+  lines.push(`Mode: **${mode}** ${delegation ? '(on-chain enforcement)' : '(app-layer enforcement)'}`);
+
+  // Counts
+  const active = policies.filter(p => p.status === 'active');
+  const withDelegation = active.filter(p => p.delegation?.status === 'signed' || p.delegation?.status === 'active');
+  lines.push(`Policies: ${active.length} active of ${policies.length} total${delegation ? `, ${withDelegation.length} delegated on-chain` : ''}`);
+  lines.push('');
+
+  if (active.length === 0) {
+    lines.push('No active policies. Describe a policy in plain English and the agent will create it.');
+    return { text: lines.join('\n') };
+  }
+
+  // Per-policy summary (compact table-like format)
+  for (const p of active) {
+    const rules = p.rules.map(r => describeRule(r));
+    const scopeLabel = p.scope.type === 'all_write' ? 'all write tools'
+      : p.scope.type === 'tools' ? (p.scope as any).tools?.join(', ')
+      : p.scope.type === 'categories' ? (p.scope as any).categories?.join(', ')
+      : p.scope.type;
+
+    lines.push(`**${p.name}**`);
+    lines.push(`  Scope: ${scopeLabel}`);
+    for (const r of rules) {
+      lines.push(`  Rule: ${r}`);
+    }
+
+    // Budget usage
+    const usage = store.getUsage?.(userId, p.id);
+    if (usage) {
+      for (const u of Array.isArray(usage) ? usage : []) {
+        if (u.spentUsd !== undefined && u.limitUsd !== undefined) {
+          const pct = Math.round((u.spentUsd / u.limitUsd) * 100);
+          const remaining = Math.max(0, u.limitUsd - u.spentUsd);
+          lines.push(`  Budget: $${u.spentUsd.toFixed(2)} / $${u.limitUsd} used (${pct}%, $${remaining.toFixed(2)} remaining)`);
+        }
+      }
+    }
+
+    // Delegation status (compact)
+    if (delegation && p.delegation) {
+      const d = p.delegation;
+      const chain = CHAIN_NAMES[d.chainId] ?? d.chainId;
+      const readiness = canRedeem(p.id);
+      const statusTag = readiness.ready ? 'READY' : 'NOT READY';
+
+      let expiryTag = '';
+      if (d.expiresAt) {
+        const remaining = new Date(d.expiresAt).getTime() - Date.now();
+        if (remaining <= 0) expiryTag = ' | EXPIRED';
+        else {
+          const h = Math.floor(remaining / 3_600_000);
+          expiryTag = h >= 24 ? ` | ${Math.floor(h / 24)}d remaining` : ` | ${h}h remaining`;
+        }
+      }
+
+      lines.push(`  Delegation: [${d.status.toUpperCase()}] on ${chain} | ${statusTag}${expiryTag}`);
+    } else if (delegation) {
+      lines.push('  Delegation: none (use `/delegate create ${p.name}`)');
+    }
+
+    lines.push('');
+  }
+
+  // Footer
+  lines.push('---');
+  lines.push('`/policies <name>` for details | `/delegate status` for on-chain state');
+
+  return { text: lines.join('\n') };
 }
 
 function setStatus(userId: string, name: string, status: 'active' | 'disabled') {

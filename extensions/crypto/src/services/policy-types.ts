@@ -297,8 +297,17 @@ export function describeRule(rule: PolicyRule): string {
       return `Require confirmation: for any action above $${rule.amountUsd} USD`;
     case 'max_amount':
       return `Hard limit: block any single action above $${rule.maxAmountUsd} USD`;
-    case 'erc20_limit':
-      return `ERC-20 limit: max ${rule.maxAmount} tokens (${rule.decimals} decimals) for ${rule.token}`;
+    case 'erc20_limit': {
+      const KNOWN_TOKENS: Record<string, string> = {
+        '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913': 'USDC',
+        '0xfde4c96c8593536e31f229ea8f37b2ada2699bb2': 'USDT',
+        '0x50c5725949a6f0c72e6c4a641f24049a917db0cb': 'DAI',
+        '0x4200000000000000000000000000000000000006': 'WETH',
+        '0xa1f72459dfa10bad200ac160ecd78c6b77a747be': 'CLAWNCH',
+      };
+      const symbol = KNOWN_TOKENS[rule.token.toLowerCase()] ?? `${rule.token.slice(0, 10)}...`;
+      return `ERC-20 limit: max ${rule.maxAmount} ${symbol}`;
+    }
   }
 }
 
