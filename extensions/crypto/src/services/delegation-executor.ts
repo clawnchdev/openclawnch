@@ -332,13 +332,16 @@ const SUPPORTED_EXTRACTORS: Record<string, ActionExtractor> = {
   // ── Tier 2: Known ABIs, deterministic args ───────────────────────────
 
   /**
-   * defi_lend tool — Aave V3 borrow/withdraw (no prior approval needed).
-   * Args: { action: 'borrow'|'withdraw'|'supply'|'repay', asset: string, amount: string }
+   * defi_lend tool — Aave V3 supply/borrow/repay/withdraw.
+   * Args: { action: 'supply'|'borrow'|'repay'|'withdraw', asset: string, amount: string }
+   *
+   * supply/repay require the Aave Pool to have ERC-20 approval for the asset.
+   * If approval is missing, the on-chain tx reverts (caught by gas simulation
+   * with a clear error). Most DeFi users have existing or infinite approvals.
    */
   defi_lend: async (args) => {
     const action = args.action as string | undefined;
-    // Only extract actions that don't require a prior approval tx
-    if (action !== 'borrow' && action !== 'withdraw') return null;
+    if (action !== 'borrow' && action !== 'withdraw' && action !== 'supply' && action !== 'repay') return null;
 
     const asset = args.asset as string | undefined;
     const amount = args.amount as string | undefined;
@@ -377,12 +380,34 @@ const SUPPORTED_EXTRACTORS: Record<string, ActionExtractor> = {
       return { target: AAVE_POOL, value: 0n, callData: `${sel}${p1}${p2}${p3}${p4}${p5}` as Hex };
     }
 
+    if (action === 'supply') {
+      // supply(address asset, uint256 amount, address onBehalfOf, uint16 referralCode)
+      // Selector: 0x617ba037
+      const sel = '0x617ba037';
+      const p1 = assetAddr.slice(2).toLowerCase().padStart(64, '0');
+      const p2 = amountWei.toString(16).padStart(64, '0');
+      const p3 = '0'.repeat(64); // onBehalfOf = delegator
+      const p4 = (0n).toString(16).padStart(64, '0'); // referralCode
+      return { target: AAVE_POOL, value: 0n, callData: `${sel}${p1}${p2}${p3}${p4}` as Hex };
+    }
+
+    if (action === 'repay') {
+      // repay(address asset, uint256 amount, uint256 interestRateMode, address onBehalfOf)
+      // Selector: 0x573ade81
+      const sel = '0x573ade81';
+      const p1 = assetAddr.slice(2).toLowerCase().padStart(64, '0');
+      const p2 = amountWei.toString(16).padStart(64, '0');
+      const p3 = (2n).toString(16).padStart(64, '0'); // variable rate
+      const p4 = '0'.repeat(64); // onBehalfOf = delegator
+      return { target: AAVE_POOL, value: 0n, callData: `${sel}${p1}${p2}${p3}${p4}` as Hex };
+    }
+
     // withdraw(address asset, uint256 amount, address to)
     // Selector: 0x69328dec
     const sel = '0x69328dec';
     const p1 = assetAddr.slice(2).toLowerCase().padStart(64, '0');
     const p2 = amountWei.toString(16).padStart(64, '0');
-    const p3 = '0'.repeat(64); // to = delegator (filled at execution)
+    const p3 = '0'.repeat(64); // to = delegator
     return { target: AAVE_POOL, value: 0n, callData: `${sel}${p1}${p2}${p3}` as Hex };
   },
 
@@ -476,12 +501,15 @@ const SUPPORTED_EXTRACTORS: Record<string, ActionExtractor> = {
   // ── Tier 3: Extractable but may need prior approval ──────────────────
 
   /**
-   * yield tool — ERC-4626 vault withdraw (no approval needed).
-   * Args: { action: 'withdraw', vault: address, amount: string }
+   * yield tool — ERC-4626 vault deposit/withdraw.
+   * Args: { action: 'deposit'|'withdraw', vault: address, amount: string }
+   *
+   * deposit requires the vault to have ERC-20 approval for the underlying asset.
+   * If approval is missing, gas simulation catches it.
    */
   yield: async (args) => {
     const action = args.action as string | undefined;
-    if (action !== 'withdraw') return null;
+    if (action !== 'withdraw' && action !== 'deposit') return null;
 
     const vault = args.vault as string | undefined;
     const amount = args.amount as string | undefined;
@@ -490,6 +518,14 @@ const SUPPORTED_EXTRACTORS: Record<string, ActionExtractor> = {
 
     const amountWei = parseTokenAmount(amount, 18); // ERC-4626 uses share decimals
     if (amountWei <= 0n) return null;
+
+    if (action === 'deposit') {
+      // deposit(uint256 assets, address receiver) — selector: 0x6e553f65
+      const sel = '0x6e553f65';
+      const p1 = amountWei.toString(16).padStart(64, '0');
+      const p2 = '0'.repeat(64); // receiver = delegator
+      return { target: vault as Address, value: 0n, callData: `${sel}${p1}${p2}` as Hex };
+    }
 
     // withdraw(uint256 assets, address receiver, address owner) — selector: 0xb460af94
     const sel = '0xb460af94';
