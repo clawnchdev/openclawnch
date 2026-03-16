@@ -72,6 +72,8 @@ export const delegateCommand = {
         return handleCreate(userId, rest, ctx);
       case 'revoke':
         return handleRevoke(userId, rest);
+      case 'revoke-all':
+        return handleRevokeAll(userId);
       case 'status':
         return showStatus(userId);
       case 'chains':
@@ -125,6 +127,7 @@ function showOverview(userId: string) {
   lines.push('**Commands:**');
   lines.push('  `/delegate create <name>` — compile a policy to a delegation');
   lines.push('  `/delegate revoke <name>` — revoke an on-chain delegation');
+  lines.push('  `/delegate revoke-all` — revoke ALL active delegations');
   lines.push('  `/delegate status` — detailed delegation status');
   lines.push('  `/delegate chains` — list supported chains');
 
@@ -308,6 +311,49 @@ async function handleRevoke(userId: string, name: string) {
     lines.push('');
     lines.push('The delegation can no longer be redeemed. On-chain enforcement disabled.');
   }
+
+  return { text: lines.join('\n') };
+}
+
+// ─── Revoke All ─────────────────────────────────────────────────────────
+
+async function handleRevokeAll(userId: string) {
+  const delegated = getDelegatedPolicies(userId);
+  const active = delegated.filter(p =>
+    p.delegation && p.delegation.status !== 'revoked',
+  );
+
+  if (active.length === 0) {
+    return { text: 'No active delegations to revoke.' };
+  }
+
+  const lines: string[] = [];
+  lines.push(`**Revoking ${active.length} delegation(s)...**`);
+  lines.push('');
+
+  let succeeded = 0;
+  let failed = 0;
+
+  for (const policy of active) {
+    try {
+      const result = await revokeByPolicy(policy, userId);
+      if ('error' in result) {
+        lines.push(`- **${policy.name}**: failed — ${result.error}`);
+        failed++;
+      } else {
+        const txInfo = 'txHash' in result ? ` (tx: ${result.txHash})` : ' (local only)';
+        lines.push(`- **${policy.name}**: revoked${txInfo}`);
+        succeeded++;
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      lines.push(`- **${policy.name}**: error — ${msg.slice(0, 100)}`);
+      failed++;
+    }
+  }
+
+  lines.push('');
+  lines.push(`Done. ${succeeded} revoked, ${failed} failed.`);
 
   return { text: lines.join('\n') };
 }

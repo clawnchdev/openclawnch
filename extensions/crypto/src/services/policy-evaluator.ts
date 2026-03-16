@@ -274,6 +274,12 @@ function evaluateRule(
       }
       return { action: 'allow' };
     }
+
+    case 'erc20_limit': {
+      // ERC-20 limits are enforced on-chain by ERC20TransferAmountEnforcer.
+      // At the app layer, allow the action — the caveat enforcer handles the cap.
+      return { action: 'allow' };
+    }
   }
 }
 

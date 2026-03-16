@@ -78,6 +78,36 @@ interface ActionExtractor {
   (args: Record<string, unknown>): Promise<ExecutionAction | null>;
 }
 
+// ─── Redemption Rate Limiter ────────────────────────────────────────────
+// Prevents gas-burning loops when a malfunctioning agent repeatedly
+// attempts to redeem a delegation that reverts.
+// Max 3 attempts per policy per 60 seconds. Resets on success.
+
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX_ATTEMPTS = 3;
+const _redemptionAttempts = new Map<string, number[]>();
+
+function isRateLimited(policyId: string): boolean {
+  const now = Date.now();
+  const attempts = _redemptionAttempts.get(policyId) ?? [];
+  const recent = attempts.filter(t => now - t < RATE_LIMIT_WINDOW_MS);
+  return recent.length >= RATE_LIMIT_MAX_ATTEMPTS;
+}
+
+function recordRedemptionAttempt(policyId: string): void {
+  const now = Date.now();
+  const attempts = _redemptionAttempts.get(policyId) ?? [];
+  // Prune old entries
+  const recent = attempts.filter(t => now - t < RATE_LIMIT_WINDOW_MS);
+  recent.push(now);
+  _redemptionAttempts.set(policyId, recent);
+}
+
+/** Clear rate limit for a policy (call on successful redemption). */
+export function clearRateLimit(policyId: string): void {
+  _redemptionAttempts.delete(policyId);
+}
+
 // ─── Well-Known Token Decimals ──────────────────────────────────────────
 // Avoids async on-chain calls for common tokens. Unknown tokens fall back
 // to 18 decimals (standard ERC-20 default).
@@ -549,7 +579,16 @@ export async function tryDelegationExecution(
     }
   }
 
+  // Gate 7: rate limiter — prevent gas-burning loops on repeated failures
+  if (isRateLimited(matchResult.policyId)) {
+    return {
+      executed: false,
+      skipReason: `Delegation ${matchResult.policyName} is rate-limited (too many recent attempts). Wait before retrying.`,
+    };
+  }
+
   // All gates passed — attempt redemption
+  recordRedemptionAttempt(matchResult.policyId);
   try {
     const result = await redeemDelegation(matchResult.policyId, executionAction);
 
@@ -557,6 +596,9 @@ export async function tryDelegationExecution(
       // Redemption failed — caller should fall back to normal execution
       return { executed: false, error: result.error };
     }
+
+    // Success — clear rate limit
+    clearRateLimit(matchResult.policyId);
 
     return {
       executed: true,

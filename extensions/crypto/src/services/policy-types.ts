@@ -87,7 +87,8 @@ export type PolicyRule =
   | BlocklistRule
   | TimeWindowRule
   | ApprovalThresholdRule
-  | MaxAmountRule;
+  | MaxAmountRule
+  | Erc20LimitRule;
 
 /** Cumulative spending cap over a time period. */
 export interface SpendingLimitRule {
@@ -129,6 +130,14 @@ export interface TimeWindowRule {
 export interface ApprovalThresholdRule {
   type: 'approval_threshold';
   amountUsd: number;
+}
+
+/** Cap cumulative ERC-20 transfer amount for a specific token. */
+export interface Erc20LimitRule {
+  type: 'erc20_limit';
+  token: string;       // ERC-20 contract address (0x...)
+  maxAmount: string;    // Human-readable amount (e.g., "100" for 100 USDC)
+  decimals: number;     // Token decimals (6 for USDC, 18 for DAI)
 }
 
 /** Hard block on any single transaction above a USD amount. */
@@ -288,6 +297,8 @@ export function describeRule(rule: PolicyRule): string {
       return `Require confirmation: for any action above $${rule.amountUsd} USD`;
     case 'max_amount':
       return `Hard limit: block any single action above $${rule.maxAmountUsd} USD`;
+    case 'erc20_limit':
+      return `ERC-20 limit: max ${rule.maxAmount} tokens (${rule.decimals} decimals) for ${rule.token}`;
   }
 }
 

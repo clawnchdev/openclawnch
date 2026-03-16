@@ -11,7 +11,7 @@
  * Uses viem's encodeAbiParameters for terms encoding. No external SDK needed.
  */
 
-import { encodeAbiParameters, type Address, type Hex } from 'viem';
+import { encodeAbiParameters, encodePacked, type Address, type Hex } from 'viem';
 import type { PolicyRule, Policy } from './policy-types.js';
 import {
   DELEGATION_CONTRACTS,
@@ -109,6 +109,9 @@ export function compileRuleToCaveats(rule: PolicyRule): CaveatMappingResult {
     case 'time_window':
       return compileTimeWindow(rule);
 
+    case 'erc20_limit':
+      return compileErc20Limit(rule);
+
     case 'blocklist':
       return {
         type: 'app_layer_only',
@@ -196,6 +199,49 @@ function compileMaxAmount(rule: { type: 'max_amount'; maxAmountUsd: number }): C
       {
         enforcer: DELEGATION_CONTRACTS.NativeTokenTransferAmountEnforcer,
         terms: nativeCapTerms,
+        args: '0x' as Hex,
+      },
+    ],
+  };
+}
+
+/**
+ * erc20_limit → ERC20TransferAmountEnforcer.
+ *
+ * Caps cumulative ERC-20 transfers for a specific token.
+ * Terms: encodePacked(address token, uint256 maxAmount) — 52 bytes.
+ * The enforcer tracks cumulative transfer(to, amount) calldata
+ * and reverts when the total exceeds the cap.
+ *
+ * Example: "max 100 USDC" becomes:
+ *   - ERC20TransferAmountEnforcer(USDC_address, 100_000_000)
+ */
+function compileErc20Limit(rule: { type: 'erc20_limit'; token: string; maxAmount: string; decimals: number }): CaveatMappingResult {
+  if (!rule.token || !/^0x[0-9a-fA-F]{40}$/.test(rule.token)) {
+    return { type: 'app_layer_only', reason: `Invalid token address: ${rule.token}` };
+  }
+
+  // Parse the human-readable amount to smallest unit
+  const [whole = '0', frac = ''] = rule.maxAmount.split('.');
+  const paddedFrac = (frac + '0'.repeat(rule.decimals)).slice(0, rule.decimals);
+  const amountSmallest = BigInt(whole + paddedFrac);
+
+  if (amountSmallest <= 0n) {
+    return { type: 'app_layer_only', reason: 'ERC-20 limit amount must be positive.' };
+  }
+
+  // ERC20TransferAmountEnforcer uses encodePacked(address, uint256) — 52 bytes
+  const terms = encodePacked(
+    ['address', 'uint256'],
+    [rule.token as Address, amountSmallest],
+  );
+
+  return {
+    type: 'mapped',
+    caveats: [
+      {
+        enforcer: DELEGATION_CONTRACTS.ERC20TransferAmountEnforcer,
+        terms,
         args: '0x' as Hex,
       },
     ],

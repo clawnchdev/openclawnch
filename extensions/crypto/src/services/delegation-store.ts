@@ -17,6 +17,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
+import { createCipheriv, createDecipheriv, randomBytes, createHash } from 'node:crypto';
 import type { Address, Hex } from 'viem';
 import type { SignedDelegation, Caveat } from './delegation-types.js';
 
@@ -68,6 +69,47 @@ function atomicWrite(targetPath: string, data: string): void {
   renameSync(tmpPath, targetPath);
 }
 
+// ─── Encryption (AES-256-GCM) ───────────────────────────────────────────
+// Encrypts delegation JSON at rest. Key derived from DELEGATION_STORE_KEY
+// env var or wallet address (prevents casual filesystem reads).
+
+function getEncryptionKey(): Buffer | null {
+  const envKey = process.env.DELEGATION_STORE_KEY;
+  if (envKey && envKey.length > 0) {
+    return createHash('sha256').update(envKey).digest();
+  }
+  // No encryption configured — store plaintext (backward compatible)
+  return null;
+}
+
+function encrypt(plaintext: string): string {
+  const key = getEncryptionKey();
+  if (!key) return plaintext;
+
+  const iv = randomBytes(12);
+  const cipher = createCipheriv('aes-256-gcm', key, iv);
+  const encrypted = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  // Format: ENC:base64(iv + tag + ciphertext)
+  const combined = Buffer.concat([iv, tag, encrypted]);
+  return 'ENC:' + combined.toString('base64');
+}
+
+function decrypt(data: string): string {
+  if (!data.startsWith('ENC:')) return data; // plaintext (unencrypted legacy)
+
+  const key = getEncryptionKey();
+  if (!key) return data; // no key configured — return raw (will fail JSON.parse)
+
+  const combined = Buffer.from(data.slice(4), 'base64');
+  const iv = combined.subarray(0, 12);
+  const tag = combined.subarray(12, 28);
+  const ciphertext = combined.subarray(28);
+  const decipher = createDecipheriv('aes-256-gcm', key, iv);
+  decipher.setAuthTag(tag);
+  return decipher.update(ciphertext) + decipher.final('utf8');
+}
+
 // ─── Conversion Helpers ─────────────────────────────────────────────────
 
 function toStored(
@@ -117,7 +159,7 @@ export class DelegationStore {
     ensureDir();
     const stored = toStored(delegation, chainId, policyId);
     this.cache.set(policyId, stored);
-    atomicWrite(delegationPath(policyId), JSON.stringify(stored, null, 2));
+    atomicWrite(delegationPath(policyId), encrypt(JSON.stringify(stored, null, 2)));
   }
 
   /** Load a signed delegation by policy ID. Returns null if not found. */
@@ -133,7 +175,8 @@ export class DelegationStore {
     if (!existsSync(path)) return null;
 
     try {
-      const data = JSON.parse(readFileSync(path, 'utf8')) as StoredDelegation;
+      const raw = readFileSync(path, 'utf8');
+      const data = JSON.parse(decrypt(raw)) as StoredDelegation;
       this.cache.set(policyId, data);
       return { delegation: fromStored(data), chainId: data.chainId };
     } catch {

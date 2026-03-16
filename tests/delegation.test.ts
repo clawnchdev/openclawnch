@@ -243,6 +243,34 @@ describe('Delegation Compiler — compileRuleToCaveats', () => {
     expect(result.type).toBe('app_layer_only');
   });
 
+  it('maps erc20_limit to ERC20TransferAmountEnforcer with encodePacked terms', async () => {
+    const { compileRuleToCaveats } = await import(
+      '../extensions/crypto/src/services/delegation-compiler.js'
+    );
+    const { DELEGATION_CONTRACTS } = await import(
+      '../extensions/crypto/src/services/delegation-types.js'
+    );
+
+    const result = compileRuleToCaveats({
+      type: 'erc20_limit',
+      token: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', // USDC
+      maxAmount: '100',
+      decimals: 6,
+    });
+
+    expect(result.type).toBe('mapped');
+    if (result.type === 'mapped') {
+      expect(result.caveats.length).toBe(1);
+      expect(result.caveats[0].enforcer).toBe(DELEGATION_CONTRACTS.ERC20TransferAmountEnforcer);
+      // encodePacked(address, uint256) = 52 bytes = '0x' + 104 hex chars
+      expect(result.caveats[0].terms.length).toBe(106); // '0x' + 104
+      // Verify the token address is in the first 20 bytes
+      expect(result.caveats[0].terms.slice(2, 42).toLowerCase()).toBe(
+        '833589fcd6edb6e08f4c7c32d4f71b54bda02913',
+      );
+    }
+  });
+
   it('returns app_layer_only for blocklist (no direct enforcer)', async () => {
     const { compileRuleToCaveats } = await import(
       '../extensions/crypto/src/services/delegation-compiler.js'
