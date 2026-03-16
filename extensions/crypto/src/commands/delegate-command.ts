@@ -390,6 +390,23 @@ async function showStatus(userId: string) {
       } else {
         lines.push(`  Redemption: NOT AVAILABLE (${redeemStatus.reason})`);
       }
+
+      // On-chain state (best-effort, non-blocking)
+      try {
+        const { checkDelegationsWithOnChain } = await import('../services/delegation-monitor.js');
+        const report = await checkDelegationsWithOnChain(userId);
+        const entry = report.health.find((h: any) => h.policyId === p.id);
+        if (entry?.onChain) {
+          const u = entry.onChain;
+          const parts: string[] = [];
+          if (u.nativeSpentWei !== null) parts.push(`ETH spent: ${Number(u.nativeSpentWei) / 1e18}`);
+          if (u.callCount !== null) parts.push(`calls: ${u.callCount}`);
+          if (u.driftDetected) parts.push(`DRIFT: ${u.driftDetails ?? 'local/on-chain mismatch'}`);
+          if (parts.length > 0) {
+            lines.push(`  On-chain: ${parts.join(', ')}`);
+          }
+        }
+      } catch { /* best-effort — skip if monitor unavailable */ }
     }
     lines.push('');
   }
