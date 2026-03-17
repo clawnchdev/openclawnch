@@ -44,7 +44,7 @@ RUN --mount=type=cache,target=/root/.npm \
 RUN --mount=type=cache,target=/root/.npm \
     DEST=/usr/local/lib/node_modules/@clawnch/openclawnch/node_modules && \
     mkdir -p "$DEST" && cd /tmp && mkdir _deps && cd _deps && \
-    for pkg in @uniswap/v4-sdk @uniswap/v3-sdk; do \
+    for pkg in @uniswap/v4-sdk @uniswap/v3-sdk @metamask/smart-accounts-kit; do \
       npm pack "$pkg" && \
       dir="$DEST/$pkg" && mkdir -p "$dir" && \
       tarball=$(ls *.tgz | tail -1) && \
