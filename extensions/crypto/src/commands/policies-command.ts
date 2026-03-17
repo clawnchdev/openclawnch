@@ -49,6 +49,8 @@ export const policiesCommand = {
     const name = parts.slice(1).join(' ');
 
     switch (sub) {
+      case 'create':
+        return createQuick(userId, name);
       case 'enable':
         return setStatus(userId, name, 'active');
       case 'disable':
@@ -63,6 +65,66 @@ export const policiesCommand = {
     }
   },
 };
+
+// ─── Quick Create ───────────────────────────────────────────────────────
+// /policies create <name> <amount>
+// Creates a max_amount policy directly without LLM.
+// Example: /policies create test-live 5
+
+function createQuick(userId: string, nameAndAmount: string) {
+  const parts = nameAndAmount.trim().split(/\s+/);
+  const name = parts[0];
+  const amountStr = parts[1];
+
+  if (!name || !amountStr) {
+    return { text: [
+      'Usage: /policies create <name> <max-usd>',
+      '',
+      'Example:',
+      '  /policies create test-live 5',
+      '  (blocks any tx over $5)',
+      '',
+      '  /policies create daily-cap 100',
+      '  (blocks any tx over $100)',
+    ].join('\n') };
+  }
+
+  const maxUsd = parseFloat(amountStr);
+  if (isNaN(maxUsd) || maxUsd <= 0) {
+    return { text: `Invalid amount: ${amountStr}. Use a positive number (USD).` };
+  }
+
+  const store = getPolicyStore();
+  const existing = store.getPolicyByName(userId, name);
+  if (existing) {
+    return { text: `Policy "${name}" already exists. Use /policies delete ${name} first.` };
+  }
+
+  const { randomUUID } = require('node:crypto');
+  const policy: Policy = {
+    id: randomUUID(),
+    name,
+    description: `Max $${maxUsd} per transaction`,
+    rules: [{ type: 'max_amount' as const, maxAmountUsd: maxUsd }],
+    scope: { type: 'all_write' as const },
+    status: 'active',
+    confirmedAt: Date.now(),
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    userId,
+  };
+
+  store.savePolicy(policy);
+
+  return { text: [
+    `**Policy "${name}" created and active.**`,
+    '',
+    `  Rule: block any tx over $${maxUsd}`,
+    '  Scope: all write operations',
+    '',
+    'Next: /delegate create ' + name,
+  ].join('\n') };
+}
 
 function listAll(userId: string) {
   const store = getPolicyStore();

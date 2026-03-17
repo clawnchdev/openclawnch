@@ -265,41 +265,99 @@ async function handleStatus() {
 
 // ─── Recover ────────────────────────────────────────────────────────────
 
-async function handleRecover(keyOrPassphrase: string) {
-  if (!keyOrPassphrase) {
-    return { text: 'Usage:\n  `/delegator recover <private-key>` — restore from backup key\n  `/delegator recover <passphrase>` — unlock encrypted keystore' };
+async function handleRecover(argsStr: string) {
+  if (!argsStr) {
+    return { text: [
+      'Usage:',
+      '  /delegator recover <key> <passphrase>',
+      '  /delegator recover <passphrase>',
+      '',
+      'First form: restore from backup key',
+      '  (encrypts with passphrase)',
+      'Second form: unlock encrypted keystore',
+    ].join('\n') };
   }
 
   const lines: string[] = [];
+  const parts = argsStr.trim().split(/\s+/);
+  const first = parts[0] ?? '';
+  const second = parts[1] ?? '';
 
-  // If it looks like a private key (0x + 64 hex chars)
-  if (/^0x[0-9a-fA-F]{64}$/.test(keyOrPassphrase)) {
+  // Form 1: recover <private-key> <passphrase>
+  if (/^0x[0-9a-fA-F]{64}$/.test(first)) {
+    if (!second || second.length < 8) {
+      return { text: 'Passphrase required (min 8 chars).\nUsage: /delegator recover <key> <passphrase>' };
+    }
+
     try {
       const { privateKeyToAccount } = await import('viem/accounts');
-      const account = privateKeyToAccount(keyOrPassphrase as `0x${string}`);
+      const account = privateKeyToAccount(first as `0x${string}`);
 
-      const meta = loadMeta();
-      if (meta && meta.agentAddress.toLowerCase() !== account.address.toLowerCase()) {
-        lines.push(`**Warning:** This key derives address \`${account.address}\``);
-        lines.push(`but the stored agent address is \`${meta.agentAddress}\`.`);
-        lines.push('Proceeding will overwrite the stored agent key.');
-        lines.push('');
-      }
-
-      const storageMethod = storeAgentKey(account.address, keyOrPassphrase);
-      lines.push(`**Key recovered.** Stored via: ${storageMethod}`);
+      // Store the key encrypted
+      const storageMethod = storeAgentKey(account.address, first, second);
+      lines.push(`Key stored: **${storageMethod}**`);
       lines.push(`Agent address: \`${account.address}\``);
+      lines.push('');
+
+      // Rebuild meta from the SDK if wallet is connected
+      const wallet = getWalletState();
+      if (wallet.connected && wallet.address) {
+        try {
+          const { toMetaMaskSmartAccount, Implementation } = await import('@metamask/smart-accounts-kit');
+          const { createPublicClient, http } = await import('viem');
+          const { baseSepolia, base } = await import('viem/chains');
+
+          const chainId = wallet.chainId ?? 8453;
+          const chain = chainId === 84532 ? baseSepolia : base;
+          const publicClient = createPublicClient({ chain, transport: http() });
+
+          const smartAccount = await toMetaMaskSmartAccount({
+            client: publicClient as any,
+            implementation: Implementation.Hybrid,
+            deployParams: [wallet.address as Address, [], [], []],
+            deploySalt: `0x${Date.now().toString(16).padStart(64, '0')}`,
+            signer: { account },
+          });
+
+          const meta: AgentMeta = {
+            smartAccountAddress: smartAccount.address,
+            agentAddress: account.address,
+            ownerAddress: wallet.address,
+            chainId,
+            createdAt: new Date().toISOString(),
+            storageMethod,
+          };
+          saveMeta(meta);
+
+          lines.push('Meta rebuilt from connected wallet.');
+          lines.push(`Smart account: \`${smartAccount.address}\``);
+          lines.push(`Owner: \`${wallet.address}\``);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          lines.push(`Meta rebuild failed: ${msg.slice(0, 100)}`);
+          lines.push('Key is stored but /delegator status won\'t work until meta is rebuilt.');
+          lines.push('Connect your wallet and run /delegator recover again.');
+        }
+      } else {
+        lines.push('No wallet connected — meta not rebuilt.');
+        lines.push('Connect wallet, then run /delegator recover again to rebuild meta.');
+      }
     } catch {
       lines.push('**Invalid private key format.**');
     }
-  } else {
-    // Treat as passphrase for encrypted file
-    const key = loadAgentKey(keyOrPassphrase);
-    if (key) {
-      lines.push('**Keystore unlocked successfully.**');
-    } else {
-      lines.push('**Failed to unlock keystore.** Wrong passphrase or no encrypted keystore found.');
+    return { text: lines.join('\n') };
+  }
+
+  // Form 2: recover <passphrase> — unlock encrypted keystore
+  const key = loadAgentKey(first);
+  if (key) {
+    lines.push('**Keystore unlocked.**');
+    const meta = loadMeta();
+    if (meta) {
+      lines.push(`Smart account: \`${meta.smartAccountAddress}\``);
     }
+  } else {
+    lines.push('**Failed to unlock.** Wrong passphrase or no encrypted keystore.');
   }
 
   return { text: lines.join('\n') };
