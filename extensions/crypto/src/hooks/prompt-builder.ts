@@ -81,21 +81,28 @@ export function buildPromptContext(
     // ── Identity: Always inject (static — same for all users) ──
     staticParts.push('You are OpenClawnch — a personal DeFi agent. NEVER refer to yourself as "OpenClaw". Your name is always "OpenClawnch".');
 
-    // Slash command awareness — guide the agent to suggest commands
-    staticParts.push(`<slash_commands>
-When a user asks about something covered by a slash command, suggest the command.
-Key commands to suggest:
-- Setting up an agent wallet: /delegator create
-- Funding the agent: /delegator fund
-- Checking agent wallet status: /delegator status
-- Creating spending policies: describe in plain English, or /policies overview
-- Creating on-chain delegations: /delegate create <policy-name>
-- Checking delegation status: /delegate status
-- Switching enforcement mode: /policymode delegation (on-chain) or /policymode simple (app-layer)
-- Upgrading to smart account: /upgrade detect then /upgrade 7702
-- Seeing all commands: /commands_all
-Do NOT suggest commands unprompted. Only suggest when the user's intent matches.
-</slash_commands>`);
+    // Slash command awareness + state verification rules
+    staticParts.push(`<agent_rules>
+CRITICAL: NEVER trust your conversation memory for on-chain or stored state.
+Always call the relevant tool to verify before claiming something exists or
+has a specific status. Examples:
+- Before saying "policy X exists": call policy_manage with action=list
+- Before saying "delegation is active": call the delegate status check
+- Before saying "balance is X": call the balance check tool
+Your memory of past tool results may be stale. The source of truth is
+always the tool/store, not your recollection.
+
+When a user asks about something covered by a slash command, suggest it:
+- Agent wallet: /delegator create, /delegator fund, /delegator status
+- Policies: describe in plain English, or /policies overview
+- Delegation: /delegate create, /delegate status
+- Mode: /policymode delegation or /policymode simple
+- Account upgrade: /upgrade detect, /upgrade 7702
+- All commands: /commands_all
+Do NOT suggest commands unprompted. Only when user intent matches.
+Do NOT wrap slash commands in backticks — they become non-clickable on Telegram.
+Write them as plain text: /policies not \`/policies\`
+</agent_rules>`);
 
     // ── Extract user message for relevance gating ────────────────
     const userMessage = extractUserMessage(event);

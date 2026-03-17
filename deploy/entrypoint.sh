@@ -14,6 +14,22 @@ if [ "$(id -u)" = "0" ]; then
   chown -R openclawnch:openclawnch /workspace 2>/dev/null || true
 fi
 
+# ── Persist .openclawnch data across deploys ────────────────────────────
+# Symlink ~/.openclawnch to /workspace/.openclawnch (persistent volume).
+# Policies, delegations, agent keystore survive container rebuilds.
+PERSIST_DIR="/workspace/.openclawnch"
+LINK_DIR="/home/openclawnch/.openclawnch"
+mkdir -p "$PERSIST_DIR"
+if [ -d "$LINK_DIR" ] && [ ! -L "$LINK_DIR" ]; then
+  # First deploy: move existing data to persistent volume
+  cp -a "$LINK_DIR/." "$PERSIST_DIR/" 2>/dev/null || true
+  rm -rf "$LINK_DIR"
+fi
+if [ ! -L "$LINK_DIR" ]; then
+  ln -sf "$PERSIST_DIR" "$LINK_DIR"
+fi
+chown -R openclawnch:openclawnch "$PERSIST_DIR" 2>/dev/null || true
+
 # ── Private key warning (autosign mode) ─────────────────────────────
 # If a private key is present, the user has opted into autosign mode.
 # Warn loudly but don't block — they can toggle /walletsign at runtime.
