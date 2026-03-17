@@ -22,6 +22,7 @@ import { parseSessionKey, extractSenderId } from '../services/channel-sender.js'
 import { getSkillRegistry } from '../services/skill-registry.js';
 import { getPolicyStore } from '../services/policy-store.js';
 import { describeRule, describeScope } from '../services/policy-types.js';
+import { getRecentCommands } from '../services/command-history.js';
 
 // ── Context Diet Constants ──────────────────────────────────────────────
 
@@ -154,29 +155,55 @@ Write them as plain text: /policies not \`/policies\`
         dynamicParts.push('Signing: WalletConnect. Transactions sent to phone wallet for approval.');
       }
 
-      // ── Active policies — enforce spending limits, approval rules ──
+      // ── Active policies — inject CURRENT state from disk into every prompt ──
+      // This is the source of truth. The LLM must NOT rely on conversation
+      // memory for policy state — only what's injected here.
       try {
         const policyStore = getPolicyStore();
-        const activePolicies = policyStore.getActivePolicies(userId);
+        let activePolicies = policyStore.getActivePolicies(userId);
+        // Fallback: if userId doesn't match the store, try finding the real one
+        if (activePolicies.length === 0 && userId) {
+          const altId = policyStore.findFirstUserWithPolicies?.();
+          if (altId && altId !== userId) {
+            activePolicies = policyStore.getActivePolicies(altId);
+          }
+        }
         if (activePolicies.length > 0) {
           const policyLines = activePolicies.map(p => {
-            // Sanitize policy name: strip control chars, cap length, prevent injection
             const safeName = p.name
-              .replace(/[\x00-\x1f\x7f]/g, '') // strip control characters
-              .replace(/[<>{}]/g, '')            // strip XML/template chars
-              .slice(0, 100);                    // cap length
+              .replace(/[\x00-\x1f\x7f]/g, '')
+              .replace(/[<>{}]/g, '')
+              .slice(0, 100);
             const rules = p.rules.map(r => describeRule(r)).join('; ');
             const scope = describeScope(p.scope);
             return `  - [Policy: ${safeName}]: ${rules}. Applies to: ${scope}`;
           });
           dynamicParts.push([
-            `ACTIVE POLICIES (${activePolicies.length}): These are hard-enforced before every write tool. You CANNOT bypass them.`,
+            `<current_policies>`,
+            `ACTIVE POLICIES (${activePolicies.length}): These are the ONLY policies that exist right now. This is read from disk, not from your memory.`,
             ...policyLines,
-            'If a user asks to do something that would violate a policy, tell them which policy blocks it BEFORE attempting the tool call.',
-            'To create/modify policies, use the policy_manage tool. ALWAYS show the user the exact rules and get explicit confirmation before activating.',
+            `If a user says a policy exists but it's NOT listed above, it does NOT exist. Do not claim otherwise.`,
+            `If no policies are listed above, there are NO active policies. Period.`,
+            `</current_policies>`,
+          ].join('\n'));
+        } else {
+          dynamicParts.push([
+            `<current_policies>`,
+            `NO ACTIVE POLICIES. Zero. None. This is read from disk right now.`,
+            `If a user asks you to create one, use the policy_manage tool with action=propose.`,
+            `If policy_manage is not available, tell them to use /policies create <name> <max-usd>`,
+            `</current_policies>`,
           ].join('\n'));
         }
-      } catch { /* best-effort — don't break prompt on policy errors */ }
+      } catch { /* best-effort */ }
+
+      // ── Recent slash command history — so the LLM sees what happened ──
+      try {
+        const cmdHistory = getRecentCommands(userId);
+        if (cmdHistory) {
+          dynamicParts.push(cmdHistory);
+        }
+      } catch { /* best-effort */ }
 
       // ── Context Diet: Sequential + Compound ops — only when relevant ──
       if (MULTI_STEP_KEYWORDS.test(userMessage)) {

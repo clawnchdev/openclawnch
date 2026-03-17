@@ -20,6 +20,7 @@
 
 import { getPolicyStore } from '../services/policy-store.js';
 import { isDelegationMode } from '../services/policy-types.js';
+import { recordCommand } from '../services/command-history.js';
 import {
   prepareDelegation,
   signDelegation,

@@ -18,6 +18,7 @@ import type { Policy } from '../services/policy-types.js';
 import { buildPolicyDisplay, renderPolicyDisplay } from '../services/policy-evaluator.js';
 import { formatDelegationStatus, canRedeem } from '../services/delegation-service.js';
 import { CHAIN_NAMES } from '../services/delegation-types.js';
+import { recordCommand } from '../services/command-history.js';
 
 export const policiesCommand = {
   name: 'policies',
@@ -28,41 +29,34 @@ export const policiesCommand = {
   handler: async (ctx?: any) => {
     const args = (ctx?.args ?? '').trim();
     const store = getPolicyStore();
-    // Extract userId — try multiple sources since command ctx may not
-    // have senderId (only tool calls get full message context on Telegram)
     const { extractPolicyUserId } = await import('../services/policy-evaluator.js');
     let userId = extractPolicyUserId(ctx);
-    // If 'owner' (default fallback), scan for the first userId that has policies
     if (userId === 'owner' && store.listPolicies('owner').length === 0) {
       const found = store.findFirstUserWithPolicies?.();
       if (found) userId = found;
     }
 
-    // No args: list all
+    let result: { text: string };
     if (!args) {
-      return listAll(userId);
+      result = listAll(userId);
+    } else {
+      const parts = args.split(/\s+/);
+      const sub = parts[0]!.toLowerCase();
+      const name = parts.slice(1).join(' ');
+
+      switch (sub) {
+        case 'create':  result = createQuick(userId, name); break;
+        case 'enable':  result = setStatus(userId, name, 'active'); break;
+        case 'disable': result = setStatus(userId, name, 'disabled'); break;
+        case 'delete':  result = deletePol(userId, name); break;
+        case 'overview': result = showOverview(userId); break;
+        default:        result = viewPolicy(userId, args); break;
+      }
     }
 
-    // Parse subcommand
-    const parts = args.split(/\s+/);
-    const sub = parts[0]!.toLowerCase();
-    const name = parts.slice(1).join(' ');
-
-    switch (sub) {
-      case 'create':
-        return createQuick(userId, name);
-      case 'enable':
-        return setStatus(userId, name, 'active');
-      case 'disable':
-        return setStatus(userId, name, 'disabled');
-      case 'delete':
-        return deletePol(userId, name);
-      case 'overview':
-        return showOverview(userId);
-      default:
-        // Treat as policy name lookup
-        return viewPolicy(userId, args);
-    }
+    // Record for LLM context injection
+    recordCommand(userId, `/policies ${args}`.trim(), result.text.slice(0, 150));
+    return result;
   },
 };
 

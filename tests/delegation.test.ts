@@ -438,19 +438,20 @@ describe('Delegation Compiler — compilePolicyToDelegation', () => {
     expect('type' in result && result.type === 'error').toBe(true);
   });
 
-  it('rejects unconfirmed policy', async () => {
+  it('accepts active policy without confirmedAt', async () => {
     const { compilePolicyToDelegation } = await import(
       '../extensions/crypto/src/services/delegation-compiler.js'
     );
 
     const result = compilePolicyToDelegation(
-      makePolicy({ confirmedAt: undefined }),
+      makePolicy({ confirmedAt: undefined, status: 'active' }),
       '0x1111111111111111111111111111111111111111',
       '0x2222222222222222222222222222222222222222',
       8453,
     );
 
-    expect('type' in result && result.type === 'error').toBe(true);
+    // Should succeed (not error) — confirmedAt is no longer required
+    expect('type' in result && result.type === 'error').toBe(false);
   });
 
   it('warns when all rules are app-layer only', async () => {
@@ -942,14 +943,14 @@ describe('Delegation Service — prepareDelegation', () => {
     store.deletePolicy('prepare-user', 'prepare-test');
   });
 
-  it('returns error for unconfirmed policy', async () => {
+  it('accepts active policy without confirmedAt', async () => {
     const { prepareDelegation } = await import(
       '../extensions/crypto/src/services/delegation-service.js'
     );
 
     const policy = {
-      id: 'unconfirmed-test',
-      name: 'Unconfirmed',
+      id: 'no-confirmed-test',
+      name: 'NoConfirm',
       description: 'test',
       rules: [{ type: 'max_amount' as const, maxAmountUsd: 100 }],
       scope: { type: 'all_write' as const },
@@ -959,8 +960,11 @@ describe('Delegation Service — prepareDelegation', () => {
       userId: 'owner',
     };
 
+    // Should not error — active policy is accepted without confirmedAt
     const result = await prepareDelegation({ policy, chainId: 8453 });
-    expect('error' in result).toBe(true);
+    // It may fail for other reasons (no wallet) but not for confirmedAt
+    const isConfirmError = 'error' in result && typeof result.error === 'string' && result.error.includes('confirmed');
+    expect(isConfirmError).toBe(false);
   });
 });
 

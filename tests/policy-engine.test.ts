@@ -643,18 +643,18 @@ describe('/policies command', () => {
     expect(store.getPolicy('user1', 'p1')!.status).toBe('active');
   });
 
-  it('enable rejects unconfirmed policy', async () => {
+  it('enable accepts policy without confirmedAt', async () => {
     const { policiesCommand } = await import('../extensions/crypto/src/commands/policies-command.js');
     const { getPolicyStore } = await import('../extensions/crypto/src/services/policy-store.js');
     const store = getPolicyStore();
     store.savePolicy({
       id: 'p1', name: 'my limit', description: 'test',
       rules: [], scope: { type: 'all_write' },
-      status: 'draft', createdAt: Date.now(), updatedAt: Date.now(), userId: 'user1',
+      status: 'disabled', createdAt: Date.now(), updatedAt: Date.now(), userId: 'user1',
     });
     const result = await policiesCommand.handler({ senderId: 'user1', args: 'enable my limit' });
-    expect(result.text).toContain('never been confirmed');
-    expect(store.getPolicy('user1', 'p1')!.status).toBe('draft');
+    expect(result.text).toContain('enabled');
+    expect(store.getPolicy('user1', 'p1')!.status).toBe('active');
   });
 });
 
@@ -878,7 +878,7 @@ describe('P1: handleEnable draft guard', () => {
 
   afterEach(() => { try { rmSync(TEST_HOME, { recursive: true, force: true }); } catch {} });
 
-  it('enable rejects unconfirmed policy (tool)', async () => {
+  it('enable accepts policy without confirmedAt (tool)', async () => {
     const { createPolicyManageTool } = await import('../extensions/crypto/src/tools/policy-manage.js');
     const { getPolicyStore } = await import('../extensions/crypto/src/services/policy-store.js');
     const tool = createPolicyManageTool();
@@ -888,13 +888,11 @@ describe('P1: handleEnable draft guard', () => {
       rules: [{ type: 'max_amount', maxAmountUsd: 100 }],
       scope: { type: 'all_write' },
       status: 'disabled', createdAt: Date.now(), updatedAt: Date.now(), userId: 'user1',
-      // no confirmedAt
     });
     const result = await tool.execute('tc1', {
       action: 'enable', policyId: 'p1',
     }, { senderId: 'user1' });
-    expect(result.isError).toBe(true);
-    expect(result.content[0].text).toContain('never been confirmed');
+    expect(result.content[0].text).toContain('active');
   });
 
   it('confirm sets confirmedAt', async () => {
