@@ -22,7 +22,14 @@ import {
 } from '../services/agent-keystore.js';
 import { getWalletState } from '../services/walletconnect-service.js';
 import { CHAIN_NAMES } from '../services/delegation-types.js';
+import { createHash } from 'node:crypto';
 import type { Address } from 'viem';
+
+/** Deterministic salt from owner + agent addresses. Same inputs = same smart account address. */
+function deterministicSalt(owner: string, agent: string): `0x${string}` {
+  const hash = createHash('sha256').update(`${owner.toLowerCase()}:${agent.toLowerCase()}`).digest('hex');
+  return `0x${hash}` as `0x${string}`;
+}
 
 export const agentAccountCommand = {
   name: 'delegator',
@@ -141,7 +148,7 @@ async function handleCreate(passphrase: string) {
       client: publicClient as any,
       implementation: Implementation.Hybrid,
       deployParams: [wallet.address as Address, [], [], []],
-      deploySalt: `0x${Date.now().toString(16).padStart(64, '0')}`,
+      deploySalt: deterministicSalt(wallet.address, agentAccount.address),
       signer: { account: agentAccount },
     });
 
@@ -315,7 +322,7 @@ async function handleRecover(argsStr: string) {
             client: publicClient as any,
             implementation: Implementation.Hybrid,
             deployParams: [wallet.address as Address, [], [], []],
-            deploySalt: `0x${Date.now().toString(16).padStart(64, '0')}`,
+            deploySalt: deterministicSalt(wallet.address, account.address),
             signer: { account },
           });
 
