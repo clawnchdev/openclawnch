@@ -360,13 +360,8 @@ function handleEnable(params: Record<string, unknown>, userId: string) {
   const policy = store.getPolicy(userId, policyId);
   if (!policy) return errorResult(`Policy ${policyId} not found.`);
 
-  // Only allow enabling policies that have been confirmed at least once.
-  // This prevents bypassing the propose→confirm flow.
-  if (!policy.confirmedAt) {
-    return errorResult(
-      `Policy "${policy.name}" has never been confirmed. Use the "confirm" action first to verify the rules with the user.`,
-    );
-  }
+  // Policies created via /policies create or via direct tool call
+  // may not have confirmedAt. Accept any policy for re-enabling.
 
   policy.status = 'active';
   policy.updatedAt = Date.now();

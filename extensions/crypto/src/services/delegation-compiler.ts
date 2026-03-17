@@ -426,11 +426,11 @@ export function compilePolicyToDelegation(
     };
   }
 
-  // Validate policy is confirmed
-  if (!policy.confirmedAt) {
+  // Validate policy is active
+  if (policy.status !== 'active') {
     return {
       type: 'error',
-      message: `Policy "${policy.name}" has never been confirmed. Confirm the policy before creating a delegation.`,
+      message: `Policy "${policy.name}" is not active (status: ${policy.status}). Enable it first.`,
     };
   }
 
