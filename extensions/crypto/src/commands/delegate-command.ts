@@ -169,10 +169,11 @@ async function handleCreate(userId: string, nameAndArgs: string, ctx?: any) {
     return { text: `Policy "${policyName}" not found. Use \`/policies\` to list your policies.` };
   }
 
-  // Check policy is active and confirmed
-  if (!policy.confirmedAt) {
+  // Check policy is active — accept if status is 'active' even without confirmedAt
+  // (covers policies created via /policies create or via LLM tool)
+  if (policy.status !== 'active') {
     return {
-      text: `Policy **${policy.name}** has never been confirmed. Confirm the policy first before creating a delegation.`,
+      text: `Policy **${policy.name}** is not active (status: ${policy.status}). Enable it first: /policies enable ${policy.name}`,
     };
   }
 
