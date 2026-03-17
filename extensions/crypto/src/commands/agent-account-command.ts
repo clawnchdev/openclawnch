@@ -125,9 +125,8 @@ async function handleCreate(passphrase: string) {
     const agentPrivateKey = generatePrivateKey();
     const agentAccount = privateKeyToAccount(agentPrivateKey);
 
-    lines.push(`Agent address: \`${agentAccount.address}\``);
-    lines.push(`Owner (you): \`${wallet.address}\``);
     lines.push(`Chain: ${CHAIN_NAMES[chainId] ?? chainId}`);
+    lines.push(`Owner (you): \`${wallet.address}\``);
     lines.push('');
 
     // 2. Deploy HybridDeleGator via SDK
@@ -146,9 +145,6 @@ async function handleCreate(passphrase: string) {
       signer: { account: agentAccount },
     });
 
-    lines.push(`Smart account: \`${smartAccount.address}\``);
-    lines.push('');
-
     // 3. Store the key securely
     const storageMethod = storeAgentKey(agentAccount.address, agentPrivateKey, passphrase || undefined);
 
@@ -163,26 +159,33 @@ async function handleCreate(passphrase: string) {
     };
     saveMeta(meta);
 
-    lines.push(`Key stored via: **${storageMethod}**`);
+    // 5. Clear output with labeled addresses
+    lines.push('**FUND THIS ADDRESS (smart account):**');
+    lines.push(`\`${smartAccount.address}\``);
+    lines.push('This is where the agent operates.');
+    lines.push('Only funds here are used by the agent.');
+    lines.push('');
+    lines.push(`Agent signer: \`${agentAccount.address}\``);
+    lines.push('(pays gas for delegation txs — needs small ETH amount)');
+    lines.push('');
+    lines.push(`Key stored: **${storageMethod}**`);
     lines.push('');
 
-    // 5. Show recovery key ONCE
+    // 6. Show recovery key ONCE
     lines.push('---');
-    lines.push('**RECOVERY KEY — SAVE THIS NOW. IT WILL NOT BE SHOWN AGAIN.**');
+    lines.push('**RECOVERY KEY — SAVE NOW**');
+    lines.push('This recovers the agent signer.');
+    lines.push('Your owner wallet recovers the');
+    lines.push('smart account itself.');
     lines.push('');
     lines.push(`\`${agentPrivateKey}\``);
     lines.push('');
-    lines.push('If you lose access to this key and the keystore, you can still');
-    lines.push('withdraw funds using your owner wallet directly on the smart account.');
-    lines.push('But the agent will not be able to execute autonomously.');
+    lines.push('Will not be shown again.');
     lines.push('---');
     lines.push('');
-    lines.push('**Next step:** Fund the agent account:');
-    lines.push(`Send ETH to \`${smartAccount.address}\``);
-    lines.push('Then create a policy and delegation: `/delegate create <policy-name>`');
-    lines.push('');
-    lines.push('Note: if the gateway restarts after this operation (config reload),');
-    lines.push('wait ~30 seconds and try `/delegator status` to confirm everything is saved.');
+    lines.push('**Next:** send ETH to the smart');
+    lines.push('account address above, then:');
+    lines.push('`/delegate create <policy-name>`');
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     lines.push(`**Creation failed:** ${msg.slice(0, 200)}`);
@@ -200,13 +203,21 @@ function handleFund() {
   const lines: string[] = [];
   lines.push('**Fund the Agent Account**');
   lines.push('');
-  lines.push(`Send ETH or tokens to:`);
+  lines.push('Send ETH or tokens to the');
+  lines.push('**smart account** (not the agent');
+  lines.push('signer address):');
+  lines.push('');
   lines.push(`\`${meta.smartAccountAddress}\``);
   lines.push('');
   lines.push(`Chain: ${CHAIN_NAMES[meta.chainId] ?? meta.chainId}`);
   lines.push('');
-  lines.push('Only send what you want the agent to manage.');
-  lines.push('You can withdraw at any time using your owner wallet.');
+  lines.push('Only send what you want the');
+  lines.push('agent to manage. Withdraw');
+  lines.push('anytime via your owner wallet.');
+  lines.push('');
+  lines.push('The agent signer also needs a');
+  lines.push('small amount of ETH for gas:');
+  lines.push(`\`${meta.agentAddress}\``);
 
   return { text: lines.join('\n') };
 }

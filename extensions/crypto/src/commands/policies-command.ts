@@ -27,7 +27,9 @@ export const policiesCommand = {
 
   handler: async (ctx?: any) => {
     const args = (ctx?.args ?? '').trim();
-    const userId = ctx?.senderId ?? ctx?.from ?? 'owner';
+    // Use the same userId extraction as the policy_manage tool
+    const { extractPolicyUserId } = await import('../services/policy-evaluator.js');
+    const userId = extractPolicyUserId(ctx);
     const store = getPolicyStore();
 
     // No args: list all

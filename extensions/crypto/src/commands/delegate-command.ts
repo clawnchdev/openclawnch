@@ -55,7 +55,8 @@ export const delegateCommand = {
     }
 
     const args = (ctx?.args ?? '').trim();
-    const userId = ctx?.senderId ?? ctx?.from ?? 'owner';
+    const { extractPolicyUserId } = await import('../services/policy-evaluator.js');
+    const userId = extractPolicyUserId(ctx);
 
     // No args: show overview
     if (!args) {
