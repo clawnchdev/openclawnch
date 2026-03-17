@@ -52,10 +52,9 @@ RUN --mount=type=cache,target=/root/.npm \
       rm "$tarball"; \
     done && \
     rm -rf /tmp/_deps
-# MetaMask Smart Accounts Kit has transitive deps — use npm install
+# MetaMask Smart Accounts Kit — install globally (has transitive deps)
 RUN --mount=type=cache,target=/root/.npm \
-    cd /usr/local/lib/node_modules/@clawnch/openclawnch && \
-    npm install --no-save @metamask/smart-accounts-kit@0.4.0-beta.1 2>/dev/null || true
+    npm install -g @metamask/smart-accounts-kit@0.4.0-beta.1
 
 # ── Layer 4: Dirs, config, entrypoint (tiny, always rebuilt) ─────────
 # Create non-root user for security
