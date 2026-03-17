@@ -102,9 +102,11 @@ function loadFromKeychain(agentAddress: string): string | null {
 // ─── Encrypted File Storage ─────────────────────────────────────────────
 
 function deriveFileKey(passphrase: string): Buffer {
-  // scrypt with strong params: N=2^17, r=8, p=1
+  // scrypt with strong params: N=2^17, r=8, p=1, maxmem=256MB
+  // Default OpenSSL maxmem is 32MB which is too low for N=2^17.
   return scryptSync(passphrase, 'openclawnch-agent-salt-v1', 32, {
     N: 131072, r: 8, p: 1,
+    maxmem: 256 * 1024 * 1024,
   });
 }
 
