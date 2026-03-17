@@ -27,10 +27,16 @@ export const policiesCommand = {
 
   handler: async (ctx?: any) => {
     const args = (ctx?.args ?? '').trim();
-    // Use the same userId extraction as the policy_manage tool
-    const { extractPolicyUserId } = await import('../services/policy-evaluator.js');
-    const userId = extractPolicyUserId(ctx);
     const store = getPolicyStore();
+    // Extract userId — try multiple sources since command ctx may not
+    // have senderId (only tool calls get full message context on Telegram)
+    const { extractPolicyUserId } = await import('../services/policy-evaluator.js');
+    let userId = extractPolicyUserId(ctx);
+    // If 'owner' (default fallback), scan for the first userId that has policies
+    if (userId === 'owner' && store.listPolicies('owner').length === 0) {
+      const found = store.findFirstUserWithPolicies?.();
+      if (found) userId = found;
+    }
 
     // No args: list all
     if (!args) {

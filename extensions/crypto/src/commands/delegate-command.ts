@@ -56,7 +56,14 @@ export const delegateCommand = {
 
     const args = (ctx?.args ?? '').trim();
     const { extractPolicyUserId } = await import('../services/policy-evaluator.js');
-    const userId = extractPolicyUserId(ctx);
+    let userId = extractPolicyUserId(ctx);
+    if (userId === 'owner') {
+      const store = getPolicyStore();
+      if (store.listPolicies('owner').length === 0) {
+        const found = store.findFirstUserWithPolicies();
+        if (found) userId = found;
+      }
+    }
 
     // No args: show overview
     if (!args) {

@@ -7,7 +7,7 @@
  *     usage.json      — array of PolicyUsage (rolling window, pruned on load)
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, chmodSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, chmodSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import type { Policy, PolicyUsage, UsageEntry } from './policy-types.js';
@@ -59,6 +59,21 @@ export class PolicyStore {
   /** Check if the store is corrupted for a user (fail-closed). */
   isCorrupted(userId: string): boolean {
     return this._corrupted.has(userId);
+  }
+
+  /** Find the first userId directory that has policies (for command fallback). */
+  findFirstUserWithPolicies(): string | null {
+    try {
+      const dirs = existsSync(BASE_DIR)
+        ? readdirSync(BASE_DIR).filter((d: string) => {
+            const p = join(BASE_DIR, d, 'policies.json');
+            return existsSync(p);
+          })
+        : [];
+      return dirs[0] ?? null;
+    } catch {
+      return null;
+    }
   }
 
   /** Load all policies for a user. */
