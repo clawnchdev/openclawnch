@@ -98,6 +98,17 @@ async function handleCreate(passphrase: string) {
     return { text: lines.join('\n') };
   }
 
+  // Always require a passphrase — the key must be persisted encrypted
+  if (!passphrase || passphrase.length < 8) {
+    lines.push('**Passphrase required.**');
+    lines.push('');
+    lines.push('Usage: `/delegator create <passphrase>`');
+    lines.push('');
+    lines.push('The passphrase encrypts the agent private key on disk.');
+    lines.push('Use at least 8 characters. You will need it to unlock the keystore after restarts.');
+    return { text: lines.join('\n') };
+  }
+
   const wallet = getWalletState();
   if (!wallet.connected || !wallet.address) {
     return { text: 'Connect a wallet first. The connected wallet becomes the owner of the agent account.' };
@@ -153,10 +164,6 @@ async function handleCreate(passphrase: string) {
     saveMeta(meta);
 
     lines.push(`Key stored via: **${storageMethod}**`);
-    if (storageMethod === 'memory') {
-      lines.push('**WARNING:** Key is only in memory. It will be lost on restart.');
-      lines.push('Run `/delegator create <passphrase>` with a passphrase to persist it.');
-    }
     lines.push('');
 
     // 5. Show recovery key ONCE
