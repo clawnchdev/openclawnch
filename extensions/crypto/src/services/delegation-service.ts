@@ -209,8 +209,42 @@ export async function signDelegation(
 ): Promise<{ signed: SignedDelegation } | { error: string }> {
   const wallet = await getWallet();
 
+  // Try agent keystore first — the agent key signs delegations
+  // (the connected wallet is the owner, not the signer for delegations)
+  try {
+    const { loadAgentKey } = await import('./agent-keystore.js');
+    const agentKey = loadAgentKey();
+    if (agentKey) {
+      const { privateKeyToAccount } = await import('viem/accounts');
+      const { createWalletClient, http } = await import('viem');
+      const { base, baseSepolia } = await import('viem/chains');
+
+      const account = privateKeyToAccount(agentKey as `0x${string}`);
+      const chain = chainId === 84532 ? baseSepolia : base;
+      const agentWallet = createWalletClient({ account, chain, transport: http() });
+
+      const domain = getDelegationDomain(chainId);
+      const sig = await agentWallet.signTypedData({
+        domain,
+        types: DELEGATION_EIP712_TYPES,
+        primaryType: 'Delegation',
+        message: {
+          delegate: unsigned.delegate,
+          delegator: unsigned.delegator,
+          authority: unsigned.authority,
+          caveats: unsigned.caveats.map(c => ({ enforcer: c.enforcer, terms: c.terms })),
+          salt: unsigned.salt,
+        },
+      });
+
+      return {
+        signed: { ...unsigned, signature: sig } as SignedDelegation,
+      };
+    }
+  } catch { /* agent key not available — fall through to wallet signing */ }
+
   if (wallet.mode === 'none' || !wallet.address) {
-    return { error: 'No wallet connected. Use /connect or set CLAWNCHER_PRIVATE_KEY.' };
+    return { error: 'No wallet connected and no agent key available. Use /connect, set CLAWNCHER_PRIVATE_KEY, or run /delegator create.' };
   }
 
   const domain = getDelegationDomain(chainId);
@@ -221,7 +255,6 @@ export async function signDelegation(
     caveats: unsigned.caveats.map(c => ({
       enforcer: c.enforcer,
       terms: c.terms,
-      args: c.args,
     })),
     salt: unsigned.salt,
   };
