@@ -44,7 +44,7 @@ RUN --mount=type=cache,target=/root/.npm \
 RUN --mount=type=cache,target=/root/.npm \
     DEST=/usr/local/lib/node_modules/@clawnch/openclawnch/node_modules && \
     mkdir -p "$DEST" && cd /tmp && mkdir _deps && cd _deps && \
-    for pkg in @uniswap/v4-sdk @uniswap/v3-sdk @metamask/smart-accounts-kit; do \
+    for pkg in @uniswap/v4-sdk @uniswap/v3-sdk; do \
       npm pack "$pkg" && \
       dir="$DEST/$pkg" && mkdir -p "$dir" && \
       tarball=$(ls *.tgz | tail -1) && \
@@ -52,6 +52,10 @@ RUN --mount=type=cache,target=/root/.npm \
       rm "$tarball"; \
     done && \
     rm -rf /tmp/_deps
+# MetaMask Smart Accounts Kit has transitive deps — use npm install
+RUN --mount=type=cache,target=/root/.npm \
+    cd /usr/local/lib/node_modules/@clawnch/openclawnch && \
+    npm install --no-save @metamask/smart-accounts-kit@0.4.0-beta.1 2>/dev/null || true
 
 # ── Layer 4: Dirs, config, entrypoint (tiny, always rebuilt) ─────────
 # Create non-root user for security
