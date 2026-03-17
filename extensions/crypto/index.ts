@@ -172,6 +172,7 @@ import { delegateCommand } from './src/commands/delegate-command.js';
 import { policymodeCommand } from './src/commands/policymode-command.js';
 import { profileCommand } from './src/commands/profile-command.js';
 import { upgradeCommand } from './src/commands/upgrade-command.js';
+import { agentAccountCommand } from './src/commands/agent-account-command.js';
 import { tryDelegationExecution } from './src/services/delegation-executor.js';
 
 // Typing indicator — Telegram "typing..." action during agent thinking
@@ -575,6 +576,7 @@ const plugin = {
     api.registerCommand(policymodeCommand);
     api.registerCommand(profileCommand);
     api.registerCommand(upgradeCommand);
+    api.registerCommand(agentAccountCommand);
 
     // ─── Gateway Startup Hook ──────────────────────────────────────
     // Only init wallet at boot for private key mode (headless).

@@ -13,7 +13,7 @@
  *   6.  /policies command: list, view, enable, disable, delete
  *   7.  extractActionContext: field extraction from tool args
  *   8.  renderPolicyDisplay: both NL description and structured rules shown
- *   9.  Plugin registers 45 tools and 112 commands (V6: +1 tool, +1 command; V7: +3 commands)
+ *   9.  Plugin registers 45 tools and 113 commands (V6: +1 tool, +1 command; V7: +3 commands)
  *   10. Tool config has 39 entries (V6: +1 policy_manage)
  */
 
@@ -1072,7 +1072,7 @@ describe('V6 Plugin Registration', () => {
     expect(tools.find(t => t.name === 'policy_manage')).toBeDefined();
   });
 
-  it('registers 112 commands including /policies, /delegate, /policymode, /profile, and /upgrade', { timeout: 15000 }, async () => {
+  it('registers 113 commands including /policies, /delegate, /policymode, /profile, and /upgrade', { timeout: 15000 }, async () => {
     const commands: any[] = [];
     const mockApi = {
       registerTool: () => {},
@@ -1082,7 +1082,7 @@ describe('V6 Plugin Registration', () => {
     };
     const { default: plugin } = await import('../extensions/crypto/index.js');
     plugin.register(mockApi as any);
-    expect(commands).toHaveLength(112);
+    expect(commands).toHaveLength(113);
     expect(commands.find(c => c.name === 'policies')).toBeDefined();
     expect(commands.find(c => c.name === 'delegate')).toBeDefined();
     expect(commands.find(c => c.name === 'policymode')).toBeDefined();
