@@ -1,11 +1,11 @@
 /**
- * /agent — Agent account lifecycle management.
+ * /vault — Agent account lifecycle management.
  *
  * Subcommands:
- *   /agent create    — deploy a HybridDeleGator smart account
- *   /agent fund      — show the agent account address for funding
- *   /agent status    — show balance, delegation status, account info
- *   /agent recover   — restore agent key from backup
+ *   /vault create    — deploy a HybridDeleGator smart account
+ *   /vault fund      — show the agent account address for funding
+ *   /vault status    — show balance, delegation status, account info
+ *   /vault recover   — restore agent key from backup
  *
  * The agent account is a HybridDeleGator smart account owned by the user.
  * The agent holds a delegate key for autonomous execution within policy limits.
@@ -25,8 +25,8 @@ import { CHAIN_NAMES } from '../services/delegation-types.js';
 import type { Address } from 'viem';
 
 export const agentAccountCommand = {
-  name: 'agent',
-  description: 'Agent account management: /agent [create|fund|status|recover]',
+  name: 'vault',
+  description: 'Agent vault (smart account) management: /vault [create|fund|status|recover]',
   acceptsArgs: true,
   requireAuth: true,
 
@@ -59,13 +59,13 @@ function showOverview() {
   if (!meta) {
     lines.push('**No agent account configured.**');
     lines.push('');
-    lines.push('Create one with `/agent create` — this deploys a smart account');
+    lines.push('Create one with `/vault create` — this deploys a smart account');
     lines.push('that the agent uses for autonomous on-chain execution.');
     lines.push('You fund it with a specific amount; only those funds are at risk.');
     lines.push('');
     lines.push('**Commands:**');
-    lines.push('  `/agent create` — deploy a new agent smart account');
-    lines.push('  `/agent recover <private-key>` — restore from a backup key');
+    lines.push('  `/vault create` — deploy a new agent smart account');
+    lines.push('  `/vault recover <private-key>` — restore from a backup key');
   } else {
     lines.push('**Agent Account**');
     lines.push('');
@@ -77,8 +77,8 @@ function showOverview() {
     lines.push(`  Created: ${meta.createdAt}`);
     lines.push('');
     lines.push('**Commands:**');
-    lines.push('  `/agent fund` — show address to send funds to');
-    lines.push('  `/agent status` — balance and delegation details');
+    lines.push('  `/vault fund` — show address to send funds to');
+    lines.push('  `/vault status` — balance and delegation details');
   }
 
   return { text: lines.join('\n') };
@@ -94,7 +94,7 @@ async function handleCreate(passphrase: string) {
     lines.push('**Agent account already exists.**');
     lines.push(`  Smart account: \`${meta.smartAccountAddress}\``);
     lines.push(`  Agent address: \`${meta.agentAddress}\``);
-    lines.push('Use `/agent status` to check it, or `/agent fund` to add funds.');
+    lines.push('Use `/vault status` to check it, or `/vault fund` to add funds.');
     return { text: lines.join('\n') };
   }
 
@@ -155,7 +155,7 @@ async function handleCreate(passphrase: string) {
     lines.push(`Key stored via: **${storageMethod}**`);
     if (storageMethod === 'memory') {
       lines.push('**WARNING:** Key is only in memory. It will be lost on restart.');
-      lines.push('Run `/agent create <passphrase>` with a passphrase to persist it.');
+      lines.push('Run `/vault create <passphrase>` with a passphrase to persist it.');
     }
     lines.push('');
 
@@ -173,6 +173,9 @@ async function handleCreate(passphrase: string) {
     lines.push('**Next step:** Fund the agent account:');
     lines.push(`Send ETH to \`${smartAccount.address}\``);
     lines.push('Then create a policy and delegation: `/delegate create <policy-name>`');
+    lines.push('');
+    lines.push('Note: if the gateway restarts after this operation (config reload),');
+    lines.push('wait ~30 seconds and try `/vault status` to confirm everything is saved.');
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     lines.push(`**Creation failed:** ${msg.slice(0, 200)}`);
@@ -185,7 +188,7 @@ async function handleCreate(passphrase: string) {
 
 function handleFund() {
   const meta = loadMeta();
-  if (!meta) return { text: 'No agent account. Run `/agent create` first.' };
+  if (!meta) return { text: 'No agent account. Run `/vault create` first.' };
 
   const lines: string[] = [];
   lines.push('**Fund the Agent Account**');
@@ -205,7 +208,7 @@ function handleFund() {
 
 async function handleStatus() {
   const meta = loadMeta();
-  if (!meta) return { text: 'No agent account. Run `/agent create` first.' };
+  if (!meta) return { text: 'No agent account. Run `/vault create` first.' };
 
   const lines: string[] = [];
   lines.push('**Agent Account Status**');
@@ -246,7 +249,7 @@ async function handleStatus() {
 
 async function handleRecover(keyOrPassphrase: string) {
   if (!keyOrPassphrase) {
-    return { text: 'Usage:\n  `/agent recover <private-key>` — restore from backup key\n  `/agent recover <passphrase>` — unlock encrypted keystore' };
+    return { text: 'Usage:\n  `/vault recover <private-key>` — restore from backup key\n  `/vault recover <passphrase>` — unlock encrypted keystore' };
   }
 
   const lines: string[] = [];
