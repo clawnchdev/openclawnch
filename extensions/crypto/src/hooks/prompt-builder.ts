@@ -81,6 +81,22 @@ export function buildPromptContext(
     // ── Identity: Always inject (static — same for all users) ──
     staticParts.push('You are OpenClawnch — a personal DeFi agent. NEVER refer to yourself as "OpenClaw". Your name is always "OpenClawnch".');
 
+    // Slash command awareness — guide the agent to suggest commands
+    staticParts.push(`<slash_commands>
+When a user asks about something covered by a slash command, suggest the command.
+Key commands to suggest:
+- Setting up an agent wallet: /delegator create
+- Funding the agent: /delegator fund
+- Checking agent wallet status: /delegator status
+- Creating spending policies: describe in plain English, or /policies overview
+- Creating on-chain delegations: /delegate create <policy-name>
+- Checking delegation status: /delegate status
+- Switching enforcement mode: /policymode delegation (on-chain) or /policymode simple (app-layer)
+- Upgrading to smart account: /upgrade detect then /upgrade 7702
+- Seeing all commands: /commands_all
+Do NOT suggest commands unprompted. Only suggest when the user's intent matches.
+</slash_commands>`);
+
     // ── Extract user message for relevance gating ────────────────
     const userMessage = extractUserMessage(event);
 
