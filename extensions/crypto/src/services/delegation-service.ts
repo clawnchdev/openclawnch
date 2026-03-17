@@ -145,16 +145,29 @@ export interface CreateDelegationResult {
 export async function prepareDelegation(input: CreateDelegationInput): Promise<CreateDelegationResult | { error: string }> {
   const chainId = input.chainId ?? DEFAULT_CHAIN_ID;
 
-  // Resolve addresses from wallet if not provided.
-  // Delegator = user's wallet (the one granting permissions).
-  // Delegate = agent's wallet (the one receiving permissions).
-  // These should be DIFFERENT addresses — the agent address comes from
-  // CLAWNCHER_ADDRESS env var, not the connected user wallet.
+  // Resolve addresses:
+  // Delegator = the smart account (HybridDeleGator) that holds funds
+  // Delegate = the agent's EOA that calls redeemDelegations
+  // Try agent keystore first (has both), fall back to wallet + env var
   const wallet = await getWallet();
   const zeroAddr = ('0x' + '0'.repeat(40)) as Address;
-  const agentAddr = process.env.CLAWNCHER_ADDRESS as Address | undefined;
-  const delegator = input.delegator ?? wallet.address ?? zeroAddr;
-  const delegate = input.delegate ?? agentAddr ?? zeroAddr;
+
+  let delegator = input.delegator ?? zeroAddr;
+  let delegate = input.delegate ?? (process.env.CLAWNCHER_ADDRESS as Address | undefined) ?? zeroAddr;
+
+  try {
+    const { loadMeta } = await import('./agent-keystore.js');
+    const meta = loadMeta();
+    if (meta) {
+      if (delegator === zeroAddr) delegator = meta.smartAccountAddress as Address;
+      if (delegate === zeroAddr) delegate = meta.agentAddress as Address;
+    }
+  } catch { /* keystore not available */ }
+
+  // Final fallback: use connected wallet as delegator
+  if (delegator === zeroAddr && wallet.address) {
+    delegator = wallet.address as Address;
+  }
 
   // Fetch live ETH price for accurate USD → wei conversion
   try {
