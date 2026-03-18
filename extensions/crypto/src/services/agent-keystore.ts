@@ -197,7 +197,7 @@ export function storeAgentKey(
 
 /**
  * Load the agent's private key.
- * Tries: memory cache → macOS Keychain → encrypted file (needs passphrase).
+ * Tries: memory cache → macOS Keychain → encrypted file (passphrase from arg or env).
  */
 export function loadAgentKey(passphrase?: string): string | null {
   if (_cachedKey) return _cachedKey;
@@ -212,6 +212,11 @@ export function loadAgentKey(passphrase?: string): string | null {
       _cachedKey = key;
       return key;
     }
+  }
+
+  // Auto-unlock from DELEGATOR_PASSPHRASE env var
+  if (!passphrase) {
+    passphrase = process.env.DELEGATOR_PASSPHRASE ?? undefined;
   }
 
   // Try encrypted file
