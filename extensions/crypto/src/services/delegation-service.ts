@@ -170,14 +170,25 @@ export async function prepareDelegation(input: CreateDelegationInput): Promise<C
   }
 
   // Fetch live ETH price for accurate USD → wei conversion
+  let ethPriceUsd = 0;
   try {
     const { getEthPrice } = await import('./price-service.js');
-    const ethPriceUsd = await getEthPrice();
-    if (ethPriceUsd > 0) {
-      setCompilationContext({ ethPriceUsd });
-    }
-  } catch {
-    // Price unavailable — compiler falls back to placeholder
+    ethPriceUsd = await getEthPrice();
+  } catch { /* primary source failed */ }
+
+  // Fallback: fetch directly from DexScreener if primary failed
+  if (ethPriceUsd <= 0) {
+    try {
+      const resp = await fetch('https://api.dexscreener.com/latest/dex/pairs/base/0xd0b53D9277642d899DF5C87A3966A349A798F224');
+      const data = await resp.json() as any;
+      const price = parseFloat(data?.pair?.priceUsd ?? data?.pairs?.[0]?.priceUsd ?? '0');
+      if (price > 0) ethPriceUsd = price;
+    } catch { /* fallback also failed */ }
+  }
+
+  if (ethPriceUsd > 0) {
+    setCompilationContext({ ethPriceUsd });
+  } else {
     setCompilationContext({});
   }
 
