@@ -66,13 +66,22 @@ function showOverview() {
   if (!meta) {
     lines.push('**No agent account configured.**');
     lines.push('');
-    lines.push('Create one with `/delegator create` — this deploys a smart account');
-    lines.push('that the agent uses for autonomous on-chain execution.');
-    lines.push('You fund it with a specific amount; only those funds are at risk.');
+    lines.push('**How policy enforcement works:**');
     lines.push('');
-    lines.push('**Commands:**');
-    lines.push('  `/delegator create` — deploy a new agent smart account');
-    lines.push('  `/delegator recover <private-key>` — restore from a backup key');
+    lines.push('Bankr wallet (current):');
+    lines.push('  Policies enforced by the AI.');
+    lines.push('  Fast, works now. The AI checks');
+    lines.push('  limits before every transaction.');
+    lines.push('');
+    lines.push('Delegator smart account (optional):');
+    lines.push('  Policies enforced on-chain by');
+    lines.push('  smart contracts. Tamper-proof.');
+    lines.push('  You fund a separate account and');
+    lines.push('  the agent operates within it.');
+    lines.push('');
+    lines.push('To set up on-chain enforcement:');
+    lines.push('  /delegator create <passphrase>');
+    lines.push('  /delegator recover <key> <pass>');
   } else {
     lines.push('**Agent Account**');
     lines.push('');

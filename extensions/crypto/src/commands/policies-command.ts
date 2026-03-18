@@ -19,6 +19,35 @@ import { buildPolicyDisplay, renderPolicyDisplay } from '../services/policy-eval
 import { formatDelegationStatus, canRedeem } from '../services/delegation-service.js';
 import { CHAIN_NAMES } from '../services/delegation-types.js';
 import { recordCommand } from '../services/command-history.js';
+import { getWalletState } from '../services/walletconnect-service.js';
+import { hasAgentAccount } from '../services/agent-keystore.js';
+
+/** Determine actual enforcement based on wallet mode + delegation setup. */
+function getEnforcementInfo(): { method: string; explanation: string } {
+  const wallet = getWalletState();
+  const hasAgent = hasAgentAccount();
+
+  if (wallet.mode === 'bankr') {
+    return {
+      method: 'AI-enforced (Bankr wallet)',
+      explanation: hasAgent
+        ? 'Your Bankr wallet sends transactions through its own API. Policies are enforced by the AI before execution — not on-chain. To use on-chain enforcement, send from your delegator account instead.'
+        : 'Your Bankr wallet sends transactions through its own API. Policies are enforced by the AI before execution — not on-chain. Run /delegator create to set up on-chain enforcement with a separate smart account.',
+    };
+  }
+
+  if (hasAgent) {
+    return {
+      method: 'On-chain (delegator smart account)',
+      explanation: 'Transactions from the delegator account are enforced on-chain by smart contract caveats. The agent cannot bypass these limits.',
+    };
+  }
+
+  return {
+    method: 'AI-enforced (no delegator set up)',
+    explanation: 'Policies are enforced by the AI before execution. Run /delegator create for tamper-proof on-chain enforcement.',
+  };
+}
 
 export const policiesCommand = {
   name: 'policies',
@@ -217,13 +246,16 @@ function showOverview(userId: string) {
   lines.push('**Policy Overview**');
   lines.push('');
 
-  // Mode
-  lines.push(`Mode: **${mode}** ${delegation ? '(on-chain enforcement)' : '(app-layer enforcement)'}`);
+  // Enforcement — what's actually happening
+  const enforcement = getEnforcementInfo();
+  lines.push(`Enforced by: **${enforcement.method}**`);
+  lines.push(enforcement.explanation);
+  lines.push('');
 
   // Counts
   const active = policies.filter(p => p.status === 'active');
   const withDelegation = active.filter(p => p.delegation?.status === 'signed' || p.delegation?.status === 'active');
-  lines.push(`Policies: ${active.length} active of ${policies.length} total${delegation ? `, ${withDelegation.length} delegated on-chain` : ''}`);
+  lines.push(`Policies: ${active.length} active${withDelegation.length > 0 ? `, ${withDelegation.length} with on-chain delegation` : ''}`);
   lines.push('');
 
   if (active.length === 0) {

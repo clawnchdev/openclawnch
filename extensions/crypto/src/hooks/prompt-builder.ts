@@ -168,6 +168,13 @@ Write them as plain text: /policies not \`/policies\`
             activePolicies = policyStore.getActivePolicies(altId);
           }
         }
+        // Determine enforcement type based on wallet mode
+        const walletState = deps.getWalletState();
+        const isBankr = walletState.mode === 'bankr';
+        const enforcementType = isBankr
+          ? 'AI-enforced (Bankr mode). You check policies before executing. On-chain caveats do NOT apply to Bankr transactions.'
+          : 'On-chain enforced via delegation caveats (if delegation is signed). Also AI-enforced as first line.';
+
         if (activePolicies.length > 0) {
           const policyLines = activePolicies.map(p => {
             const safeName = p.name
@@ -180,18 +187,19 @@ Write them as plain text: /policies not \`/policies\`
           });
           dynamicParts.push([
             `<current_policies>`,
-            `ACTIVE POLICIES (${activePolicies.length}): These are the ONLY policies that exist right now. This is read from disk, not from your memory.`,
+            `ENFORCEMENT: ${enforcementType}`,
+            `ACTIVE POLICIES (${activePolicies.length}): Read from disk right now.`,
             ...policyLines,
-            `If a user says a policy exists but it's NOT listed above, it does NOT exist. Do not claim otherwise.`,
-            `If no policies are listed above, there are NO active policies. Period.`,
+            `You MUST check these policies before ANY write action. If a transaction would violate a policy, REFUSE and explain which policy blocks it.`,
+            `If a user says a policy exists but it's NOT listed above, it does NOT exist.`,
             `</current_policies>`,
           ].join('\n'));
         } else {
           dynamicParts.push([
             `<current_policies>`,
-            `NO ACTIVE POLICIES. Zero. None. This is read from disk right now.`,
-            `If a user asks you to create one, use the policy_manage tool with action=propose.`,
-            `If policy_manage is not available, tell them to use /policies create <name> <max-usd>`,
+            `ENFORCEMENT: ${enforcementType}`,
+            `NO ACTIVE POLICIES. Zero. None. Read from disk right now.`,
+            `If a user asks to create one, use policy_manage tool or tell them /policies create <name> <max-usd>`,
             `</current_policies>`,
           ].join('\n'));
         }

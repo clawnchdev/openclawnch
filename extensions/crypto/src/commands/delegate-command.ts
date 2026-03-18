@@ -153,6 +153,29 @@ async function handleCreate(userId: string, nameAndArgs: string, ctx?: any) {
     return { text: 'Usage: `/delegate create <policy-name> [--chain <chainId>]`' };
   }
 
+  // Block in Bankr mode — delegations don't apply to Bankr transactions
+  const { getWalletState } = await import('../services/walletconnect-service.js');
+  const wallet = getWalletState();
+  if (wallet.mode === 'bankr') {
+    return { text: [
+      '**On-chain delegation is not available in Bankr mode.**',
+      '',
+      'Your Bankr wallet sends transactions through',
+      'its own API. On-chain caveats cannot intercept',
+      'those transactions.',
+      '',
+      'Your policies ARE still enforced by the AI',
+      'before execution. For tamper-proof on-chain',
+      'enforcement, set up a delegator account:',
+      '',
+      '1. /delegator create <passphrase>',
+      '2. Fund the smart account address',
+      '3. /delegate create <policy-name>',
+      '4. Ask the agent to send from the',
+      '   delegator account',
+    ].join('\n') };
+  }
+
   // Parse optional --chain flag
   const chainMatch = nameAndArgs.match(/--chain\s+(\d+)/);
   const chainId = chainMatch ? parseInt(chainMatch[1]!, 10) : 8453;
