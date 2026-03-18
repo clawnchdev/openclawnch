@@ -16,18 +16,21 @@ fi
 
 # ── Persist .openclawnch data across deploys ────────────────────────────
 # Symlink ~/.openclawnch to /workspace/.openclawnch (persistent volume).
-# Policies, delegations, agent keystore survive container rebuilds.
+# Create symlinks for ALL possible HOME dirs since the process may run
+# as root (HOME=/root) or as openclawnch (HOME=/home/openclawnch).
 PERSIST_DIR="/workspace/.openclawnch"
-LINK_DIR="/home/openclawnch/.openclawnch"
 mkdir -p "$PERSIST_DIR"
-if [ -d "$LINK_DIR" ] && [ ! -L "$LINK_DIR" ]; then
-  # First deploy: move existing data to persistent volume
-  cp -a "$LINK_DIR/." "$PERSIST_DIR/" 2>/dev/null || true
-  rm -rf "$LINK_DIR"
-fi
-if [ ! -L "$LINK_DIR" ]; then
-  ln -sf "$PERSIST_DIR" "$LINK_DIR"
-fi
+
+for LINK_DIR in /home/openclawnch/.openclawnch /root/.openclawnch; do
+  if [ -d "$LINK_DIR" ] && [ ! -L "$LINK_DIR" ]; then
+    cp -a "$LINK_DIR/." "$PERSIST_DIR/" 2>/dev/null || true
+    rm -rf "$LINK_DIR"
+  fi
+  if [ ! -L "$LINK_DIR" ]; then
+    ln -sf "$PERSIST_DIR" "$LINK_DIR"
+  fi
+done
+
 chown -R openclawnch:openclawnch "$PERSIST_DIR" 2>/dev/null || true
 
 # ── Private key warning (autosign mode) ─────────────────────────────

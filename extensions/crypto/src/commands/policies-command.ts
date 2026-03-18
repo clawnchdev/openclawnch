@@ -31,9 +31,16 @@ export const policiesCommand = {
     const store = getPolicyStore();
     const { extractPolicyUserId } = await import('../services/policy-evaluator.js');
     let userId = extractPolicyUserId(ctx);
-    if (userId === 'owner' && store.listPolicies('owner').length === 0) {
-      const found = store.findFirstUserWithPolicies?.();
-      if (found) userId = found;
+    const ownerCount = store.listPolicies(userId).length;
+    if (ownerCount === 0) {
+      const found = store.findFirstUserWithPolicies();
+      if (found) {
+        const foundCount = store.listPolicies(found).length;
+        console.info(`[policies] userId=${userId} has 0 policies, found=${found} has ${foundCount}`);
+        if (foundCount > 0) userId = found;
+      } else {
+        console.info(`[policies] userId=${userId} has 0 policies, no alternative found`);
+      }
     }
 
     let result: { text: string };
