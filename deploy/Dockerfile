@@ -56,6 +56,13 @@ RUN --mount=type=cache,target=/root/.npm \
 RUN --mount=type=cache,target=/root/.npm \
     npm install -g @metamask/smart-accounts-kit@0.4.0-beta.1
 
+# ── Layer 3b: Botcoin miner (Python, changes independently) ──────────
+RUN apt-get update && apt-get install -y python3 python3-pip && rm -rf /var/lib/apt/lists/*
+RUN pip3 install --no-cache-dir --break-system-packages requests>=2.31
+COPY mine.py /opt/botcoin/mine.py
+COPY pipeline/ /opt/botcoin/pipeline/
+RUN mkdir -p /workspace/botcoin-runs
+
 # ── Layer 4: Dirs, config, entrypoint (tiny, always rebuilt) ─────────
 # Create non-root user for security
 RUN groupadd -r openclawnch && useradd -r -g openclawnch -d /home/openclawnch -s /sbin/nologin openclawnch

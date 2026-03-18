@@ -38,3 +38,6 @@ deploy/openclawnch.tgz
 
 # Internal planning docs (not for public release)
 gitignored-docs/
+mine.py
+deploy/mine.py
+deploy/pipeline/

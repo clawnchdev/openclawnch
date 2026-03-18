@@ -175,6 +175,18 @@ node -e "
   console.log('LLM provider: ' + provider + ' → model: ' + cfg.agents.defaults.model.primary);
 "
 
+# ── Start Botcoin miner (background) ────────────────────────────────────
+# Runs alongside the gateway. Logs to stdout (visible in fly logs).
+# Uses BANKR_API_KEY from Fly secrets.
+if [ -n "$BANKR_API_KEY" ]; then
+  echo "Starting Botcoin miner (background, delay=70s, infinite loops)..."
+  python3 -u /opt/botcoin/mine.py --loops 0 --delay 70 --save-dir /workspace/botcoin-runs &
+  MINER_PID=$!
+  echo "Miner PID: $MINER_PID"
+else
+  echo "BANKR_API_KEY not set — miner disabled."
+fi
+
 # ── Start OpenClaw gateway ──────────────────────────────────────────────
 # --bind lan: bind to 0.0.0.0 so Fly's proxy can reach the gateway.
 # --allow-unconfigured: skip interactive setup prompts in container.
@@ -186,7 +198,7 @@ node -e "const c=JSON.parse(require('fs').readFileSync(process.env.HOME + '/.ope
 
 # Ensure all dirs created above are owned by openclawnch (we're still root here)
 if [ "$(id -u)" = "0" ]; then
-  chown -R openclawnch:openclawnch "$HOME/.openclaw" "$HOME/.openclawnch" 2>/dev/null || true
+  chown -R openclawnch:openclawnch "$HOME/.openclaw" "$HOME/.openclawnch" /workspace/botcoin-runs 2>/dev/null || true
   # Drop to non-root user for the actual gateway process
   exec gosu openclawnch openclaw gateway --port 18789 --bind lan --allow-unconfigured 2>&1
 else
