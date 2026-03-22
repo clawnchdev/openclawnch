@@ -80,7 +80,7 @@
     "@noble/hashes": "^2.0.1",
     "@scure/bip39": "^2.0.1",
     "@sinclair/typebox": "^0.34.0",
-    "openclaw": "2026.3.8",
+    "openclaw": "2026.3.28",
     "viem": "^2.0.0"
   },
   "peerDependencies": {
