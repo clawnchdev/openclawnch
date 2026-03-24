@@ -25,7 +25,7 @@ RUN apt-get update && apt-get install -y \
 # IMPORTANT: Pin openclaw version to match package.json peer dep range.
 # Using @latest in CI can break builds if upstream introduces breaking changes.
 RUN --mount=type=cache,target=/root/.npm \
-    npm install -g openclaw@2026.3.8 @walletconnect/sign-client@2
+    npm install -g openclaw@2026.3.28 @walletconnect/sign-client@2
 
 # ── Layer 3: OpenClawnch extension (changes every deploy) ────────────
 # Copy just the tarball and install. With npm cache mount this is ~30s
