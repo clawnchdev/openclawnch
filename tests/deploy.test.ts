@@ -146,7 +146,7 @@ describe('deploy artifacts', () => {
     expect(dockerfile).toContain('FROM node:22-slim');
     expect(dockerfile).toContain('openclawnch.tgz');
     // Pinned version (not @latest) to prevent CI breakage from upstream changes
-    expect(dockerfile).toContain('openclaw@2026.3.8');
+    expect(dockerfile).toContain('openclaw@2026.3.28');
     expect(dockerfile).toContain('ENTRYPOINT ["/entrypoint.sh"]');
     expect(dockerfile).toContain('HEALTHCHECK');
     expect(dockerfile).toContain('18789');
