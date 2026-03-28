@@ -5,8 +5,8 @@ and extends. It is the single source of truth for merge compatibility when pulli
 future OpenClaw releases into this fork.
 
 **Minimum OpenClaw version:** `>=2026.3.0` (peer dependency)
-**Bundled OpenClaw version:** `2026.3.8`
-**Upstream latest:** `2026.3.9`
+**Bundled OpenClaw version:** `2026.3.28`
+**Upstream latest:** `2026.3.28`
 
 ## Plugin API Surface We Use
 
@@ -30,12 +30,15 @@ If upstream changes any of these signatures, our extension breaks.
 
 | API Method | Potential Use | Priority |
 |---|---|---|
-| `api.registerService()` | Formalize plan scheduler, heartbeat as managed services | Medium |
+| `api.registerService()` | ~~Formalize plan scheduler, heartbeat as managed services~~ **Done** — adopted with optional chaining | ~~Medium~~ Done |
 | `api.registerHttpRoute()` | Webhook endpoints for DEX callbacks | Low |
 | `api.registerHook()` | Typed hook registration with priority options | Medium |
 | `api.runtime.modelAuth` | Provider key resolution instead of raw process.env | Low |
 | `api.runtime.state.resolvePath()` | State directory resolution | Low |
-| `before_tool_call` hook | Pre-flight budget checks | Medium |
+| `before_tool_call` hook + `requireApproval` | Pre-flight budget checks, user approval before expensive txns (new in v2026.3.28) | **High** |
+| `before_dispatch` hook | Richer inbound message interception (new in v2026.3.24) | Medium |
+| `api.runtime.system.runHeartbeatOnce` | Plugin-triggered heartbeat cycles (new in v2026.3.28) | Low |
+| `openclaw/plugin-sdk/testing` | Public test helper surface for plugin authors (new in v2026.3.22) | Medium |
 
 ## Tool Registration Shape
 
@@ -85,7 +88,8 @@ Our commands conform to:
 | `before_prompt_build` | `{ prependContext: string }` | Prepends text to system prompt |
 
 **Note:** Upstream v2026.3.7 added `prependSystemContext` and `appendSystemContext` for
-cacheable system prompt injection. Migration to these is recommended for static context.
+cacheable system prompt injection. We now use both: `prependSystemContext` for static/cacheable
+parts and `prependContext` for dynamic per-user parts. Both still work as of v2026.3.28.
 
 ## Channel Sender Compatibility
 
@@ -128,18 +132,28 @@ See `extensions/crypto/src/services/` for the complete list.
 
 When pulling a new OpenClaw release:
 
-1. Run `pnpm test` (835+ tests across 26 files)
+1. Run `pnpm test` (1054+ tests across 43 files)
 2. Run `pnpm typecheck` (must pass with zero errors)
 3. Verify plugin loads: `node bin/openclawnch.mjs --help`
 4. Check hook signatures haven't changed (search OpenClaw changelog for "plugin", "hook", "registerTool")
 5. Verify `api.runtime.tools.getAll()` still returns the expected shape
 6. Verify `api.runtime.channel` still follows `sendMessage<PascalCase>` convention
-7. Test one write operation end-to-end (connect wallet -> swap)
+7. Verify `openclaw/plugin-sdk/core` import path still resolves
+8. Verify hook terminal semantics (now enforced strictly since v2026.3.22)
+9. Test one write operation end-to-end (connect wallet -> swap)
 
 ## Changelog of Upstream Breaking Changes
 
 | OpenClaw Version | Breaking Change | Our Fix | Date |
 |---|---|---|---|
-| v2026.3.7 | `prependSystemContext` / `appendSystemContext` added to `before_prompt_build` | No fix needed — `prependContext` still works. Migration planned. | 2026-03-07 |
+| v2026.3.7 | `prependSystemContext` / `appendSystemContext` added to `before_prompt_build` | Adopted — now use both `prependSystemContext` (static) and `prependContext` (dynamic). | 2026-03-07 |
 | v2026.3.7 | `gateway.auth.mode` required when both token and password are set | N/A — we don't use dual auth. | 2026-03-07 |
-| (none yet) | — | — | — |
+| v2026.3.13 | Memory: only one root bootstrap file loaded (`MEMORY.md` wins) | N/A — we use our own memory files, not upstream bootstrap. | 2026-03-13 |
+| v2026.3.22 | `openclaw/extension-api` import path removed | N/A — we already use `openclaw/plugin-sdk/core`. | 2026-03-22 |
+| v2026.3.22 | `CLAWDBOT_*` / `MOLTBOT_*` env vars removed | N/A — never used. | 2026-03-22 |
+| v2026.3.22 | `.moltbot` state directory removed | N/A — never used. | 2026-03-22 |
+| v2026.3.22 | `describeMessageTool()` required for channel message adapters | N/A — we don't implement channel message adapters. | 2026-03-22 |
+| v2026.3.22 | Workspace hooks disabled by default | N/A — we register hooks via plugin API, not workspace dir. | 2026-03-22 |
+| v2026.3.22 | Hook terminal semantics enforced strictly | Verified — our hook returns are correct. | 2026-03-22 |
+| v2026.3.28 | `qwen-portal-auth` OAuth removed | N/A — never used. | 2026-03-28 |
+| v2026.3.28 | Old config migrations (>2 months) now fail validation | N/A — we don't use legacy config key rewriting. | 2026-03-28 |
