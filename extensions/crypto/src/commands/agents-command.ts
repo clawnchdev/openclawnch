@@ -40,7 +40,7 @@ export const agentsCommand = {
   name: 'agents',
   description: 'Manage sub-agents: list, info, enable, disable, delete',
   acceptsArgs: true,
-  requireAuth: false,
+  requireAuth: true,
   handler: async (ctx?: any) => {
     const rawArgs = (ctx?.args ?? '').trim();
     const parts = rawArgs.split(/\s+/);

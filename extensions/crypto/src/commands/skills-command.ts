@@ -28,7 +28,7 @@ export const skillsCommand = {
   name: 'skills',
   description: 'Browse crypto skills: /skills, /skills <name>, /skills search|enable|disable <name>',
   acceptsArgs: true,
-  requireAuth: false,
+  requireAuth: true,
   handler: async (ctx?: any) => {
     const rawArgs = (ctx?.args ?? '').trim();
     const registry = getSkillRegistry();

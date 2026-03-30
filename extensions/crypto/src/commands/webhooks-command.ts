@@ -21,7 +21,7 @@ export const webhooksCommand = {
   name: 'webhooks',
   description: 'Manage inbound webhook routes: list, info, enable, disable, delete',
   acceptsArgs: true,
-  requireAuth: false,
+  requireAuth: true,
   handler: async (ctx?: any) => {
     const rawArgs = (ctx?.args ?? '').trim();
     const parts = rawArgs.split(/\s+/);

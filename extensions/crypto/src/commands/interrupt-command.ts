@@ -12,7 +12,7 @@ export const interruptCommand = {
   name: 'interrupt',
   description: 'Cancel the current LLM response. The agent stops generating and no response is sent.',
   acceptsArgs: false,
-  requireAuth: false,
+  requireAuth: true,
   handler: async (ctx?: any) => {
     const sessionKey = ctx?.sessionKey ?? ctx?.conversationId ?? 'default';
     const svc = getInterruptService();
@@ -29,7 +29,7 @@ export const interruptPlanCommand = {
   name: 'interrupt_plan',
   description: 'Cancel any currently executing plan. Use /plans to see active plans.',
   acceptsArgs: true,
-  requireAuth: false,
+  requireAuth: true,
   handler: async (ctx?: any) => {
     const rawArgs = (ctx?.args ?? '').trim();
     const scheduler = getScheduler();
