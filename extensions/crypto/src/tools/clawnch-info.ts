@@ -25,6 +25,7 @@ import { checkBalance } from '../services/safety-service.js';
 import { guardedFetch } from '../services/endpoint-allowlist.js';
 import { getCredentialVault } from '../services/credential-vault.js';
 
+const CLAWNCH_API_URL = process.env.CLAWNCHER_API_URL || 'https://clawn.ch';
 const ACTIONS = [
   'token_info', 'portfolio', 'vault_claim',
   'agent_register', 'agent_status', 'platform_stats', 'list_tokens',
@@ -323,7 +324,7 @@ async function handleAgentRegister(params: Record<string, unknown>) {
   const { ClawnchApiDeployer } = await import('@clawnch/clawncher-sdk');
 
   const deployer = new ClawnchApiDeployer({
-    apiBaseUrl: process.env.CLAWNCHER_API_URL || 'https://clawn.ch',
+    apiBaseUrl: CLAWNCH_API_URL,
     apiKey,
     wallet,
     publicClient,
@@ -335,7 +336,7 @@ async function handleAgentRegister(params: Record<string, unknown>) {
     name: agentName,
     description: agentDescription,
     apiKey,
-    apiBaseUrl: process.env.CLAWNCHER_API_URL || 'https://clawn.ch',
+    apiBaseUrl: CLAWNCH_API_URL,
   });
 
   return jsonResult({
@@ -362,7 +363,7 @@ async function handleAgentStatus(params: Record<string, unknown>) {
 
   // Agent status is a read operation — query the API directly using the
   // address parameter. No wallet client needed (we're not signing anything).
-  const apiBaseUrl = process.env.CLAWNCHER_API_URL || 'https://clawn.ch';
+  const apiBaseUrl = CLAWNCH_API_URL;
 
   try {
     const response = await guardedFetch(
@@ -412,7 +413,7 @@ async function handleAgentStatus(params: Record<string, unknown>) {
 // ─── Platform Stats ───────────────────────────────────────────────────────
 
 async function handlePlatformStats() {
-  const apiUrl = process.env.CLAWNCHER_API_URL || 'https://clawn.ch';
+  const apiUrl = CLAWNCH_API_URL;
 
   try {
     const response = await guardedFetch(`${apiUrl}/api/stats`, {
@@ -446,7 +447,7 @@ async function handleListTokens(params: Record<string, unknown>) {
   const page = readNumberParam(params, 'page') ?? 1;
   const pageSize = readNumberParam(params, 'page_size') ?? 20;
 
-  const apiUrl = process.env.CLAWNCHER_API_URL || 'https://clawn.ch';
+  const apiUrl = CLAWNCH_API_URL;
 
   try {
     const queryParams = new URLSearchParams({

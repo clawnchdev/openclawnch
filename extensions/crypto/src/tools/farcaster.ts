@@ -21,6 +21,7 @@ import { Type } from '@sinclair/typebox';
 import { stringEnum, jsonResult, errorResult, readStringParam, readNumberParam } from '../lib/tool-helpers.js';
 import { guardedFetch } from '../services/endpoint-allowlist.js';
 import { checkToolConfig } from '../services/tool-config-service.js';
+import { getCredentialVault } from '../services/credential-vault.js';
 
 const ACTIONS = [
   'post', 'feed', 'search', 'user', 'channel',
@@ -118,13 +119,15 @@ export function createFarcasterTool() {
 // ── API Helpers ──────────────────────────────────────────────────────────
 
 function getApiKey(): string {
-  const key = process.env.NEYNAR_API_KEY;
+  const vault = getCredentialVault();
+  const key = vault.getSecret('farcaster.neynar.apiKey', 'farcaster') ?? process.env.NEYNAR_API_KEY;
   if (!key) throw new Error('NEYNAR_API_KEY not set.');
   return key;
 }
 
 function getSignerUuid(): string {
-  const uuid = process.env.NEYNAR_SIGNER_UUID;
+  const vault = getCredentialVault();
+  const uuid = vault.getSecret('farcaster.neynar.signerUuid', 'farcaster') ?? process.env.NEYNAR_SIGNER_UUID;
   if (!uuid) throw new Error('NEYNAR_SIGNER_UUID not set. Required for write operations.');
   return uuid;
 }
@@ -238,7 +241,7 @@ async function handleFeed(params: Record<string, unknown>) {
     // Home feed requires signer
     data = await neynarGet('feed', {
       feed_type: 'following',
-      fid: String(process.env.NEYNAR_FID ?? '0'),
+      fid: String(getCredentialVault().getSecret('farcaster.neynar.fid', 'farcaster') ?? process.env.NEYNAR_FID ?? '0'),
       limit: String(limit),
       ...(cursor ? { cursor } : {}),
     });

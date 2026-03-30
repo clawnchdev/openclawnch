@@ -14,6 +14,7 @@ import {
 } from '../services/walletconnect-service.js';
 import { validateClaim } from '../services/safety-service.js';
 
+const CLAWNCH_API_URL = process.env.CLAWNCHER_API_URL || 'https://clawn.ch';
 const ACTIONS = ['check', 'claim', 'claim_all'] as const;
 
 const ClawnchFeesSchema = Type.Object({
@@ -62,7 +63,7 @@ async function handleCheck(address: string) {
   try {
     const { ClawnchClient } = await import('@clawnch/clawncher-sdk');
     const client = new ClawnchClient({
-      baseUrl: process.env.CLAWNCHER_API_URL || 'https://clawn.ch',
+      baseUrl: CLAWNCH_API_URL,
     });
 
     const fees = await client.getAvailableFees(address);
@@ -127,7 +128,7 @@ async function handleClaimAll(address: string) {
     // First check what's available
     const { ClawnchClient, ClawncherClaimer } = await import('@clawnch/clawncher-sdk');
     const client = new ClawnchClient({
-      baseUrl: process.env.CLAWNCHER_API_URL || 'https://clawn.ch',
+      baseUrl: CLAWNCH_API_URL,
     });
 
     const fees = await client.getAvailableFees(address);
