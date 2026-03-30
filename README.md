@@ -6,7 +6,7 @@
 
 Your personal crypto agent. AI assistant with direct access to blockchain protocols, market data, and transaction execution.
 
-A crypto-native fork of [OpenClaw](https://github.com/openclaw/openclaw). 42 tools. 95 commands. 50 services. Works on Telegram, Discord, Slack, Signal, WhatsApp, iMessage, and LINE.
+A crypto-native fork of [OpenClaw](https://github.com/openclaw/openclaw). 48 tools. 117 commands. 75 services. Works on Telegram, Discord, Slack, Signal, WhatsApp, iMessage, and LINE.
 
 ## Quick Start
 
