@@ -109,7 +109,7 @@ export const evolutionCommand = {
       `  Entries: ${userStats.entries}`,
       `  Usage: ${userStats.chars}/${userStats.limit} chars`,
       '',
-      '**Learned Skills**: ${learnedCount}',
+      `**Learned Skills**: ${learnedCount}`,
       '',
       '**Nudge Intervals**',
       `  Memory: every ${evoStatus.memoryNudgeInterval} turns`,
