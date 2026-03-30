@@ -782,7 +782,10 @@ const plugin = {
                 const data = await getPrice(token);
                 if (!data?.priceUsd) return NaN; // NaN signals "unknown" — conditions won't fire
                 return data.priceUsd;
-              } catch { return NaN; }
+              } catch (err) {
+                api.logger?.warn?.(`[plan-resolver] price fetch failed for ${token}: ${err}`);
+                return NaN;
+              }
             },
             balance: async (token: string, chainId?: number) => {
               try {
@@ -790,7 +793,7 @@ const plugin = {
                 const rpc = getRpcManager();
                 const client = await rpc.getClient(cid);
                 const walletState = getWalletStateFn();
-                if (!walletState.address) return 0;
+                if (!walletState.address) return NaN;
                 if (!token || token.toUpperCase() === 'ETH') {
                   const balance = await client.getBalance({ address: walletState.address as `0x${string}` });
                   return Number(balance) / 1e18;
@@ -806,14 +809,20 @@ const plugin = {
                   args: [walletState.address as `0x${string}`],
                 });
                 return Number(data) / (10 ** decimals);
-              } catch { return 0; }
+              } catch (err) {
+                api.logger?.warn?.(`[plan-resolver] balance fetch failed for ${token} on chain ${chainId ?? 8453}: ${err}`);
+                return NaN;
+              }
             },
             gasPrice: async (chainId?: number) => {
               try {
                 const estimator = getGasEstimator();
                 const gas = await estimator.getGasPrice(chainId ?? 8453);
                 return gas.totalStandard; // baseFee + standard priority fee
-              } catch { return 0; }
+              } catch (err) {
+                api.logger?.warn?.(`[plan-resolver] gas price fetch failed for chain ${chainId ?? 8453}: ${err}`);
+                return NaN;
+              }
             },
             timestamp: () => Math.floor(Date.now() / 1000),
             blockNumber: async (chainId?: number) => {
@@ -822,7 +831,10 @@ const plugin = {
                 const client = await rpc.getClient(chainId ?? 8453);
                 const block = await client.getBlockNumber();
                 return Number(block);
-              } catch { return 0; }
+              } catch (err) {
+                api.logger?.warn?.(`[plan-resolver] block number fetch failed for chain ${chainId ?? 8453}: ${err}`);
+                return NaN;
+              }
             },
           },
         });
