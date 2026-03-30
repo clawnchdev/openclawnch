@@ -178,8 +178,6 @@ function synthesizeCandles(pair: any, interval: string, limit: number): Candle[]
 
   // Use available price change data to create a realistic price path
   const h24Change = (priceChanges.h24 ?? 0) / 100;
-  const h6Change = (priceChanges.h6 ?? 0) / 100;
-  const h1Change = (priceChanges.h1 ?? 0) / 100;
 
   // Price at 24h ago
   const price24hAgo = currentPrice / (1 + h24Change);

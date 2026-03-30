@@ -10,15 +10,6 @@ import {
   getPendingConfirmation,
 } from '../services/confirmation-store.js';
 
-function formatParams(params: Record<string, unknown>): string {
-  const entries = Object.entries(params)
-    .filter(([, v]) => v !== undefined && v !== null && v !== '')
-    .slice(0, 8); // Limit to avoid wall of text
-
-  if (entries.length === 0) return '  (no parameters)';
-  return entries.map(([k, v]) => `  ${k}: ${String(v)}`).join('\n');
-}
-
 export const approveCommand = {
   name: 'approve',
   description: 'Approve a pending plan step',

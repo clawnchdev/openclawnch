@@ -270,14 +270,6 @@ async function handleLaunchAndPromote(params: Record<string, unknown>) {
 // ─── check_orders: auto-fetch prices → check all triggers ────────────────
 
 async function handleCheckOrders() {
-  const steps: Array<{ step: string; status: string; data?: unknown }> = [];
-
-  try {
-    const { ClawnchOrders } = await import('@clawnch/clawncher-sdk');
-  } catch {
-    // ClawnchOrders may not be available
-  }
-
   // The manage_orders tool now auto-fetches prices in its check action.
   // This workflow provides the orchestration hint to the LLM.
   return jsonResult({
