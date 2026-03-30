@@ -9,7 +9,7 @@
  */
 
 import { Type } from '@sinclair/typebox';
-import { stringEnum, jsonResult, errorResult, readStringParam, readNumberParam } from '../lib/tool-helpers.js';
+import { stringEnum, jsonResult, errorResult, readStringParam } from '../lib/tool-helpers.js';
 import { hasBankrApi } from '../services/bankr-api.js';
 
 const ACTIONS = ['limit_buy', 'limit_sell', 'stop_loss', 'dca', 'twap', 'cancel', 'list'] as const;

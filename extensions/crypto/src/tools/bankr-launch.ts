@@ -13,7 +13,6 @@
 import { Type } from '@sinclair/typebox';
 import { stringEnum, jsonResult, errorResult, readStringParam } from '../lib/tool-helpers.js';
 import { hasBankrApi } from '../services/bankr-api.js';
-import { isBankrMode } from '../services/walletconnect-service.js';
 
 const ACTIONS = ['deploy', 'simulate', 'fees', 'claim'] as const;
 const CHAINS = ['base', 'solana'] as const;

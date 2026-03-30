@@ -27,8 +27,6 @@ export default defineConfig({
     /^@clawnch\/sdk/,
     /^@clawnch\/clawnx/,
     /^@clawnch\/clawncher-sdk/,
-    /^clanker-sdk/,
-    /^@uniswap\/sdk-core/,
     /^@noble\/hashes/,
     /^@scure\/bip39/,
   ],

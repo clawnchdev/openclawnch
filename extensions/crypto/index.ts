@@ -189,7 +189,6 @@ import {
   parseSessionKey,
   extractSenderId,
   extractChannelId,
-  type ChannelSender,
   type ChannelId,
 } from './src/services/channel-sender.js';
 

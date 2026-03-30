@@ -13,7 +13,7 @@ import { Type } from '@sinclair/typebox';
 import { stringEnum, jsonResult, errorResult, readStringParam, readNumberParam } from '../lib/tool-helpers.js';
 import { getWalletState, getTransactionHistory } from '../services/walletconnect-service.js';
 import { getPrice, getEthPrice } from '../services/price-service.js';
-import { validateSwap, validateLaunch, checkBalance } from '../services/safety-service.js';
+import { validateSwap, validateLaunch } from '../services/safety-service.js';
 
 const WORKFLOWS = [
   'safe_swap',
