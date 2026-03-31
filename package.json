@@ -80,12 +80,12 @@
     "@clawnch/clawncher-sdk": "^0.3.4",
     "@clawnch/clawnx": "^1.0.0",
     "@clawnch/sdk": "^2.2.1",
-    "@metamask/smart-accounts-kit": "0.4.0-beta.1",
+    "@metamask/smart-accounts-kit": "1.0.0",
     "@noble/hashes": "^2.0.1",
     "@scure/bip39": "^2.0.1",
-    "@sinclair/typebox": "^0.34.0",
+    "@sinclair/typebox": "^0.34.49",
     "openclaw": "2026.3.28",
-    "viem": "^2.0.0"
+    "viem": "^2.47.6"
   },
   "peerDependencies": {
     "@walletconnect/sign-client": "^2.23.6"
