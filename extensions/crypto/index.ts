@@ -102,6 +102,7 @@ import { plansCommand, plansActiveCommand, plansCancelCommand, plansClearCommand
 import { triggersCommand, triggersPriceCommand, triggersCronCommand, deadLetterCommand } from './src/commands/trigger-commands.js';
 import { approveCommand, denyCommand } from './src/commands/confirm-commands.js';
 import { helpCommand, portfolioCommand, balanceCommand, chainCommand } from './src/commands/help-command.js';
+import { reportCommand, reportOptInCommand, reportOptOutCommand } from './src/commands/report-command.js';
 import { isReadonly } from './src/services/mode-service.js';
 
 // Services
@@ -554,6 +555,11 @@ const plugin = {
     // Interrupt
     api.registerCommand(interruptCommand);
     api.registerCommand(interruptPlanCommand);
+
+    // Issue reporting
+    api.registerCommand(reportCommand);
+    api.registerCommand(reportOptInCommand);
+    api.registerCommand(reportOptOutCommand);
 
     // API key management
     api.registerCommand(apiCommand);

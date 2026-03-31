@@ -23,6 +23,7 @@ import { getSkillRegistry } from '../services/skill-registry.js';
 import { getPolicyStore } from '../services/policy-store.js';
 import { describeRule, describeScope } from '../services/policy-types.js';
 import { getRecentCommands } from '../services/command-history.js';
+import { isReportingEnabled } from '../services/issue-reporter.js';
 
 // ── Context Diet Constants ──────────────────────────────────────────────
 
@@ -317,6 +318,19 @@ Write them as plain text: /policies not \`/policies\`
             'Self-improvement: EVOLVING. Proactively save discoveries and preferences via agent_memory and skill_evolve.',
           );
         }
+      }
+
+      // Issue reporting hint (dynamic — per-user opt-in)
+      if (userId && isReportingEnabled(userId)) {
+        dynamicParts.push(
+          'Issue reporting: ENABLED. When you encounter an unexpected error, tool failure, ' +
+          'confusing behavior, or something that seems like a bug in OpenClawnch, proactively ' +
+          'suggest filing a GitHub issue. Say something like: "That looks like a bug — want me ' +
+          'to file an issue?" If the user agrees, use `/report <title> | <description>` with a ' +
+          'clear title and a description that includes: what happened, what was expected, and any ' +
+          'relevant context (tool name, error message, chain/token). Do NOT file issues for user ' +
+          'errors, missing API keys, or expected behavior. Only suggest once per distinct problem.',
+        );
       }
     } catch {
       // Non-critical — don't block prompt build if memory fails
