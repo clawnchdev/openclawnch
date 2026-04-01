@@ -11,7 +11,7 @@ A crypto-native fork of [OpenClaw](https://github.com/openclaw/openclaw). 48 too
 ## Quick Start
 
 ```bash
-git clone https://github.com/clawnch/openclawnch.git
+git clone https://github.com/clawnchbot/openclawnch.git
 cd openclawnch
 pnpm install && pnpm build
 
@@ -95,7 +95,7 @@ Details: **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**
 pnpm install
 pnpm build
 pnpm typecheck
-pnpm test         # 1054 pass, 17 skip, 0 fail
+pnpm test         # 1547 pass, 31 skip, 0 fail
 ```
 
 ## Contributing
