@@ -274,7 +274,7 @@ describe('/interrupt Command', () => {
     );
     expect(interruptCommand.name).toBe('interrupt');
     expect(interruptCommand.acceptsArgs).toBe(false);
-    expect(interruptCommand.requireAuth).toBe(false);
+    expect(interruptCommand.requireAuth).toBe(true);
   });
 
   it('returns confirmation on first interrupt', async () => {
@@ -321,7 +321,7 @@ describe('/interrupt_plan Command', () => {
     );
     expect(interruptPlanCommand.name).toBe('interrupt_plan');
     expect(interruptPlanCommand.acceptsArgs).toBe(true);
-    expect(interruptPlanCommand.requireAuth).toBe(false);
+    expect(interruptPlanCommand.requireAuth).toBe(true);
   });
 
   it('reports no active plans when scheduler is empty', async () => {

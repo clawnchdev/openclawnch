@@ -27,8 +27,8 @@ describe('all commands registered and executable', () => {
     commands = registeredCommands;
   });
 
-  it('registers exactly 114 commands', () => {
-    expect(commands.length).toBe(114);
+  it('registers exactly 117 commands', () => {
+    expect(commands.length).toBe(117);
   });
 
   it('all commands have required fields', () => {
