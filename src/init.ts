@@ -154,7 +154,10 @@ function logHeader(step: number, total: number, title: string): void {
 
 // ── Validation ──────────────────────────────────────────────────────────────
 
-async function validateAnthropicKey(key: string): Promise<boolean> {
+/** Returned by validators: true = valid, false = rejected, 'network' = couldn't reach API. */
+type ValidationResult = true | false | 'network';
+
+async function validateAnthropicKey(key: string): Promise<ValidationResult> {
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -164,7 +167,7 @@ async function validateAnthropicKey(key: string): Promise<boolean> {
         'content-type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'claude-opus-4-20250514',
+        model: 'claude-sonnet-4-20250514',
         max_tokens: 1,
         messages: [{ role: 'user', content: 'hi' }],
       }),
@@ -172,33 +175,33 @@ async function validateAnthropicKey(key: string): Promise<boolean> {
     // 200 or 429 (rate limited) both mean the key is valid
     return response.status !== 401 && response.status !== 403;
   } catch {
-    return false;
+    return 'network';
   }
 }
 
-async function validateOpenRouterKey(key: string): Promise<boolean> {
+async function validateOpenRouterKey(key: string): Promise<ValidationResult> {
   try {
     const response = await fetch('https://openrouter.ai/api/v1/models', {
       headers: { Authorization: `Bearer ${key}` },
     });
     return response.status !== 401;
   } catch {
-    return false;
+    return 'network';
   }
 }
 
-async function validateOpenAIKey(key: string): Promise<boolean> {
+async function validateOpenAIKey(key: string): Promise<ValidationResult> {
   try {
     const response = await fetch('https://api.openai.com/v1/models', {
       headers: { Authorization: `Bearer ${key}` },
     });
     return response.status !== 401;
   } catch {
-    return false;
+    return 'network';
   }
 }
 
-async function validateLlmKey(key: string, provider: string): Promise<boolean> {
+async function validateLlmKey(key: string, provider: string): Promise<ValidationResult> {
   switch (provider) {
     case 'anthropic':
       return validateAnthropicKey(key);
@@ -395,8 +398,12 @@ export async function initCli(argv: string[]): Promise<void> {
       log('  Validating...');
       const valid = await validateLlmKey(llmKey, provider.id);
 
-      if (valid) {
+      if (valid === true) {
         logOk('Key is valid.');
+        break;
+      } else if (valid === 'network') {
+        logWarn('Could not reach API to validate — check your internet connection.');
+        log('  Proceeding with the key as-is. You can re-run init later to verify.');
         break;
       } else {
         logFail('Key was rejected. Check your key and try again.');
@@ -477,7 +484,7 @@ export async function initCli(argv: string[]): Promise<void> {
     const walletIdx = await promptMenu(rl, WALLET_MODES);
     const walletMode = WALLET_MODES[walletIdx]!;
 
-    if (walletMode.id !== 'skip' && walletMode.envKey) {
+      if (walletMode.id !== 'skip' && walletMode.envKey) {
       if (walletMode.url) {
         log(`\n  ${walletMode.hint}`);
         log(`  ${walletMode.url}\n`);
@@ -485,7 +492,21 @@ export async function initCli(argv: string[]): Promise<void> {
         log(`\n  ${walletMode.hint}\n`);
       }
 
-      const walletValue = await promptSecret(rl, `${walletMode.envKey}`);
+      let walletValue: string;
+      if (walletMode.id === 'private_key') {
+        // Validate hex format for private keys
+        while (true) {
+          walletValue = await promptSecret(rl, `${walletMode.envKey}`);
+          const clean = walletValue.startsWith('0x') ? walletValue : `0x${walletValue}`;
+          if (/^0x[0-9a-fA-F]{64}$/.test(clean)) {
+            walletValue = clean;
+            break;
+          }
+          logFail('Invalid private key format. Must be a 64-character hex string (with or without 0x prefix).');
+        }
+      } else {
+        walletValue = await promptSecret(rl, `${walletMode.envKey}`);
+      }
       results.push({
         key: walletMode.envKey,
         value: walletValue,
