@@ -21,6 +21,7 @@ export default defineConfig({
   // (e.g. /^viem/ matches both "viem" and "viem/chains").
   // Only packages listed in our own dependencies need overriding —
   // transitive deps not in package.json are bundled automatically.
+  //
   noExternal: [
     /^@sinclair\/typebox/,
     /^viem/,
