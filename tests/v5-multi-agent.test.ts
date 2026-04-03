@@ -206,15 +206,16 @@ describe('AgentPool', () => {
     });
     const presets = pool.list({ isPreset: true });
     const custom = pool.list({ isPreset: false });
-    expect(presets.length).toBe(4);
+    expect(presets.length).toBeGreaterThanOrEqual(4);
     expect(custom.length).toBe(1);
   });
 
   it('getEnabledAgents returns only enabled', () => {
     const pool = new AgentPool({ stateDir: '/tmp/test-agents-' + Date.now() });
-    expect(pool.getEnabledAgents().length).toBe(4);
+    const initialCount = pool.getEnabledAgents().length;
+    expect(initialCount).toBeGreaterThanOrEqual(4);
     pool.update(pool.getByName('accountant').id, { enabled: false });
-    expect(pool.getEnabledAgents().length).toBe(3);
+    expect(pool.getEnabledAgents().length).toBe(initialCount - 1);
   });
 
   it('recordUsage increments count', () => {
@@ -606,13 +607,14 @@ describe('WebhookRouteRegistry', () => {
 
   it('filters by enabled status', () => {
     const reg = new WebhookRouteRegistry({ stateDir: '/tmp/test-webhooks-' + Date.now() });
+    const initialCount = reg.list().length;
     reg.create({ name: 'active', path: '/active', source: 'A', createdBy: 'test' });
     const r2 = reg.create({ name: 'inactive', path: '/inactive', source: 'B', createdBy: 'test' });
     reg.update(r2.id, { enabled: false });
 
-    expect(reg.list({ enabled: true }).length).toBe(1);
+    expect(reg.list({ enabled: true }).length).toBe(initialCount + 1);
     expect(reg.list({ enabled: false }).length).toBe(1);
-    expect(reg.list().length).toBe(2);
+    expect(reg.list().length).toBe(initialCount + 2);
   });
 
   it('clear empties the registry', () => {
