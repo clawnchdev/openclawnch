@@ -283,8 +283,8 @@ async function main() {
     console.log('    openclawnch help         Show this help');
     console.log('');
     console.log('  In-chat commands:');
-    console.log('    /setup                   Show tool status (X/42 tools ready)');
-    console.log('    /doctor                  Run 13 diagnostic checks');
+    console.log('    /setup                   Show tool status and readiness');
+    console.log('    /doctor                  Run diagnostic checks');
     console.log('    /connect                 Connect a mobile wallet via WalletConnect');
     console.log('    /wallet                  Show wallet status and balances');
     console.log('    /policy <rules>          Set spending policies');
