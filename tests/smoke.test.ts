@@ -34,9 +34,9 @@ describe('E2E smoke: project files', () => {
     }
   });
 
-  it.skipIf(!existsSync(resolve(ROOT, 'dist/wrapper.js')))('build output exists after build', () => {
+  it.skipIf(!existsSync(resolve(ROOT, 'dist/wrapper.mjs')))('build output exists after build', () => {
     // dist/ should exist if build was run before tests — skip when not built yet
-    expect(existsSync(resolve(ROOT, 'dist/wrapper.js'))).toBe(true);
+    expect(existsSync(resolve(ROOT, 'dist/wrapper.mjs'))).toBe(true);
   });
 });
 

@@ -444,21 +444,21 @@ describe('CLI integration', () => {
       join(__dirname, '..', 'bin', 'openclawnch.mjs'),
       'utf8',
     );
-    expect(cliSource).toContain("import('../dist/deploy.js')");
+    expect(cliSource).toContain("import('../dist/deploy.mjs')");
   });
 });
 
 // ── Extension Package Fix ─────────────────────────────────────────────────
 
 describe('extension package.json', () => {
-  it('main points to dist/index.js (not .ts source)', () => {
+  it('main points to dist/index.mjs (not .ts source)', () => {
     const pkg = JSON.parse(
       readFileSync(
         join(__dirname, '..', 'extensions', 'crypto', 'package.json'),
         'utf8',
       ),
     );
-    expect(pkg.main).toBe('dist/index.js');
+    expect(pkg.main).toBe('dist/index.mjs');
     expect(pkg.main).not.toContain('.ts');
   });
 
