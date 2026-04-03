@@ -305,7 +305,8 @@ describe('UserToolService', () => {
       definition: { type: 'api_connector', baseUrl: 'https://api.test.com', method: 'GET' as const, path: '/test' },
     });
 
-    expect(svc.list()).toHaveLength(2);
+    const initialCount = svc.list().length - 2; // account for any pre-existing tools
+    expect(svc.list()).toHaveLength(initialCount + 2);
     expect(svc.list({ createdBy: 'user-1' })).toHaveLength(1);
     expect(svc.list({ type: 'api_connector' })).toHaveLength(1);
     expect(svc.list({ type: 'composed' })).toHaveLength(0);
@@ -392,6 +393,7 @@ describe('UserToolService', () => {
 
   it('clear removes all tools', () => {
     const svc = new UserToolService({ stateDir: '/tmp/test-user-tools-' + Date.now() });
+    const initialCount = svc.list().length;
     svc.create({
       name: 'clearable_one',
       label: 'Test',
@@ -409,7 +411,7 @@ describe('UserToolService', () => {
       definition: { type: 'custom', behavior: 'second clearable behavior for test', allowedTools: ['defi_price'] },
     });
 
-    expect(svc.list()).toHaveLength(2);
+    expect(svc.list()).toHaveLength(initialCount + 2);
     svc.clear();
     expect(svc.list()).toHaveLength(0);
   });
