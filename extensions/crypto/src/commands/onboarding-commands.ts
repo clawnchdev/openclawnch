@@ -153,3 +153,18 @@ export const skipCommand = {
     return { text: 'No active onboarding to skip.' };
   },
 };
+
+// ── Restart Command ─────────────────────────────────────────────────────────
+
+export const restartCommand = {
+  name: 'reonboard',
+  description: 'Restart the onboarding tutorial from the beginning',
+  acceptsArgs: false,
+  requireAuth: true,
+  handler: async (ctx: any) => {
+    const userId = getSenderId(ctx);
+    const flow = getOnboardingFlow(userId);
+    const response = flow.restart();
+    return { text: response.text };
+  },
+};

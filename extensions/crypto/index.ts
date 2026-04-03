@@ -80,7 +80,7 @@ import { txCommand } from './src/commands/tx-command.js';
 import { resetCommand, resetConfirmCommand } from './src/commands/reset-command.js';
 import {
   professionalCommand, degenCommand, chillCommand, technicalCommand, mentorCommand,
-  capAllCommand, capCommands, skipCommand, backCommand,
+  capAllCommand, capCommands, skipCommand, backCommand, restartCommand as restartOnboardingCommand,
   createWalletCommand, importWalletCommand,
 } from './src/commands/onboarding-commands.js';
 import {
@@ -446,9 +446,10 @@ const plugin = {
       api.registerCommand(cmd);
     }
 
-    // Onboarding: skip, back, wallet creation
+    // Onboarding: skip, back, restart, wallet creation
     api.registerCommand(skipCommand);
     api.registerCommand(backCommand);
+    api.registerCommand(restartOnboardingCommand);
     api.registerCommand(createWalletCommand);
     api.registerCommand(importWalletCommand);
 

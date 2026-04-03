@@ -556,6 +556,18 @@ export class OnboardingFlow {
     return { text: SKIP_MESSAGE, final: true };
   }
 
+  /** Reset onboarding to the beginning — shows the welcome message again. */
+  restart(): OnboardingMessage {
+    this.state.step = 'choose_persona';
+    this.state.persona = undefined;
+    this.state.completedAt = undefined;
+    this.state.startedAt = Date.now();
+    this.state.lastInteraction = Date.now();
+    saveState(this.state);
+
+    return { text: WELCOME_MESSAGE };
+  }
+
   /**
    * Process a persona selection from the user.
    */
