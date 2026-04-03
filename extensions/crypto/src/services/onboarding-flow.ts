@@ -688,7 +688,6 @@ export class OnboardingFlow {
       const retryPrompt = expected.map(c => `Word #${c.index}`).join(', ');
       return {
         text: `Incorrect. Please type the correct words for: ${retryPrompt}`,
-        suggestion: expected.map(c => c.word).join(' '),
       };
     }
 
