@@ -14,7 +14,7 @@
  *   7. /skills command handler
  *   8. Prompt builder skill auto-injection
  *   9. skill_evolve view action for static skills
- *   10. Plugin registers 117 commands (including skills, interrupt, api, pull, delegate, policymode, profile, upgrade)
+ *   10. Plugin registers 118 commands (including skills, interrupt, api, pull, delegate, policymode, profile, upgrade)
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -711,7 +711,7 @@ describe('/skills Command — Enable / Disable', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('Plugin Registration — Skills', () => {
-   it('registers 117 commands including /skills, /interrupt, /api, and /pull', { timeout: 15000 }, async () => {
+   it('registers 118 commands including /skills, /interrupt, /api, and /pull', { timeout: 15000 }, async () => {
     const plugin = (await import('../extensions/crypto/index.js')).default;
     const commands: string[] = [];
     const mockApi = {
@@ -723,7 +723,7 @@ describe('Plugin Registration — Skills', () => {
 
     plugin.register(mockApi as any);
 
-    expect(commands).toHaveLength(117);
+    expect(commands).toHaveLength(118);
     expect(commands).toContain('skills');
     expect(commands).toContain('interrupt');
     expect(commands).toContain('interrupt_plan');

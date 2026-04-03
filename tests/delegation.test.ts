@@ -9,7 +9,7 @@
  *   5.  Delegation service: prepareDelegation, storeDelegation, formatDelegationStatus
  *   6.  Delegate command: handler shape, subcommands, no-policies output
  *   7.  Policy integration: delegation field on Policy interface
- *   8.  Plugin registers 117 commands including /delegate, /policymode, /profile, /upgrade
+ *   8.  Plugin registers 118 commands including /delegate, /policymode, /profile, /upgrade
  *   9.  Policy mode system: getPolicyMode, setPolicyMode, isDelegationMode
  *   10. Policymode command: /policymode, /policymode delegation, /policymode simple
  *   11. Delegate command mode gate: blocks in simple mode
@@ -1302,7 +1302,7 @@ describe('Delegation Service — revokeByPolicy', () => {
 // ─── 13. Plugin Registration ────────────────────────────────────────────
 
 describe('V7 Plugin Registration', () => {
-  it('plugin registers 117 commands including /delegate, /policymode, /profile, and /upgrade', { timeout: 15000 }, async () => {
+  it('plugin registers 118 commands including /delegate, /policymode, /profile, and /upgrade', { timeout: 15000 }, async () => {
     const commands: any[] = [];
     const mockApi = {
       registerTool: () => {},
@@ -1313,7 +1313,7 @@ describe('V7 Plugin Registration', () => {
     const { default: plugin } = await import('../extensions/crypto/index.js');
     plugin.register(mockApi as any);
 
-    expect(commands).toHaveLength(117);
+    expect(commands).toHaveLength(118);
     expect(commands.find((c: any) => c.name === 'delegate')).toBeDefined();
     expect(commands.find((c: any) => c.name === 'policies')).toBeDefined();
     expect(commands.find((c: any) => c.name === 'policymode')).toBeDefined();
@@ -2102,7 +2102,7 @@ describe('/upgrade Command', () => {
     expect(result.text).toContain('DelegationManager');
   });
 
-  it('plugin registers /upgrade command (117 commands)', async () => {
+  it('plugin registers /upgrade command (118 commands)', async () => {
     const commands: any[] = [];
     const api = {
       registerTool: () => {},
@@ -2113,7 +2113,7 @@ describe('/upgrade Command', () => {
     const plugin = await import('../extensions/crypto/index.js');
     (plugin as any).default.register(api);
 
-    expect(commands.length).toBe(117);
+    expect(commands.length).toBe(118);
     const names = commands.map(c => c.name);
     expect(names).toContain('upgrade');
   });
