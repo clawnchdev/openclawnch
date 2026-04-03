@@ -8,6 +8,9 @@ dist/
 # IDE
 .vscode/
 .idea/
+
+# macOS clutter
+*.textClipping
 *.swp
 *.swo
 
