@@ -17,7 +17,6 @@
 import {
   createDelegation,
   createExecution,
-  redeemDelegations,
   getSmartAccountsEnvironment,
   ExecutionMode,
   ROOT_AUTHORITY,
