@@ -504,16 +504,41 @@ async function handleRates() {
   const assets = service.getSupportedAssets();
   const protocols = service.getSupportedProtocols();
 
-  // Note: Live APY data requires reading from Aave's PoolDataProvider or DeFiLlama.
-  // This returns the static asset/protocol list with guidance on fetching live rates.
+  // Try to fetch live APY data from DeFiLlama
+  let liveRates: Array<{ symbol: string; supplyApy: number; borrowApy: number; tvl: number }> = [];
+  try {
+    const res = await fetch('https://yields.llama.fi/pools');
+    if (res.ok) {
+      const data = (await res.json()) as { data: Array<{ project: string; chain: string; symbol: string; apy: number; apyBorrow: number; tvlUsd: number }> };
+      liveRates = data.data
+        .filter(p => p.project === 'aave-v3' && p.chain === 'Base')
+        .map(p => ({
+          symbol: p.symbol,
+          supplyApy: Math.round(p.apy * 100) / 100,
+          borrowApy: Math.round((p.apyBorrow ?? 0) * 100) / 100,
+          tvl: Math.round(p.tvlUsd),
+        }));
+    }
+  } catch {
+    // Fall back to static list
+  }
+
+  if (liveRates.length > 0) {
+    return jsonResult({
+      source: 'DeFiLlama (live)',
+      protocol: 'Aave V3',
+      chain: 'Base',
+      rates: liveRates,
+    });
+  }
+
   return jsonResult({
-    notice: 'Live APY rates are not available in this response. The data below shows supported assets and protocols.',
+    notice: 'Could not fetch live APY data. Showing supported assets and protocols.',
     protocols: protocols.map(p => ({ id: p.id, name: p.name, chain: p.chain })),
     supportedAssets: assets.map(a => ({
       symbol: a.symbol,
       address: a.address,
     })),
-    howToGetLiveRates: 'For live APY data, use DeFiLlama API: GET https://yields.llama.fi/pools — filter by project=aave-v3 and chain=Base.',
-    tip: 'Ask me to check DeFiLlama yields for Aave V3 on Base for current rates.',
+    tip: 'Try again later for live rates, or ask me to check DeFiLlama yields for Aave V3 on Base.',
   });
 }
