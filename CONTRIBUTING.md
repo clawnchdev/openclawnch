@@ -63,7 +63,7 @@ All changes must pass the full test suite:
 
 ```bash
 pnpm typecheck   # TypeScript type checking
-pnpm test         # 900+ tests via vitest
+pnpm test         # 1547 tests via vitest
 ```
 
 Test files live in `tests/` and follow the naming pattern `*.test.ts`.

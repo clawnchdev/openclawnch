@@ -1,6 +1,6 @@
 # Tools Reference
 
-42 tools across 11 categories. All tools work on every channel. Write-operation tools are `ownerOnly: true` — only the paired account owner can invoke them.
+48 tools across 11 categories. All tools work on every channel. Write-operation tools are `ownerOnly: true` — only the paired account owner can invoke them.
 
 Run `/setup` to see which tools are configured and which need additional API keys.
 

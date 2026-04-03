@@ -19,7 +19,7 @@ Each user runs their own instance with their own API keys. No shared infrastruct
 
 ```
 extensions/crypto/
-├── index.ts                    # Entry point (register 42 tools, 87 commands, hooks)
+├── index.ts                    # Entry point (register 48 tools, 117 commands, hooks)
 ├── src/
 │   ├── tools/                  # 42 tool files
 │   ├── commands/               # 18 command files
@@ -125,7 +125,7 @@ Plans persist to disk and survive restarts. The validator catches contradictions
 pnpm install
 pnpm build        # Build extension + wrapper
 pnpm typecheck    # tsc --noEmit (strict mode)
-pnpm test         # 958 tests across 28 files (958 pass, 11 skip)
+pnpm test         # 1547 tests across 44 files (1547 pass, 31 skip)
 ```
 
 Test files cover: tool registration, command handlers, service logic, security hardening, compound operations, channel routing, integration scenarios, and E2E scaffolds.

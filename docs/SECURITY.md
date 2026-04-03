@@ -62,7 +62,7 @@ All Base chain transactions include the Base Builder Code `bc_z92vaimh` (ERC-802
 
 ## Test coverage
 
-958 tests cover security-critical paths including:
+1547 tests cover security-critical paths including:
 
 - `ownerOnly` enforcement on all write tools
 - Credential leak detection patterns

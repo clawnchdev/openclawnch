@@ -23,7 +23,7 @@ You're done when the startup banner shows green checks for LLM and Channel, and 
 | [Docker](#docker) | Self-hosted VPS or NAS | ~5 minutes |
 | [Fly.io](#flyio) | Managed cloud, zero-maintenance | ~10 minutes |
 
-All paths give you the same 42 tools, 87 commands, and 47 services.
+All paths give you the same 48 tools, 117 commands, and 75 services.
 
 ---
 
@@ -86,7 +86,7 @@ Run these commands in chat:
 
 | Command | What it shows |
 |---------|---------------|
-| `/setup` | X/42 tools ready, which keys are missing, where to get them |
+| `/setup` | X/48 tools ready, which keys are missing, where to get them |
 | `/doctor` | Full diagnostic: wallet, RPC, secrets, channels, services |
 | `/wallet` | Wallet address and balance (after connecting) |
 
@@ -295,7 +295,7 @@ sudo systemctl enable --now openclawnch
 
 ## Channels
 
-The crypto extension is channel-agnostic. All 42 tools and 87 commands work identically on every channel.
+The crypto extension is channel-agnostic. All 48 tools and 117 commands work identically on every channel.
 
 | Channel | How to enable | Notes |
 |---------|--------------|-------|
