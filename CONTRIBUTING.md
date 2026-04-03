@@ -4,7 +4,7 @@
 
 ```bash
 # Clone the repository
-git clone https://github.com/clawnch/openclawnch.git
+git clone https://github.com/clawnchbot/openclawnch.git
 cd openclawnch
 
 # Install dependencies

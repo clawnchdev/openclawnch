@@ -28,7 +28,7 @@ import { parseArgs } from 'node:util';
 const FLY_API = 'https://api.machines.dev/v1';
 const FLY_GQL = 'https://api.fly.io/graphql';
 const TELEGRAM_API = 'https://api.telegram.org';
-const IMAGE = 'ghcr.io/clawnch/openclawnch:latest';
+const IMAGE = 'ghcr.io/clawnchbot/openclawnch:latest';
 const DEFAULT_REGION = 'iad';
 const DEFAULT_VM_SIZE = 'shared-cpu-2x';
 const DEFAULT_MEMORY_MB = 2048;

@@ -8,7 +8,7 @@ Crypto/DeFi extension for [OpenClaw](https://github.com/openclaw/openclaw). Adds
 openclaw plugins install @clawnch/openclaw-crypto
 ```
 
-Or use it as part of the full [OpenClawnch](https://github.com/clawnch/openclawnch) distribution:
+Or use it as part of the full [OpenClawnch](https://github.com/clawnchbot/openclawnch) distribution:
 
 ```bash
 npx @clawnch/openclawnch
