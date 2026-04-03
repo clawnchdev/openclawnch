@@ -298,14 +298,14 @@ async function main() {
 
   // Init command — interactive setup wizard
   if (args[0] === 'init' || args[0] === 'setup') {
-    const { initCli } = await import('../dist/init.js');
+    const { initCli } = await import('../dist/init.mjs');
     await initCli(args.slice(1));
     return;
   }
 
   // Deploy command — provisions a personal DeFi agent on Fly.io + Telegram
   if (args[0] === 'deploy') {
-    const { deployCli } = await import('../dist/deploy.js');
+    const { deployCli } = await import('../dist/deploy.mjs');
     await deployCli(args.slice(1));
     return;
   }

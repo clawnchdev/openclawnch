@@ -8,15 +8,15 @@
   },
   "exports": {
     ".": {
-      "types": "./dist/wrapper.d.ts",
-      "import": "./dist/wrapper.js"
+      "types": "./dist/wrapper.d.mts",
+      "import": "./dist/wrapper.mjs"
     }
   },
   "publishConfig": {
     "access": "public"
   },
-  "main": "./dist/wrapper.js",
-  "types": "./dist/wrapper.d.ts",
+  "main": "./dist/wrapper.mjs",
+  "types": "./dist/wrapper.d.mts",
   "files": [
     "dist",
     "!dist/**/*.map",
