@@ -66,8 +66,8 @@ jobs:
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
-          context: .
+          context: deploy
           push: true
           tags: |
-            ghcr.io/clawnch/openclawnch:latest
-            ghcr.io/clawnch/openclawnch:${{ github.ref_name }}
+            ghcr.io/clawnchbot/openclawnch:latest
+            ghcr.io/clawnchbot/openclawnch:${{ github.ref_name }}

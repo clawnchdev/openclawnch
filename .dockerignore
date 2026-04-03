@@ -1,0 +1,43 @@
+# Git
+.git/
+.gitignore
+
+# Dependencies
+node_modules/
+
+# Source (only dist is needed)
+src/
+extensions/crypto/src/
+extensions/crypto/index.ts
+tsconfig.json
+tsdown.config.ts
+
+# Tests
+tests/
+vitest.config.*
+
+# Docs (not needed in image)
+*.md
+!deploy/*.md
+docs/
+
+# Build artifacts
+*.tsbuildinfo
+coverage/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.*
+!deploy/.env.example
+
+# Internal
+gitignored-docs/
+.github/
