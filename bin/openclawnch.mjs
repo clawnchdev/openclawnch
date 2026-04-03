@@ -7,6 +7,16 @@
  * pre-configured. All CLI commands pass through to OpenClaw.
  */
 
+// ─── Node.js version check (before any ESM-dependent code) ────────────
+const [major, minor] = process.versions.node.split('.').map(Number);
+if (major < 22 || (major === 22 && minor < 14)) {
+  console.error(
+    `\x1b[31mOpenClawnch requires Node.js >= 22.14.0. You have v${process.versions.node}.\x1b[0m\n` +
+    'Install the latest LTS: https://nodejs.org/'
+  );
+  process.exit(1);
+}
+
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { existsSync, mkdirSync, copyFileSync, readFileSync, writeFileSync } from 'node:fs';
@@ -341,4 +351,7 @@ async function main() {
   });
 }
 
-main();
+main().catch((err) => {
+  console.error(`\x1b[31mFatal: ${err.message ?? err}\x1b[0m`);
+  process.exit(1);
+});

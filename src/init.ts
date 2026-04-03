@@ -369,6 +369,10 @@ export async function initCli(argv: string[]): Promise<void> {
 `);
 
   const rl = createInterface({ input: stdin, output: stdout });
+  rl.on('close', () => {
+    console.log('\n\nSetup cancelled.');
+    process.exit(0);
+  });
 
   try {
     // ── Step 1: LLM Provider ──────────────────────────────────────────
@@ -553,7 +557,7 @@ export async function initCli(argv: string[]): Promise<void> {
 
   1. Start your agent:
      ${printOnly ? 'source the exports above, then:' : ''}
-     node bin/openclawnch.mjs
+      openclawnch
 
   2. Message your bot on ${channel.label}.
      The bot walks you through onboarding (persona, capabilities, wallet).
