@@ -48,7 +48,7 @@ Full setup guide with all options: **[docs/SETUP.md](docs/SETUP.md)**
 
 | Category | Tools | What it does |
 |----------|-------|-------------|
-| **Wallet** | `clawnch_connect`, `transfer`, `permit2`, `approvals` | WalletConnect pairing, ENS transfers, token approvals, spending policies |
+| **Wallet** | `clawnchconnect`, `transfer`, `permit2`, `approvals` | WalletConnect pairing, ENS transfers, token approvals, spending policies |
 | **Trading** | `defi_swap`, `defi_balance`, `liquidity`, `manage_orders`, `bridge` | 6 DEX aggregators, limit/stop/trailing orders, DCA, cross-chain bridging |
 | **DeFi** | `defi_lend`, `defi_stake`, `yield` | Aave V3 supply/borrow, Lido/Rocket Pool staking, Yearn V3 vaults, live APYs via DeFiLlama |
 | **Market Data** | `defi_price`, `analytics`, `market_intel`, `cost_basis` | RSI/MACD/Bollinger bands, trending tokens, whale activity, FIFO P&L tracking |
