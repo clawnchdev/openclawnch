@@ -9,7 +9,7 @@
  * - WebhookServer: config defaults, HMAC verification, server lifecycle
  * - AgentsCommand: list, info, enable, disable, delete subcommands
  * - WebhooksCommand: list, info, enable, disable, delete subcommands
- * - Plugin registration counts (45 tools, 118 commands, 39 tool configs)
+ * - Plugin registration counts (45 tools, 118 commands, 45 tool configs)
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -889,7 +889,7 @@ describe('V5 Tool Config', () => {
       '../extensions/crypto/src/services/tool-config-service.js'
     );
     const statuses = getAllToolStatus();
-    expect(statuses.length).toBe(39);
+    expect(statuses.length).toBe(45);
   });
 });
 
@@ -930,7 +930,7 @@ describe('V5 Plugin Registration', () => {
       '../extensions/crypto/src/services/tool-config-service.js'
     );
     const statuses = getAllToolStatus();
-    expect(statuses.length).toBe(39);
+    expect(statuses.length).toBe(45);
     const agentConfig = statuses.find((s: any) => s.tool === 'agent_delegate');
     expect(agentConfig).toBeDefined();
     expect(agentConfig!.label).toBe('Agent Delegate');

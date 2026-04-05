@@ -288,7 +288,7 @@ describe('V3 plugin registration counts', () => {
       '../extensions/crypto/src/services/tool-config-service.js'
     );
     const statuses = getAllToolStatus();
-    expect(statuses.length).toBe(39);
+    expect(statuses.length).toBe(45);
     const fiatConfig = statuses.find((s: any) => s.tool === 'fiat_payment');
     expect(fiatConfig).toBeDefined();
     expect(fiatConfig!.label).toBe('Fiat Payment');
