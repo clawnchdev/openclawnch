@@ -17,13 +17,26 @@
  *   10. Tool config has 39 entries (V6: +1 policy_manage)
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
 import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
+// ─── Preserve original HOME across all test blocks ──────────────────────
+
+const ORIGINAL_HOME = process.env.HOME;
+
+afterAll(() => {
+  // Always restore HOME when this file finishes, regardless of individual afterEach
+  if (ORIGINAL_HOME !== undefined) {
+    process.env.HOME = ORIGINAL_HOME;
+  } else {
+    delete process.env.HOME;
+  }
+});
+
 // ─── Test directory for policy persistence ──────────────────────────────
 
-const TEST_HOME = join(process.env.HOME ?? '/tmp', '.openclawnch-policy-test-' + Date.now());
+const TEST_HOME = join(ORIGINAL_HOME ?? '/tmp', '.openclawnch-policy-test-' + Date.now());
 
 // ─── Type Helpers ───────────────────────────────────────────────────────
 
@@ -126,7 +139,7 @@ describe('PolicyStore', () => {
   let store: any;
 
   beforeEach(async () => {
-    // Override HOME for test isolation
+    // Override HOME for test isolation (ORIGINAL_HOME restored in file-level afterAll)
     process.env.HOME = TEST_HOME;
     const { resetPolicyStore, getPolicyStore } = await import('../extensions/crypto/src/services/policy-store.js');
     resetPolicyStore();
@@ -135,7 +148,7 @@ describe('PolicyStore', () => {
 
   afterEach(() => {
     try { rmSync(TEST_HOME, { recursive: true, force: true }); } catch {}
-    process.env.HOME = join(TEST_HOME, '..');  // Restore parent
+    if (ORIGINAL_HOME !== undefined) process.env.HOME = ORIGINAL_HOME;
   });
 
   it('starts with empty list', () => {
@@ -225,6 +238,7 @@ describe('PolicyEvaluator', () => {
 
   afterEach(() => {
     try { rmSync(TEST_HOME, { recursive: true, force: true }); } catch {}
+    if (ORIGINAL_HOME !== undefined) process.env.HOME = ORIGINAL_HOME;
   });
 
   it('allows everything when no policies exist', async () => {
