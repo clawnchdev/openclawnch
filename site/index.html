@@ -467,12 +467,12 @@
       transition: color 0.2s;
     }
 
-    .feature-card:nth-child(1):hover .feature-name { color: var(--lobster-300); }
-    .feature-card:nth-child(2):hover .feature-name { color: var(--seafoam-400); }
-    .feature-card:nth-child(3):hover .feature-name { color: var(--sand-300); }
-    .feature-card:nth-child(4):hover .feature-name { color: var(--blue-400); }
-    .feature-card:nth-child(5):hover .feature-name { color: var(--purple-400); }
-    .feature-card:nth-child(6):hover .feature-name { color: var(--lobster-300); }
+    .feature-card:nth-child(6n+1):hover .feature-name { color: var(--lobster-300); }
+    .feature-card:nth-child(6n+2):hover .feature-name { color: var(--seafoam-400); }
+    .feature-card:nth-child(6n+3):hover .feature-name { color: var(--sand-300); }
+    .feature-card:nth-child(6n+4):hover .feature-name { color: var(--blue-400); }
+    .feature-card:nth-child(6n+5):hover .feature-name { color: var(--purple-400); }
+    .feature-card:nth-child(6n+6):hover .feature-name { color: var(--lobster-300); }
 
     .feature-desc {
       font-size: 13px;
@@ -689,33 +689,63 @@
     <div class="features">
       <div class="feature-card">
         <div class="feature-emoji">📈</div>
-        <div class="feature-name">Trading & DeFi</div>
-        <div class="feature-desc">6 DEX aggregators, Aave V3 lending, Lido & Rocket Pool staking, Yearn vaults, limit orders, DCA, cross-chain bridges.</div>
+        <div class="feature-name">Trading</div>
+        <div class="feature-desc">6 DEX aggregators (1inch, 0x, Paraswap, OpenOcean, KyberSwap, Odos). Limit, stop, and trailing orders. DCA schedules. Cross-chain bridging via Li.Fi.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-emoji">🏦</div>
+        <div class="feature-name">DeFi</div>
+        <div class="feature-desc">Aave V3 supply & borrow, Lido & Rocket Pool staking, Yearn V3 vaults. Live APY comparisons via DeFiLlama. Position monitoring with alert thresholds.</div>
       </div>
       <div class="feature-card">
         <div class="feature-emoji">📊</div>
         <div class="feature-name">Market Intelligence</div>
-        <div class="feature-desc">RSI, MACD, Bollinger bands, whale activity tracking, trending tokens, portfolio P&L, 5-source price oracle.</div>
+        <div class="feature-desc">RSI, MACD, Bollinger bands. Whale activity tracking, trending tokens, FIFO P&L. 5-source price oracle (CoinGecko, Birdeye, DexScreener, TWAP, Chainlink).</div>
       </div>
       <div class="feature-card">
         <div class="feature-emoji">⚡</div>
         <div class="feature-name">Automation Engine</div>
-        <div class="feature-desc">Time, price, and on-chain triggers. DCA schedules, compound actions, conditional plans with parallel execution.</div>
+        <div class="feature-desc">Time, price, and on-chain triggers. Compound actions with conditionals, loops, parallel execution. Plans persist to disk and survive restarts.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-emoji">🚀</div>
+        <div class="feature-name">Token Launches</div>
+        <div class="feature-desc">Deploy ERC-20s on Base via Clawnch launchpad. Automatic Uniswap V4 pool creation. Configurable bonding curves and launch parameters.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-emoji">🎨</div>
+        <div class="feature-name">NFT & Airdrops</div>
+        <div class="feature-desc">ERC-721 mint, transfer, and burn. Airdrop eligibility checking across protocols. Collection management from chat.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-emoji">🔍</div>
+        <div class="feature-name">On-chain Intel</div>
+        <div class="feature-desc">Contract source verification, token security audits, real-time swap monitoring. Block explorer queries. Integrated web browsing.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-emoji">🗳️</div>
+        <div class="feature-name">Governance & Social</div>
+        <div class="feature-desc">DAO proposal voting from chat. Farcaster casting, search, and notifications. X/Twitter posting via Molten agent integration.</div>
       </div>
       <div class="feature-card">
         <div class="feature-emoji">🔒</div>
-        <div class="feature-name">Security First</div>
-        <div class="feature-desc">WalletConnect non-custodial mode, bounded approvals, credential leak detection, prompt injection guards.</div>
+        <div class="feature-name">Security</div>
+        <div class="feature-desc">Bounded approvals (exact amounts, never unlimited). Credential leak scanning. Prompt injection guards. Transaction verification before execution. Endpoint allowlist.</div>
       </div>
       <div class="feature-card">
         <div class="feature-emoji">👛</div>
         <div class="feature-name">Three Wallet Modes</div>
-        <div class="feature-desc">WalletConnect (agent never holds keys), encrypted local BIP-39 mnemonic, or Bankr custodial multi-chain wallet.</div>
+        <div class="feature-desc">WalletConnect (agent never holds keys). Encrypted local BIP-39 mnemonic (scrypt + AES-256-GCM). Bankr custodial multi-chain wallet.</div>
       </div>
       <div class="feature-card">
         <div class="feature-emoji">🧠</div>
         <div class="feature-name">Self-Improvement</div>
-        <div class="feature-desc">Procedural memory, skill evolution, session recall. The agent learns from experience and improves over time.</div>
+        <div class="feature-desc">Procedural memory that persists across sessions. Agent-initiated skill creation and refinement. Full-text session recall. Toggle with /evolve and /stable.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-emoji">🤖</div>
+        <div class="feature-name">Agent Network</div>
+        <div class="feature-desc">Agent-to-agent matching via Clawnx. Hummingbot market-making integration. Wayfinder route optimization. Multi-agent orchestration.</div>
       </div>
     </div>
 
