@@ -54,12 +54,12 @@ RUN --mount=type=cache,target=/root/.npm \
     rm -rf /tmp/_deps
 # MetaMask Smart Accounts Kit — install globally (has transitive deps)
 RUN --mount=type=cache,target=/root/.npm \
-    npm install -g @metamask/smart-accounts-kit@0.4.0-beta.1
+    npm install -g @metamask/smart-accounts-kit@1.0.0
 
 # ── Layer 3b: Botcoin miner (Python, changes independently) ──────────
 RUN apt-get update && apt-get install -y python3 python3-pip && rm -rf /var/lib/apt/lists/*
 RUN pip3 install --no-cache-dir --break-system-packages requests>=2.31
-COPY mine.py /opt/botcoin/mine.py
+COPY mine.py* /opt/botcoin/
 COPY pipeline/ /opt/botcoin/pipeline/
 RUN mkdir -p /workspace/botcoin-runs
 

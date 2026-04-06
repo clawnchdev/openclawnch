@@ -34,10 +34,10 @@ jobs:
   # ── Deploy to Fly.io ─────────────────────────────────────────────────
   deploy:
     runs-on: ubuntu-latest
-    # Only deploy if CI passed (or if manually triggered)
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
-    # Skip if explicitly disabled OR if FLY_API_TOKEN isn't set
-    if: ${{ vars.FLY_DEPLOY_ENABLED != 'false' }}
+    # Only deploy if CI passed (or manually triggered) AND not explicitly disabled
+    if: >-
+      (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
+      && vars.FLY_DEPLOY_ENABLED != 'false'
     steps:
       - uses: actions/checkout@v6
 
