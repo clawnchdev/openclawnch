@@ -209,6 +209,61 @@
       border: 1px solid var(--neutral-800);
     }
 
+    /* ── CTA Buttons ── */
+    .cta-row {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      justify-content: center;
+      width: 100%;
+    }
+
+    .cta-btn {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      text-decoration: none;
+      padding: 10px 22px;
+      border-radius: 6px;
+      transition: transform 0.15s, background 0.2s, border-color 0.2s, color 0.2s;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .cta-btn:hover {
+      transform: translateY(-1px);
+    }
+
+    .cta-btn:active {
+      transform: scale(0.98);
+    }
+
+    .cta-btn.primary {
+      background: var(--lobster-400);
+      color: var(--neutral-50);
+      border: 1px solid var(--lobster-400);
+    }
+
+    .cta-btn.primary:hover {
+      background: var(--lobster-300);
+      border-color: var(--lobster-300);
+      box-shadow: 0 0 20px hsla(9, 52%, 54%, 0.15);
+    }
+
+    .cta-btn.secondary {
+      background: transparent;
+      color: var(--neutral-300);
+      border: 1px solid var(--neutral-600);
+    }
+
+    .cta-btn.secondary:hover {
+      border-color: var(--neutral-500);
+      color: var(--neutral-100);
+    }
+
     /* ── Stats Bar ── */
     .stats-bar {
       width: 100%;
@@ -305,6 +360,27 @@
       font-weight: 600;
     }
 
+    .quick-start-footer {
+      margin-top: 16px;
+      padding-top: 14px;
+      border-top: 1px solid var(--neutral-800);
+      text-align: center;
+    }
+
+    .quick-start-footer a {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--lobster-400);
+      text-decoration: none;
+      transition: color 0.15s;
+    }
+
+    .quick-start-footer a:hover {
+      color: var(--lobster-300);
+    }
+
     /* ── Features ── */
     .features {
       display: grid;
@@ -351,6 +427,8 @@
     .feature-card:nth-child(2):hover .feature-name { color: var(--seafoam-400); }
     .feature-card:nth-child(3):hover .feature-name { color: var(--sand-300); }
     .feature-card:nth-child(4):hover .feature-name { color: var(--blue-400); }
+    .feature-card:nth-child(5):hover .feature-name { color: var(--purple-400); }
+    .feature-card:nth-child(6):hover .feature-name { color: var(--lobster-300); }
 
     .feature-desc {
       font-size: 13px;
@@ -444,6 +522,7 @@
 
     .hero      { animation: fadeInUp 0.5s ease both; }
     .install   { animation: fadeInUp 0.5s ease 0.05s both; }
+    .cta-row   { animation: fadeInUp 0.5s ease 0.08s both; }
     .stats-bar { animation: fadeInUp 0.5s ease 0.1s both; }
     .qs-section { animation: fadeInUp 0.5s ease 0.15s both; }
     .features  { animation: fadeInUp 0.5s ease 0.2s both; }
@@ -500,6 +579,12 @@
       </div>
     </div>
 
+    <div class="cta-row">
+      <a href="https://github.com/clawnchbot/openclawnch/tree/master/docs" class="cta-btn primary" target="_blank" rel="noopener">Read the Docs</a>
+      <a href="https://github.com/clawnchbot/openclawnch" class="cta-btn secondary" target="_blank" rel="noopener">View on GitHub</a>
+      <a href="https://www.npmjs.com/package/@clawnch/openclawnch" class="cta-btn secondary" target="_blank" rel="noopener">npm</a>
+    </div>
+
     <div class="stats-bar">
       <div class="stat">
         <div class="stat-value teal">48</div>
@@ -547,6 +632,9 @@
             Message your bot — <code>/setup</code> to verify, <code>/connect</code> for wallet
           </span>
         </div>
+        <div class="quick-start-footer">
+          <a href="https://github.com/clawnchbot/openclawnch/blob/master/docs/SETUP.md" target="_blank" rel="noopener">Full setup guide — Docker, Fly.io, env vars, diagnostics →</a>
+        </div>
       </div>
     </div>
 
@@ -571,6 +659,16 @@
         <div class="feature-name">Security First</div>
         <div class="feature-desc">WalletConnect non-custodial mode, bounded approvals, credential leak detection, prompt injection guards.</div>
       </div>
+      <div class="feature-card">
+        <div class="feature-emoji">👛</div>
+        <div class="feature-name">Three Wallet Modes</div>
+        <div class="feature-desc">WalletConnect (agent never holds keys), encrypted local BIP-39 mnemonic, or Bankr custodial multi-chain wallet.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-emoji">🧠</div>
+        <div class="feature-name">Self-Improvement</div>
+        <div class="feature-desc">Procedural memory, skill evolution, session recall. The agent learns from experience and improves over time.</div>
+      </div>
     </div>
 
     <div class="channels">
@@ -585,7 +683,7 @@
       <div class="footer-links">
         <a href="https://github.com/clawnchbot/openclawnch" target="_blank" rel="noopener">GitHub</a>
         <a href="https://www.npmjs.com/package/@clawnch/openclawnch" target="_blank" rel="noopener">npm</a>
-        <a href="https://github.com/clawnchbot/openclawnch/tree/main/docs" target="_blank" rel="noopener">Docs</a>
+        <a href="https://github.com/clawnchbot/openclawnch/tree/master/docs" target="_blank" rel="noopener">Docs</a>
         <a href="https://x.com/Clawnch_Bot" target="_blank" rel="noopener">X</a>
         <a href="https://t.me/ClawnchAlerts" target="_blank" rel="noopener">Telegram</a>
       </div>
