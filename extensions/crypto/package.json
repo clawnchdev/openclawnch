@@ -3,20 +3,20 @@
   "version": "0.1.0",
   "description": "Crypto/DeFi extension for OpenClaw — ClawnchConnect wallet, DeFi tools, token launchpad, market intel, cross-chain bridges",
   "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "dist/index.mjs",
+  "types": "dist/index.d.mts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.mjs"
     },
     "./tools/*": {
-      "types": "./dist/src/tools/*.d.ts",
-      "import": "./dist/src/tools/*.js"
+      "types": "./dist/src/tools/*.d.mts",
+      "import": "./dist/src/tools/*.mjs"
     },
     "./services/*": {
-      "types": "./dist/src/services/*.d.ts",
-      "import": "./dist/src/services/*.js"
+      "types": "./dist/src/services/*.d.mts",
+      "import": "./dist/src/services/*.mjs"
     }
   },
   "files": [
@@ -26,7 +26,7 @@
     "README.md"
   ],
   "openclaw": {
-    "extensions": ["./dist/index.js"],
+    "extensions": ["./dist/index.mjs"],
     "skills": ["./skills"],
     "install": {
       "npmSpec": "@clawnch/openclaw-crypto",
