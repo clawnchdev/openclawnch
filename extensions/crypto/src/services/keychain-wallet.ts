@@ -22,7 +22,7 @@
 import { randomBytes, createCipheriv, createDecipheriv } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
-import { execSync } from 'node:child_process';
+import { execSync, execFileSync } from 'node:child_process';
 
 // ─── Types ───────────────────────────────────────────────────────────────
 
@@ -146,16 +146,18 @@ function keychainStore(payload: EncryptedPayload): void {
   const json = JSON.stringify(payload);
   // Delete existing entry first (update = delete + add)
   try {
-    execSync(
-      `security delete-generic-password -a "${KEYCHAIN_ACCOUNT}" -s "${KEYCHAIN_SERVICE}" login.keychain-db 2>/dev/null`,
+    execFileSync(
+      'security',
+      ['delete-generic-password', '-a', KEYCHAIN_ACCOUNT, '-s', KEYCHAIN_SERVICE, 'login.keychain-db'],
       { stdio: 'pipe' },
     );
   } catch {
     // Not found — fine, we're creating fresh
   }
 
-  execSync(
-    `security add-generic-password -a "${KEYCHAIN_ACCOUNT}" -s "${KEYCHAIN_SERVICE}" -w "${json.replace(/"/g, '\\"')}" login.keychain-db`,
+  execFileSync(
+    'security',
+    ['add-generic-password', '-a', KEYCHAIN_ACCOUNT, '-s', KEYCHAIN_SERVICE, '-w', json, 'login.keychain-db'],
     { stdio: 'pipe' },
   );
 }
@@ -166,8 +168,9 @@ function keychainStore(payload: EncryptedPayload): void {
  */
 function keychainLoad(): EncryptedPayload | null {
   try {
-    const raw = execSync(
-      `security find-generic-password -a "${KEYCHAIN_ACCOUNT}" -s "${KEYCHAIN_SERVICE}" -w login.keychain-db 2>/dev/null`,
+    const raw = execFileSync(
+      'security',
+      ['find-generic-password', '-a', KEYCHAIN_ACCOUNT, '-s', KEYCHAIN_SERVICE, '-w', 'login.keychain-db'],
       { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] },
     ).trim();
     return JSON.parse(raw) as EncryptedPayload;
@@ -181,8 +184,9 @@ function keychainLoad(): EncryptedPayload | null {
  */
 function keychainExists(): boolean {
   try {
-    execSync(
-      `security find-generic-password -a "${KEYCHAIN_ACCOUNT}" -s "${KEYCHAIN_SERVICE}" login.keychain-db 2>/dev/null`,
+    execFileSync(
+      'security',
+      ['find-generic-password', '-a', KEYCHAIN_ACCOUNT, '-s', KEYCHAIN_SERVICE, 'login.keychain-db'],
       { stdio: 'pipe' },
     );
     return true;

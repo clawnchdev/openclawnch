@@ -17,7 +17,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
 import { createCipheriv, createDecipheriv, randomBytes, createHash, scryptSync } from 'node:crypto';
-import { execSync } from 'node:child_process';
+import { execSync, execFileSync } from 'node:child_process';
 
 const HOME = process.env.HOME ?? '/home/openclawnch';
 const AGENT_DIR = join(HOME, '.openclawnch', 'agent');
@@ -71,14 +71,16 @@ function saveToKeychain(agentAddress: string, privateKey: string): boolean {
   try {
     // Delete existing entry if present (update)
     try {
-      execSync(
-        `security delete-generic-password -a "${agentAddress}" -s "${KEYCHAIN_SERVICE}" 2>/dev/null`,
+      execFileSync(
+        'security',
+        ['delete-generic-password', '-a', agentAddress, '-s', KEYCHAIN_SERVICE],
         { stdio: 'ignore' },
       );
     } catch { /* not found — fine */ }
 
-    execSync(
-      `security add-generic-password -a "${agentAddress}" -s "${KEYCHAIN_SERVICE}" -w "${privateKey}" -T ""`,
+    execFileSync(
+      'security',
+      ['add-generic-password', '-a', agentAddress, '-s', KEYCHAIN_SERVICE, '-w', privateKey, '-T', ''],
       { stdio: 'ignore' },
     );
     return true;
@@ -89,8 +91,9 @@ function saveToKeychain(agentAddress: string, privateKey: string): boolean {
 
 function loadFromKeychain(agentAddress: string): string | null {
   try {
-    const result = execSync(
-      `security find-generic-password -a "${agentAddress}" -s "${KEYCHAIN_SERVICE}" -w`,
+    const result = execFileSync(
+      'security',
+      ['find-generic-password', '-a', agentAddress, '-s', KEYCHAIN_SERVICE, '-w'],
       { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] },
     );
     return result.trim();
