@@ -1,5 +1,5 @@
 # Source maps (not needed by consumers)
-**/*.js.map
+**/*.map
 
 # TypeScript source (only ship compiled)
 extensions/crypto/src/
@@ -14,11 +14,15 @@ vitest.config.ts
 # Dev / internal docs
 PLAN.md
 AUDIT.md
+IMPROVEMENTS.md
 CONTRIBUTING.md
 FEATURE_PARITY.md
+CHANGELOG.md
 .github/
 
 # Config
 .gitignore
+.dockerignore
 tsconfig.json
 tsdown.config.ts
+.env.example

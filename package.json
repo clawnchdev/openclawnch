@@ -19,7 +19,6 @@
   "types": "./dist/wrapper.d.mts",
   "files": [
     "dist",
-    "!dist/**/*.map",
     "bin",
     "deploy/Dockerfile",
     "deploy/entrypoint.sh",
@@ -28,7 +27,6 @@
     "deploy/openclaw.json",
     "deploy/docker-compose.yml",
     "extensions/crypto/dist",
-    "!extensions/crypto/dist/**/*.map",
     "extensions/crypto/skills",
     "extensions/crypto/package.json",
     "extensions/crypto/openclaw.plugin.json",
