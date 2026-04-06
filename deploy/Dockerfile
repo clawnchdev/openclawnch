@@ -56,12 +56,12 @@ RUN --mount=type=cache,target=/root/.npm \
 RUN --mount=type=cache,target=/root/.npm \
     npm install -g @metamask/smart-accounts-kit@1.0.0
 
-# ── Layer 3b: Botcoin miner (Python, changes independently) ──────────
+# ── Layer 3b: Botcoin miner (Python, optional — only present in operator builds) ─
 RUN apt-get update && apt-get install -y python3 python3-pip && rm -rf /var/lib/apt/lists/*
 RUN pip3 install --no-cache-dir --break-system-packages requests>=2.31
+RUN mkdir -p /opt/botcoin/pipeline /workspace/botcoin-runs
 COPY mine.py* /opt/botcoin/
-COPY pipeline/ /opt/botcoin/pipeline/
-RUN mkdir -p /workspace/botcoin-runs
+COPY pipeline* /opt/botcoin/
 
 # ── Layer 4: Dirs, config, entrypoint (tiny, always rebuilt) ─────────
 # Create non-root user for security
