@@ -386,6 +386,55 @@ export const TOOL_REQUIREMENTS: ToolRequirement[] = [
     keySource: 'No API keys required',
     setupHint: 'Just say what you want: "don\'t let me spend more than $500 a day on DeFi"',
   },
+
+  // ── DeFi Protocols (wallet required) ──────────────────────────────────
+  {
+    tool: 'defi_lend',
+    label: 'DeFi Lending',
+    description: 'Aave V3: supply, borrow, repay, withdraw, health factor, positions, live APYs',
+    requiredKeys: [],
+    walletRequired: true,
+    worksWithoutKeys: true,
+  },
+  {
+    tool: 'defi_stake',
+    label: 'DeFi Staking',
+    description: 'Liquid staking via Lido (stETH) and Rocket Pool (rETH)',
+    requiredKeys: [],
+    walletRequired: true,
+    worksWithoutKeys: true,
+  },
+  {
+    tool: 'approvals',
+    label: 'Approvals',
+    description: 'View, revoke, and manage ERC-20 token approvals and Permit2 allowances',
+    requiredKeys: [],
+    walletRequired: true,
+    worksWithoutKeys: true,
+  },
+
+  // ── Agent Memory & Skills (always available) ──────────────────────────
+  {
+    tool: 'agent_memory',
+    label: 'Agent Memory',
+    description: 'Persistent memory: save/recall facts, preferences, and discoveries across sessions',
+    requiredKeys: [],
+    worksWithoutKeys: true,
+  },
+  {
+    tool: 'skill_evolve',
+    label: 'Skill Evolution',
+    description: 'Self-improvement: learn new skills, refine existing ones, track evolution',
+    requiredKeys: [],
+    worksWithoutKeys: true,
+  },
+  {
+    tool: 'session_recall',
+    label: 'Session Recall',
+    description: 'Search and recall context from past conversation sessions',
+    requiredKeys: [],
+    worksWithoutKeys: true,
+  },
 ];
 
 // ─── Lookup Helpers ──────────────────────────────────────────────────────

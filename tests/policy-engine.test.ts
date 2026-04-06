@@ -14,7 +14,7 @@
  *   7.  extractActionContext: field extraction from tool args
  *   8.  renderPolicyDisplay: both NL description and structured rules shown
  *   9.  Plugin registers 45 tools and 118 commands (V6: +1 tool, +1 command; V7: +3 commands)
- *   10. Tool config has 39 entries (V6: +1 policy_manage)
+ *   10. Tool config has 45 entries (V6: +1 policy_manage)
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
