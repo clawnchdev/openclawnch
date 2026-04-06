@@ -194,6 +194,13 @@
       border-color: var(--seafoam-400);
     }
 
+    .install-alts {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      align-items: center;
+    }
+
     .install-alt {
       font-size: 13px;
       color: var(--neutral-500);
@@ -358,6 +365,43 @@
     .step-text strong {
       color: var(--neutral-200);
       font-weight: 600;
+    }
+
+    .provider-links {
+      display: inline;
+      font-size: 13px;
+    }
+
+    .provider-links a {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--neutral-400);
+      text-decoration: none;
+      transition: color 0.15s;
+      letter-spacing: 0.3px;
+    }
+
+    .provider-links a:hover {
+      color: var(--neutral-200);
+    }
+
+    .provider-links a.recommended {
+      color: var(--lobster-400);
+      font-weight: 700;
+    }
+
+    .provider-links a.recommended:hover {
+      color: var(--lobster-300);
+    }
+
+    .provider-links .sep {
+      color: var(--neutral-600);
+      margin: 0 2px;
+    }
+
+    .provider-links .plus {
+      color: var(--neutral-600);
+      margin: 0 6px;
     }
 
     .quick-start-footer {
@@ -574,8 +618,10 @@
         <span class="install-cmd">npx @clawnch/openclawnch</span>
         <button type="button" class="install-copy" id="copyBtn">copy</button>
       </div>
-      <div class="install-alt">
-        already on OpenClaw? <code>openclaw plugins install @clawnch/openclaw-crypto</code>
+      <div class="install-alts">
+        <div class="install-alt">from source? <code>git clone</code> + <code>pnpm install</code> + <code>pnpm build</code></div>
+        <div class="install-alt">Docker? <code>docker compose -f deploy/docker-compose.yml up -d</code></div>
+        <div class="install-alt">already on OpenClaw? <code>openclaw plugins install @clawnch/openclaw-crypto</code></div>
       </div>
     </div>
 
@@ -610,8 +656,10 @@
         <div class="step">
           <span class="step-arrow">-&gt;</span>
           <span class="step-text">
-            Grab an <strong>LLM API key</strong> and a <strong>channel token</strong>
-            <span class="muted">— Anthropic, OpenRouter, OpenAI, or Bankr + Telegram, Discord, Slack</span>
+            Grab an <strong>LLM API key</strong> and a <strong>channel token</strong><br>
+            <span class="provider-links">
+              <a href="https://bankr.bot/llm" class="recommended" target="_blank" rel="noopener">Bankr</a><span class="sep">·</span><a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">Anthropic</a><span class="sep">·</span><a href="https://openrouter.ai/keys" target="_blank" rel="noopener">OpenRouter</a><span class="sep">·</span><a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">OpenAI</a><span class="plus">+</span><a href="https://t.me/BotFather" target="_blank" rel="noopener">Telegram</a><span class="sep">·</span><a href="https://discord.com/developers/applications" target="_blank" rel="noopener">Discord</a><span class="sep">·</span><a href="https://api.slack.com/apps" target="_blank" rel="noopener">Slack</a>
+            </span>
           </span>
         </div>
         <div class="step">
