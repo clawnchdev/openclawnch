@@ -238,7 +238,7 @@ const plugin = {
           const userId = extractPolicyUserId(ctx);
           if (isReadonly(userId)) {
             return {
-              text: `BLOCKED: Read-only mode is active. The tool "${tool.name}" writes to the blockchain and cannot be used in readonly mode. Use /safemode or /dangermode to re-enable write operations.`,
+              content: [{ type: 'text', text: `BLOCKED: Read-only mode is active. The tool "${tool.name}" writes to the blockchain and cannot be used in readonly mode. Use /safemode or /dangermode to re-enable write operations.` }],
               isError: true,
             };
           }
@@ -1267,7 +1267,7 @@ const plugin = {
     }
 
     /** Periodic sweep: purge expired entries to prevent unbounded Map growth. */
-    setInterval(() => {
+    const onboardingSweepTimer = setInterval(() => {
       const now = Date.now();
       for (const [key, ts] of onboardingHandledConversations) {
         if (now - ts > ONBOARDING_FLAG_TTL_MS) {
@@ -1275,6 +1275,7 @@ const plugin = {
         }
       }
     }, 60_000); // Every 60 seconds
+    onboardingSweepTimer.unref(); // Don't prevent clean process exit
 
     // ── Channel-agnostic sender for onboarding + notifications ────────
     const channelSender = createChannelSender(api);
