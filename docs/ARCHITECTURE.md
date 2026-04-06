@@ -19,13 +19,13 @@ Each user runs their own instance with their own API keys. No shared infrastruct
 
 ```
 extensions/crypto/
-├── index.ts                    # Entry point (register 48 tools, 117 commands, hooks)
+├── index.ts                    # Entry point (register 48 tools, 118 commands, hooks)
 ├── src/
-│   ├── tools/                  # 42 tool files
+│   ├── tools/                  # 45 tool files
 │   ├── commands/               # 18 command files
 │   ├── hooks/                  # System prompt injection, post-tool-call hooks
 │   ├── lib/                    # Shared utilities (ENS resolver, token decimals, helpers)
-│   └── services/               # 47 service files
+│   └── services/               # 76 service files
 │       ├── channel-sender.ts           # Channel-agnostic message routing (7 channels)
 │       ├── walletconnect-service.ts    # WalletConnect lifecycle + builder code wrapping
 │       ├── rpc-provider.ts             # Multi-RPC with failover + circuit breaker

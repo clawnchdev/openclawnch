@@ -22,7 +22,7 @@ pnpm build
 
 ## Requirements
 
-- Node.js >= 22.12.0
+- Node.js >= 22.14.0
 - pnpm 9+
 
 ## Project Structure

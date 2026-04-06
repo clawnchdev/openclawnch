@@ -6,7 +6,7 @@
 
 A crypto-native AI agent with direct access to blockchain protocols, market data, and transaction execution. Built as an extension to [OpenClaw](https://github.com/openclaw/openclaw).
 
-48 tools. 118 commands. 75 services. Runs on Telegram, Discord, Slack, Signal, WhatsApp, iMessage, and LINE.
+48 tools. 118 commands. 76 services. Runs on Telegram, Discord, Slack, Signal, WhatsApp, iMessage, and LINE.
 
 ## Quick Start
 
@@ -124,7 +124,7 @@ openclawnch (CLI wrapper)
               ├── 48 tools (registered via plugin API)
               ├── 118 commands
               ├── hooks: gateway_start, message_received, before_prompt_build, after_tool_call
-              └── 75 services (wallet, RPC, price, gas, plans, onboarding, ...)
+              └── 76 services (wallet, RPC, price, gas, plans, onboarding, ...)
 ```
 
 Two packages: `openclawnch` (CLI + deploy tooling) and `@clawnch/openclaw-crypto` (standalone extension). The extension registers tools, commands, and hooks through OpenClaw's plugin system. Each user runs their own instance.

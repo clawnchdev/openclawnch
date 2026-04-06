@@ -9,8 +9,8 @@ Initial beta release.
 ### Features
 
 - 48 tools across trading, DeFi, wallet, portfolio, market data, automation, governance, and token launches
-- 117 slash commands
-- 75 services
+- 118 slash commands
+- 76 services
 - Compound action engine: conditional chains, time/price/on-chain triggers, cron scheduling, parallel execution
 - Spending policies via natural language ("approve under 0.05 ETH, max 10/hour")
 - Multi-channel: Telegram (production), Discord, Slack, Signal, WhatsApp, iMessage, LINE

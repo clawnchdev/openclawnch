@@ -32,6 +32,8 @@ The credential vault scans all LLM-bound output for:
 
 If a credential is detected in agent output, it is redacted before being sent to the user or stored in conversation history.
 
+The credential leak scanner runs automatically in the `after_tool_call` hook. Every tool result is scanned before it reaches the LLM. Leaked values are replaced with `[REDACTED:ENV_VAR_NAME]` and a warning is logged. The scanner is best-effort — failures never block the tool pipeline.
+
 ## Input validation
 
 - All user-supplied amounts are validated with regex before `parseEther`/`parseUnits`/`BigInt` conversion — prevents NaN/Infinity injection.

@@ -1,6 +1,6 @@
 # Tools Reference
 
-48 tools across 11 categories. All tools work on every channel. Write-operation tools are `ownerOnly: true` — only the paired account owner can invoke them.
+48 tools across 14 categories. All tools work on every channel. Write-operation tools are `ownerOnly: true` — only the paired account owner can invoke them.
 
 Run `/setup` to see which tools are configured and which need additional API keys.
 
@@ -116,3 +116,21 @@ Requires `/evolve` to enable.
 | `agent_memory` | store, recall, search, list, delete | Persistent memory across sessions |
 | `skill_evolve` | create, refine, list, apply | Generate and refine skill documents from experience |
 | `session_recall` | recent, search, summarize | Recall context from previous sessions |
+
+### Fiat
+
+| Tool | Actions | Description |
+|------|---------|-------------|
+| `fiat_payment` | onramp, offramp, status | Buy crypto with fiat (MoonPay) or sell to fiat (Bridge.xyz) |
+
+### Agent Orchestration
+
+| Tool | Actions | Description |
+|------|---------|-------------|
+| `agent_delegate` | delegate, list, status | Delegate tasks to specialized sub-agents (strategist, analyst, accountant, risk manager) |
+
+### Policy Management
+
+| Tool | Actions | Description |
+|------|---------|-------------|
+| `policy_manage` | propose, list, evaluate, categories | Create and manage spending policies via natural language |

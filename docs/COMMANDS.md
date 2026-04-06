@@ -1,6 +1,6 @@
 # Commands Reference
 
-117 slash commands. All commands are tappable in Telegram (no typing needed). On other channels, type them as usual.
+118 slash commands. All commands are tappable in Telegram (no typing needed). On other channels, type them as usual.
 
 ---
 

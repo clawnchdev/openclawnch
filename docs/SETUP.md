@@ -23,7 +23,7 @@ You're done when the startup banner shows green checks for LLM and Channel, and 
 | [Docker](#docker) | Self-hosted VPS or NAS | ~5 minutes |
 | [Fly.io](#flyio) | Managed cloud, zero-maintenance | ~10 minutes |
 
-All paths give you the same 48 tools, 117 commands, and 75 services.
+All paths give you the same 48 tools, 118 commands, and 76 services.
 
 ---
 
@@ -63,7 +63,7 @@ node bin/openclawnch.mjs
 You should see:
 
 ```
-  OpenClawnch v0.1.0  (OpenClaw v2026.3.8)
+  OpenClawnch v0.1.0  (OpenClaw v2026.3.28)
 
   ✓ LLM      Anthropic
   ✓ Channel  Telegram
@@ -295,7 +295,7 @@ sudo systemctl enable --now openclawnch
 
 ## Channels
 
-The crypto extension is channel-agnostic. All 48 tools and 117 commands work identically on every channel.
+The crypto extension is channel-agnostic. All 48 tools and 118 commands work identically on every channel.
 
 | Channel | How to enable | Notes |
 |---------|--------------|-------|
