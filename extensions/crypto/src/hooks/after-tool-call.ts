@@ -18,6 +18,7 @@ import { getBudgetService } from '../services/budget-service.js';
 import { getEvolutionMode } from '../services/evolution-mode.js';
 import { getSessionRecall } from '../services/session-recall.js';
 import { parseSessionKey, extractSenderId, extractChannelId, type ChannelId } from '../services/channel-sender.js';
+import { getCredentialVault } from '../services/credential-vault.js';
 
 /** Dependencies injected by the plugin register() function. */
 export interface AfterToolCallDeps {
@@ -52,6 +53,35 @@ export async function handleAfterToolCall(
   deps: AfterToolCallDeps,
 ): Promise<void> {
   try {
+    // ── Credential leak scan ──────────────────────────────────
+    // Scan tool output for accidentally leaked secrets before it reaches the LLM.
+    try {
+      const result = event?.result ?? event?.details;
+      if (result) {
+        const text = typeof result === 'string' ? result : JSON.stringify(result);
+        const vault = getCredentialVault();
+        const scan = vault.scanForLeaks(text);
+        if (!scan.clean) {
+          deps.logger?.warn?.(
+            `[credential-leak] Tool "${event?.toolName ?? event?.tool}" output contains ${scan.leaks.length} leaked secret(s): ${scan.leaks.map((l: any) => l.type).join(', ')}. Redacting.`
+          );
+          // Mutate the result in-place so the LLM sees the redacted version
+          if (event && typeof event.result === 'string') {
+            event.result = scan.redactedText;
+          } else if (event?.result?.content) {
+            for (const block of event.result.content) {
+              if (block.type === 'text' && typeof block.text === 'string') {
+                const blockScan = vault.scanForLeaks(block.text);
+                if (!blockScan.clean) block.text = blockScan.redactedText;
+              }
+            }
+          }
+        }
+      }
+    } catch {
+      // Leak scanning is best-effort — never block the pipeline
+    }
+
     // ── Onboarding progression ─────────────────────────────────
     const sessionKey = ctx?.sessionKey ?? '';
     const parsedSession = parseSessionKey(sessionKey);
