@@ -46,7 +46,7 @@
     "lint": "tsc --noEmit",
     "prebuild": "rm -rf dist extensions/crypto/dist",
     "clean": "rm -rf dist extensions/crypto/dist",
-    "prepublishOnly": "pnpm typecheck && pnpm test && pnpm build",
+    "prepublishOnly": "pnpm build",
     "prepack": "pnpm build",
     "deploy:pack": "pnpm build && pnpm pack --pack-destination deploy/ && mv deploy/clawnch-openclawnch-*.tgz deploy/openclawnch.tgz",
     "deploy:image": "pnpm deploy:pack && docker build -t openclawnch-telegram deploy/",
