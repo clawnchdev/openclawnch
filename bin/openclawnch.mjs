@@ -291,7 +291,7 @@ async function main() {
     console.log('    /help                    Full command reference');
     console.log('');
     console.log('  Docs:   https://openclawn.ch/docs');
-    console.log('  GitHub: https://github.com/clawnchbot/openclawnch');
+    console.log('  GitHub: https://github.com/clawnchdev/openclawnch');
     console.log('');
     process.exit(0);
   }

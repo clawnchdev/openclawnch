@@ -1,6 +1,6 @@
 # OpenClawnch
 
-[![CI](https://github.com/clawnchbot/openclawnch/actions/workflows/ci.yml/badge.svg)](https://github.com/clawnchbot/openclawnch/actions/workflows/ci.yml)
+[![CI](https://github.com/clawnchdev/openclawnch/actions/workflows/ci.yml/badge.svg)](https://github.com/clawnchdev/openclawnch/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@clawnch/openclawnch)](https://www.npmjs.com/package/@clawnch/openclawnch)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
@@ -11,7 +11,7 @@ A crypto-native AI agent with direct access to blockchain protocols, market data
 ## Quick Start
 
 ```bash
-git clone https://github.com/clawnchbot/openclawnch.git
+git clone https://github.com/clawnchdev/openclawnch.git
 cd openclawnch
 pnpm install && pnpm build
 

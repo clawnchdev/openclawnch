@@ -34,7 +34,7 @@ The default path. Run directly on your machine.
 ### 1. Clone and install
 
 ```bash
-git clone https://github.com/clawnchbot/openclawnch.git
+git clone https://github.com/clawnchdev/openclawnch.git
 cd openclawnch
 pnpm install && pnpm build
 ```
@@ -115,7 +115,7 @@ Self-hosted with Docker Compose.
 ### 1. Build
 
 ```bash
-git clone https://github.com/clawnchbot/openclawnch.git
+git clone https://github.com/clawnchdev/openclawnch.git
 cd openclawnch
 pnpm install && pnpm build
 npm run deploy:pack
@@ -163,7 +163,7 @@ Managed cloud deploy. Auto-suspends when idle (~$5/month), wakes on incoming mes
 ### Option A: One-command deploy
 
 ```bash
-git clone https://github.com/clawnchbot/openclawnch.git
+git clone https://github.com/clawnchdev/openclawnch.git
 cd openclawnch
 pnpm install && pnpm build
 

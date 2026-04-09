@@ -25,7 +25,7 @@ const execFile = promisify(execFileCb);
 
 // ─── Config ──────────────────────────────────────────────────────────────
 
-const REPO_OWNER = 'clawnchbot';
+const REPO_OWNER = 'clawnchdev';
 const REPO_NAME = 'openclawnch';
 const BRANCH = 'master';
 

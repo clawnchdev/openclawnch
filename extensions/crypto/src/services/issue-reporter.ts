@@ -14,7 +14,7 @@ import { execSync } from 'node:child_process';
 
 // ── Config ──────────────────────────────────────────────────────────────
 
-const REPO = 'clawnchbot/openclawnch';
+const REPO = 'clawnchdev/openclawnch';
 const MAX_BODY_CHARS = 4000;
 
 interface IssueReporterConfig {
