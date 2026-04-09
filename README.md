@@ -4,6 +4,8 @@
 [![npm](https://img.shields.io/npm/v/@clawnch/openclawnch)](https://www.npmjs.com/package/@clawnch/openclawnch)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
+> **Mirror:** [gitlawb](https://gitlawb.com/z6MksiJ5TsUaVfn2ahEkGVRLKDxhnvBq2oiyZ31SrJCANwPK/openclawnch) — decentralized backup, IPFS-pinned
+
 A crypto-native AI agent with direct access to blockchain protocols, market data, and transaction execution. Built as an extension to [OpenClaw](https://github.com/openclaw/openclaw).
 
 48 tools. 118 commands. 76 services. Runs on Telegram, Discord, Slack, Signal, WhatsApp, iMessage, and LINE.
