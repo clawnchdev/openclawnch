@@ -79,5 +79,5 @@ jobs:
           context: deploy
           push: true
           tags: |
-            ghcr.io/clawnchbot/openclawnch:latest
-            ghcr.io/clawnchbot/openclawnch:${{ github.ref_name }}
+            ghcr.io/clawnchdev/openclawnch:latest
+            ghcr.io/clawnchdev/openclawnch:${{ github.ref_name }}

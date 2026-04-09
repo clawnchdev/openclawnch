@@ -43,6 +43,7 @@ deploy/clawnch-openclawnch-*.tgz
 
 # Internal planning docs (not for public release)
 gitignored-docs/
+BANKR_INTEGRATION.md
 mine.py
 deploy/mine.py
 deploy/pipeline/
