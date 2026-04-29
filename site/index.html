@@ -204,11 +204,13 @@
       max-width: 280px;
     }
 
-    .product-stats {
+    .product-status {
       display: flex;
-      gap: 18px;
+      gap: 10px;
+      align-items: center;
       justify-content: center;
-      align-items: flex-start;
+      flex-wrap: wrap;
+      font-family: var(--font-mono);
       width: 100%;
       margin-top: 6px;
       padding-top: 18px;
@@ -216,33 +218,34 @@
       transition: border-color 0.2s;
     }
 
-    .product-stat { text-align: center; min-width: 0; }
-
-    .product-stat-value {
-      font-family: var(--font-mono);
-      font-size: 16px;
+    .product-version {
+      font-size: 14px;
       font-weight: 700;
       letter-spacing: 0.5px;
       color: var(--neutral-300);
       transition: color 0.2s;
     }
 
-    .product-stat-label {
-      font-family: var(--font-mono);
-      font-size: 10px;
-      color: var(--neutral-500);
+    .product-tier {
+      font-size: 11px;
       text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin-top: 2px;
+      letter-spacing: 0.6px;
+      color: var(--neutral-500);
+      padding: 3px 9px;
+      border: 1px solid var(--neutral-700);
+      border-radius: 4px;
+      transition: color 0.2s, border-color 0.2s;
     }
 
-    .product-card.clawmes .product-stat-value { color: var(--seafoam-400); }
-    .product-card.clawmes:hover .product-stats { border-color: hsla(172, 27%, 46%, 0.3); }
-    .product-card.clawmes:hover .product-stat-value { color: var(--seafoam-300); }
+    .product-card.clawmes .product-version { color: var(--seafoam-400); }
+    .product-card.clawmes:hover .product-status { border-color: hsla(172, 27%, 46%, 0.3); }
+    .product-card.clawmes:hover .product-version { color: var(--seafoam-300); }
+    .product-card.clawmes:hover .product-tier { color: var(--seafoam-300); border-color: hsla(172, 32%, 58%, 0.4); }
 
-    .product-card.openclawnch .product-stat-value { color: var(--lobster-400); }
-    .product-card.openclawnch:hover .product-stats { border-color: hsla(9, 44%, 54%, 0.3); }
-    .product-card.openclawnch:hover .product-stat-value { color: var(--lobster-300); }
+    .product-card.openclawnch .product-version { color: var(--lobster-400); }
+    .product-card.openclawnch:hover .product-status { border-color: hsla(9, 44%, 54%, 0.3); }
+    .product-card.openclawnch:hover .product-version { color: var(--lobster-300); }
+    .product-card.openclawnch:hover .product-tier { color: var(--lobster-300); border-color: hsla(10, 41%, 64%, 0.4); }
 
     /* Clawmes card — seafoam accent */
     .product-card.clawmes:hover {
@@ -332,12 +335,12 @@
         padding: 32px 24px;
       }
 
-      .product-stats {
-        gap: 12px;
+      .product-status {
+        gap: 8px;
       }
 
-      .product-stat-value {
-        font-size: 14px;
+      .product-version {
+        font-size: 13px;
       }
     }
 
@@ -385,11 +388,9 @@
         <div class="product-name">Clawmes</div>
         <div class="product-stack">Python · Hermes Agent</div>
         <div class="product-desc">Hermes Agent plugin. Pip-installable. Best for the Nous Research stack and Python-native workflows.</div>
-        <div class="product-stats">
-          <div class="product-stat"><div class="product-stat-value">48</div><div class="product-stat-label">tools</div></div>
-          <div class="product-stat"><div class="product-stat-value">118</div><div class="product-stat-label">commands</div></div>
-          <div class="product-stat"><div class="product-stat-value">76</div><div class="product-stat-label">services</div></div>
-          <div class="product-stat"><div class="product-stat-value">7</div><div class="product-stat-label">channels</div></div>
+        <div class="product-status">
+          <span class="product-version">v0.0.1</span>
+          <span class="product-tier">early development</span>
         </div>
       </a>
 
@@ -398,11 +399,9 @@
         <div class="product-name">OpenClawnch</div>
         <div class="product-stack">TypeScript · OpenClaw</div>
         <div class="product-desc">OpenClaw extension. npm or Docker. Best for Node-native workflows and the original TypeScript stack.</div>
-        <div class="product-stats">
-          <div class="product-stat"><div class="product-stat-value">48</div><div class="product-stat-label">tools</div></div>
-          <div class="product-stat"><div class="product-stat-value">118</div><div class="product-stat-label">commands</div></div>
-          <div class="product-stat"><div class="product-stat-value">76</div><div class="product-stat-label">services</div></div>
-          <div class="product-stat"><div class="product-stat-value">7</div><div class="product-stat-label">channels</div></div>
+        <div class="product-status">
+          <span class="product-version">v0.1.1</span>
+          <span class="product-tier">public beta</span>
         </div>
       </a>
     </div>
