@@ -1,0 +1,991 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>OpenClawnch — crypto-native ai agent</title>
+  <meta name="description" content="Crypto-native AI agent with 48 tools for DeFi, trading, market data, and on-chain automation. Built on OpenClaw. Runs on Telegram, Discord, Slack, and more.">
+  <meta name="theme-color" content="#c45a4a">
+  <meta property="og:title" content="OpenClawnch — crypto-native ai agent">
+  <meta property="og:description" content="48 blockchain tools for DeFi, trading, market data, and automation — from chat.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://openclawn.ch/openclawnch/">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🦞</text></svg>">
+  <style>
+    @font-face {
+      font-family: 'Arcon Rounded';
+      src: url('/fonts/Arcon-Rounded-Regular.otf') format('opentype');
+      font-weight: 400;
+      font-style: normal;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: 'VCR OSD Mono';
+      src: url('/fonts/vcr-osd-mono.ttf') format('truetype');
+      font-weight: 400;
+      font-style: normal;
+      font-display: swap;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* ── Back link ── */
+    .back-link {
+      position: fixed;
+      top: 20px;
+      left: 24px;
+      z-index: 200;
+      font-family: 'VCR OSD Mono', 'Courier New', monospace;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: hsl(12, 2%, 44%);
+      text-decoration: none;
+      padding: 6px 10px;
+      border: 1px solid hsl(12, 3%, 22%);
+      border-radius: 6px;
+      background: hsla(12, 6%, 5%, 0.6);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .back-link:hover {
+      color: hsl(12, 4%, 70%);
+      border-color: hsl(12, 2%, 32%);
+    }
+    @media (max-width: 560px) {
+      .back-link { top: 12px; left: 12px; font-size: 11px; padding: 5px 8px; }
+    }
+
+    :root {
+      --neutral-950: hsl(12, 6%, 5%);
+      --neutral-900: hsl(12, 5%, 8%);
+      --neutral-850: hsl(12, 4%, 11%);
+      --neutral-800: hsl(12, 4%, 15%);
+      --neutral-700: hsl(12, 3%, 22%);
+      --neutral-600: hsl(12, 2%, 32%);
+      --neutral-500: hsl(12, 2%, 44%);
+      --neutral-400: hsl(12, 3%, 56%);
+      --neutral-300: hsl(12, 4%, 70%);
+      --neutral-200: hsl(12, 5%, 82%);
+      --neutral-100: hsl(12, 6%, 90%);
+      --neutral-50:  hsl(12, 8%, 96%);
+      --lobster-400: hsl(9, 44%, 54%);
+      --lobster-300: hsl(10, 41%, 64%);
+      --lobster-500: hsl(8, 41%, 46%);
+      --sand-300: hsl(32, 27%, 64%);
+      --seafoam-400: hsl(172, 27%, 46%);
+      --seafoam-500: hsl(172, 29%, 38%);
+      --blue-400: hsl(210, 24%, 52%);
+      --purple-400: hsl(270, 30%, 60%);
+      --font-main: 'Arcon Rounded', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-mono: 'VCR OSD Mono', 'Courier New', monospace;
+    }
+
+    html { height: 100%; }
+
+    body {
+      font-family: var(--font-main);
+      background: var(--neutral-950);
+      color: var(--neutral-100);
+      min-height: 100vh;
+      padding: 80px 24px 48px;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E") repeat;
+      opacity: 0.025;
+      pointer-events: none;
+      z-index: 100;
+    }
+
+    ::selection {
+      background: hsla(9, 44%, 54%, 0.2);
+    }
+
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--neutral-700); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--neutral-600); }
+
+    .page {
+      max-width: 760px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 48px;
+    }
+
+    /* ── Hero ── */
+    .hero {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      text-align: center;
+    }
+
+    .hero-logo {
+      font-size: 48px;
+      line-height: 1;
+      animation: subtleFloat 4s ease-in-out infinite;
+    }
+
+    .hero-title {
+      font-family: var(--font-mono);
+      font-size: 28px;
+      letter-spacing: 1px;
+      color: var(--neutral-100);
+    }
+
+    .hero-tagline {
+      color: var(--neutral-500);
+      font-size: 15px;
+      letter-spacing: 0.5px;
+    }
+
+    /* ── Beta Banner ── */
+    .beta-banner {
+      width: 100%;
+      max-width: 580px;
+      text-align: center;
+      font-size: 13px;
+      color: var(--neutral-400);
+      line-height: 1.6;
+      padding: 14px 20px;
+      border: 1px solid hsla(9, 44%, 54%, 0.25);
+      border-radius: 8px;
+      background: hsla(9, 44%, 54%, 0.04);
+    }
+
+    .beta-banner strong {
+      color: var(--lobster-400);
+      font-family: var(--font-mono);
+      font-size: 12px;
+      text-transform: uppercase;
+    }
+
+    /* ── Install CTA ── */
+    .install {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .install-block {
+      width: 100%;
+      max-width: 520px;
+      display: flex;
+      align-items: center;
+      background: var(--neutral-900);
+      border: 1px solid var(--neutral-700);
+      border-radius: 10px;
+      padding: 20px 24px;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      position: relative;
+    }
+
+    .install-block:hover {
+      border-color: var(--neutral-600);
+      background: var(--neutral-850);
+    }
+
+    .install-block:focus-visible {
+      outline: 2px solid var(--lobster-400);
+      outline-offset: 2px;
+    }
+
+    .install-prompt {
+      font-family: var(--font-mono);
+      font-size: 15px;
+      color: var(--neutral-500);
+      user-select: none;
+      margin-right: 10px;
+    }
+
+    .install-cmd {
+      font-family: var(--font-mono);
+      font-size: 15px;
+      color: var(--seafoam-400);
+      flex: 1;
+    }
+
+    .install-copy {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      text-transform: uppercase;
+      color: var(--neutral-500);
+      background: none;
+      border: 1px solid var(--neutral-700);
+      border-radius: 5px;
+      padding: 4px 10px;
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+      flex-shrink: 0;
+    }
+
+    .install-copy:hover {
+      color: var(--neutral-300);
+      border-color: var(--neutral-600);
+    }
+
+    .install-copy.copied {
+      color: var(--seafoam-400);
+      border-color: var(--seafoam-400);
+    }
+
+    .install-alts {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .install-alt {
+      font-size: 13px;
+      color: var(--neutral-500);
+    }
+
+    .install-alt code {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--neutral-400);
+      background: var(--neutral-900);
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid var(--neutral-800);
+    }
+
+    /* ── CTA Buttons ── */
+    .cta-row {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      justify-content: center;
+      width: 100%;
+    }
+
+    .cta-btn {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      text-decoration: none;
+      padding: 10px 22px;
+      border-radius: 6px;
+      transition: transform 0.15s, background 0.2s, border-color 0.2s, color 0.2s;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .cta-btn:hover {
+      transform: translateY(-1px);
+    }
+
+    .cta-btn:active {
+      transform: scale(0.98);
+    }
+
+    .cta-btn.primary {
+      background: var(--lobster-400);
+      color: var(--neutral-50);
+      border: 1px solid var(--lobster-400);
+    }
+
+    .cta-btn.primary:hover {
+      background: var(--lobster-300);
+      border-color: var(--lobster-300);
+      box-shadow: 0 0 20px hsla(9, 52%, 54%, 0.15);
+    }
+
+    .cta-btn.secondary {
+      background: transparent;
+      color: var(--neutral-300);
+      border: 1px solid var(--neutral-600);
+    }
+
+    .cta-btn.secondary:hover {
+      border-color: var(--neutral-500);
+      color: var(--neutral-100);
+    }
+
+    /* ── Stats Bar ── */
+    .stats-bar {
+      width: 100%;
+      display: flex;
+      justify-content: center;
+      gap: 32px;
+      flex-wrap: wrap;
+    }
+
+    .stat { text-align: center; }
+
+    .stat-value {
+      font-family: var(--font-mono);
+      font-size: 18px;
+      font-weight: 700;
+    }
+
+    .stat-label {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--neutral-500);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-top: 4px;
+    }
+
+    .stat-value.teal { color: var(--seafoam-400); }
+    .stat-value.gold { color: var(--sand-300); }
+    .stat-value.purple { color: var(--purple-400); }
+    .stat-value.blue { color: var(--blue-400); }
+
+    /* ── Quick Start ── */
+    .section { width: 100%; }
+
+    .section-title {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--neutral-500);
+      margin-bottom: 20px;
+      text-align: center;
+    }
+
+    .quick-start {
+      background: var(--neutral-900);
+      border: 1px solid var(--neutral-700);
+      border-radius: 12px;
+      padding: 28px 32px;
+    }
+
+    .step {
+      display: flex;
+      gap: 12px;
+      align-items: baseline;
+      padding: 10px 0;
+    }
+
+    .step + .step {
+      border-top: 1px solid var(--neutral-800);
+    }
+
+    .step-arrow {
+      color: var(--lobster-400);
+      font-family: var(--font-mono);
+      font-size: 14px;
+      flex-shrink: 0;
+      user-select: none;
+    }
+
+    .step-text {
+      font-size: 15px;
+      color: var(--neutral-300);
+      line-height: 1.5;
+    }
+
+    .step-text code {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      color: var(--seafoam-400);
+      background: var(--neutral-800);
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    .step-text .muted {
+      color: var(--neutral-500);
+      font-size: 13px;
+    }
+
+    .step-text strong {
+      color: var(--neutral-200);
+      font-weight: 600;
+    }
+
+    .provider-links {
+      display: inline;
+      font-size: 13px;
+    }
+
+    .provider-links a {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--neutral-400);
+      text-decoration: none;
+      transition: color 0.15s;
+    }
+
+    .provider-links a:hover {
+      color: var(--neutral-200);
+    }
+
+    .provider-links a.recommended {
+      color: var(--lobster-400);
+      font-weight: 700;
+    }
+
+    .provider-links a.recommended:hover {
+      color: var(--lobster-300);
+    }
+
+    .provider-links .sep {
+      color: var(--neutral-600);
+      margin: 0 2px;
+    }
+
+    .provider-links .plus {
+      color: var(--neutral-600);
+      margin: 0 6px;
+    }
+
+    .quick-start-footer {
+      margin-top: 16px;
+      padding-top: 14px;
+      border-top: 1px solid var(--neutral-800);
+      text-align: center;
+    }
+
+    .quick-start-footer a {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--lobster-400);
+      text-decoration: none;
+      transition: color 0.15s;
+    }
+
+    .quick-start-footer a:hover {
+      color: var(--lobster-300);
+    }
+
+    /* ── Features ── */
+    .features {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      width: 100%;
+    }
+
+    .feature-card {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 24px;
+      border: 1px solid var(--neutral-700);
+      border-radius: 10px;
+      background: var(--neutral-900);
+      transition: border-color 0.2s, background 0.2s, transform 0.15s;
+    }
+
+    .feature-card:hover {
+      border-color: var(--neutral-600);
+      background: var(--neutral-850);
+      transform: translateY(-2px);
+    }
+
+    .feature-card:active {
+      transform: translateY(0);
+    }
+
+    .feature-emoji {
+      font-size: 24px;
+      line-height: 1;
+    }
+
+    .feature-name {
+      font-family: var(--font-mono);
+      font-size: 14px;
+      color: var(--neutral-100);
+      transition: color 0.2s;
+    }
+
+    .feature-card:nth-child(6n+1):hover .feature-name { color: var(--lobster-300); }
+    .feature-card:nth-child(6n+2):hover .feature-name { color: var(--seafoam-400); }
+    .feature-card:nth-child(6n+3):hover .feature-name { color: var(--sand-300); }
+    .feature-card:nth-child(6n+4):hover .feature-name { color: var(--blue-400); }
+    .feature-card:nth-child(6n+5):hover .feature-name { color: var(--purple-400); }
+    .feature-card:nth-child(6n+6):hover .feature-name { color: var(--lobster-300); }
+
+    .feature-desc {
+      font-size: 13px;
+      color: var(--neutral-400);
+      line-height: 1.5;
+    }
+
+    /* ── FAQ ── */
+    .faq {
+      width: 100%;
+    }
+
+    .faq-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .faq-item {
+      padding: 20px;
+      border: 1px solid var(--neutral-700);
+      border-radius: 10px;
+      background: var(--neutral-900);
+    }
+
+    .faq-q {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      color: var(--neutral-200);
+      margin-bottom: 8px;
+    }
+
+    .faq-a {
+      font-size: 13px;
+      color: var(--neutral-400);
+      line-height: 1.5;
+    }
+
+    .faq-a code {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--seafoam-400);
+      background: var(--neutral-800);
+      padding: 1px 5px;
+      border-radius: 3px;
+    }
+
+    /* ── Docs ── */
+    .docs-links {
+      width: 100%;
+      text-align: center;
+    }
+
+    .docs-links-row {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      justify-content: center;
+      margin-top: 16px;
+    }
+
+    .docs-links-row a {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--neutral-400);
+      text-decoration: none;
+      padding: 8px 16px;
+      border: 1px solid var(--neutral-700);
+      border-radius: 6px;
+      transition: border-color 0.2s, color 0.2s;
+    }
+
+    .docs-links-row a:hover {
+      border-color: var(--neutral-600);
+      color: var(--neutral-200);
+    }
+
+    /* ── Sister Project ── */
+    .sister {
+      width: 100%;
+      max-width: 580px;
+      margin: 0 auto;
+      text-align: center;
+      font-size: 13px;
+      color: var(--neutral-400);
+      line-height: 1.6;
+      padding: 14px 20px;
+      border: 1px solid var(--neutral-800);
+      border-radius: 8px;
+      background: var(--neutral-900);
+    }
+
+    .sister a {
+      color: var(--seafoam-400);
+      text-decoration: none;
+      font-family: var(--font-mono);
+      transition: color 0.15s;
+    }
+
+    .sister a:hover {
+      color: hsl(172, 32%, 58%);
+    }
+
+    /* ── Channels ── */
+    .channels {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--neutral-500);
+      text-align: center;
+      line-height: 1.8;
+    }
+
+    .channels span {
+      color: var(--neutral-400);
+    }
+
+    /* ── Deploy ── */
+    .deploy {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--neutral-500);
+      text-align: center;
+    }
+
+    .deploy span {
+      color: var(--neutral-400);
+    }
+
+    /* ── Footer ── */
+    .footer {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      padding-top: 8px;
+      border-top: 1px solid var(--neutral-800);
+      width: 100%;
+    }
+
+    .footer-links {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .footer-links a {
+      color: var(--neutral-500);
+      text-decoration: none;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      transition: color 0.15s;
+    }
+
+    .footer-links a:hover {
+      color: var(--neutral-300);
+    }
+
+    .footer-copy {
+      color: var(--neutral-600);
+      font-size: 12px;
+    }
+
+    .footer-copy a {
+      color: var(--neutral-500);
+      text-decoration: none;
+      transition: color 0.15s;
+    }
+
+    .footer-copy a:hover {
+      color: var(--neutral-300);
+    }
+
+    /* ── Animations ── */
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes subtleFloat {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-4px); }
+    }
+
+    .hero         { animation: fadeInUp 0.5s ease both; }
+    .beta-banner  { animation: fadeInUp 0.5s ease 0.03s both; }
+    .install      { animation: fadeInUp 0.5s ease 0.05s both; }
+    .cta-row      { animation: fadeInUp 0.5s ease 0.08s both; }
+    .stats-bar    { animation: fadeInUp 0.5s ease 0.1s both; }
+    .qs-section { animation: fadeInUp 0.5s ease 0.15s both; }
+    .features  { animation: fadeInUp 0.5s ease 0.2s both; }
+    .channels  { animation: fadeInUp 0.5s ease 0.25s both; }
+    .deploy      { animation: fadeInUp 0.5s ease 0.27s both; }
+    .faq         { animation: fadeInUp 0.5s ease 0.3s both; }
+    .docs-links  { animation: fadeInUp 0.5s ease 0.33s both; }
+    .sister      { animation: fadeInUp 0.5s ease 0.35s both; }
+    .footer      { animation: fadeInUp 0.5s ease 0.36s both; }
+
+    /* ── Responsive ── */
+    @media (max-width: 560px) {
+      body { padding: 48px 16px 32px; }
+      .page { gap: 36px; }
+      .hero-title { font-size: 22px; }
+      .install-block { padding: 16px 18px; }
+      .install-prompt, .install-cmd { font-size: 13px; }
+      .features { grid-template-columns: 1fr; }
+      .faq-grid { grid-template-columns: 1fr; }
+      .quick-start { padding: 20px; }
+      .stats-bar { gap: 20px; }
+      .stat-value { font-size: 16px; }
+      .step { gap: 10px; }
+      .step-text { font-size: 14px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.001ms !important;
+      }
+    }
+
+    :focus-visible {
+      outline: 2px solid var(--lobster-400);
+      outline-offset: 2px;
+    }
+  </style>
+</head>
+<body>
+  <a href="/" class="back-link" aria-label="Back to openclawn.ch">&larr; openclawn.ch</a>
+  <div class="page">
+
+    <div class="hero">
+      <div class="hero-logo">🦞</div>
+      <div class="hero-title">openclawnch</div>
+      <div class="hero-tagline">crypto-native ai agent</div>
+    </div>
+
+    <div class="beta-banner">
+      <strong>Public beta.</strong> OpenClawnch is experimental software in public beta.<br>Please exercise caution and best security practices when using it.
+    </div>
+
+    <div class="install">
+      <div class="install-block" onclick="copyInstall()" role="button" tabindex="0" aria-label="Copy install command">
+        <span class="install-prompt">$</span>
+        <span class="install-cmd">npx @clawnch/openclawnch</span>
+        <button type="button" class="install-copy" id="copyBtn">copy</button>
+      </div>
+      <div class="install-alts">
+        <div class="install-alt">from source? <code>git clone</code> + <code>pnpm install</code> + <code>pnpm build</code></div>
+        <div class="install-alt">Docker? <code>docker compose -f deploy/docker-compose.yml up -d</code></div>
+        <div class="install-alt">already on OpenClaw? <code>openclaw plugins install @clawnch/openclaw-crypto</code></div>
+      </div>
+    </div>
+
+    <div class="cta-row">
+      <a href="https://github.com/clawnchdev/openclawnch/tree/master/docs" class="cta-btn primary" target="_blank" rel="noopener">Read the Docs</a>
+      <a href="https://github.com/clawnchdev/openclawnch" class="cta-btn secondary" target="_blank" rel="noopener">View on GitHub</a>
+      <a href="https://www.npmjs.com/package/@clawnch/openclawnch" class="cta-btn secondary" target="_blank" rel="noopener">npm</a>
+    </div>
+
+    <div class="stats-bar">
+      <div class="stat">
+        <div class="stat-value teal">48</div>
+        <div class="stat-label">tools</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value gold">118</div>
+        <div class="stat-label">commands</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value purple">7</div>
+        <div class="stat-label">channels</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value blue">76</div>
+        <div class="stat-label">services</div>
+      </div>
+    </div>
+
+    <div class="section qs-section">
+      <div class="section-title">quick start</div>
+      <div class="quick-start">
+        <div class="step">
+          <span class="step-arrow">-&gt;</span>
+          <span class="step-text">
+            Grab an <strong>LLM API key</strong> and a <strong>channel token</strong><br>
+            <span class="provider-links">
+              <a href="https://bankr.bot/llm" class="recommended" target="_blank" rel="noopener">Bankr</a><span class="sep">·</span><a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">Anthropic</a><span class="sep">·</span><a href="https://openrouter.ai/keys" target="_blank" rel="noopener">OpenRouter</a><span class="sep">·</span><a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">OpenAI</a><span class="plus">+</span><a href="https://t.me/BotFather" target="_blank" rel="noopener">Telegram</a><span class="sep">·</span><a href="https://discord.com/developers/applications" target="_blank" rel="noopener">Discord</a><span class="sep">·</span><a href="https://api.slack.com/apps" target="_blank" rel="noopener">Slack</a>
+            </span>
+          </span>
+        </div>
+        <div class="step">
+          <span class="step-arrow">-&gt;</span>
+          <span class="step-text"><code>npx @clawnch/openclawnch</code></span>
+        </div>
+        <div class="step">
+          <span class="step-arrow">-&gt;</span>
+          <span class="step-text"><code>openclawnch init</code> <span class="muted">— validates keys, writes .env</span></span>
+        </div>
+        <div class="step">
+          <span class="step-arrow">-&gt;</span>
+          <span class="step-text"><code>openclawnch</code> <span class="muted">— starts the agent</span></span>
+        </div>
+        <div class="step">
+          <span class="step-arrow">-&gt;</span>
+          <span class="step-text">
+            Message your bot — <code>/setup</code> to verify, <code>/connect</code> for wallet
+          </span>
+        </div>
+        <div class="quick-start-footer">
+          <a href="https://github.com/clawnchdev/openclawnch/blob/master/docs/SETUP.md" target="_blank" rel="noopener">Full setup guide — Docker, Fly.io, env vars, diagnostics →</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="features">
+      <div class="feature-card">
+        <div class="feature-emoji">📈</div>
+        <div class="feature-name">Trading</div>
+        <div class="feature-desc">6 DEX aggregators (1inch, 0x, Paraswap, OpenOcean, KyberSwap, Odos). Limit, stop, and trailing orders. DCA schedules. Cross-chain bridging via Li.Fi.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-emoji">🏦</div>
+        <div class="feature-name">DeFi</div>
+        <div class="feature-desc">Aave V3 supply & borrow, Lido & Rocket Pool staking, Yearn V3 vaults. Live APY comparisons via DeFiLlama. Position monitoring with alert thresholds.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-emoji">📊</div>
+        <div class="feature-name">Market Intelligence</div>
+        <div class="feature-desc">RSI, MACD, Bollinger bands. Whale activity tracking, trending tokens, FIFO P&L. 5-source price oracle (CoinGecko, Birdeye, DexScreener, TWAP, Chainlink).</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-emoji">⚡</div>
+        <div class="feature-name">Automation Engine</div>
+        <div class="feature-desc">Time, price, and on-chain triggers. Compound actions with conditionals, loops, parallel execution. Plans persist to disk and survive restarts.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-emoji">🚀</div>
+        <div class="feature-name">Token Launches</div>
+        <div class="feature-desc">Deploy ERC-20s on Base via Clawnch launchpad. Automatic Uniswap V4 pool creation. Configurable bonding curves and launch parameters.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-emoji">🎨</div>
+        <div class="feature-name">NFT & Airdrops</div>
+        <div class="feature-desc">ERC-721 mint, transfer, and burn. Airdrop eligibility checking across protocols. Collection management from chat.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-emoji">🔍</div>
+        <div class="feature-name">On-chain Intel</div>
+        <div class="feature-desc">Contract source verification, token security audits, real-time swap monitoring. Block explorer queries. Integrated web browsing.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-emoji">🗳️</div>
+        <div class="feature-name">Governance & Social</div>
+        <div class="feature-desc">DAO proposal voting from chat. Farcaster casting, search, and notifications. X/Twitter posting via Molten agent integration.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-emoji">🔒</div>
+        <div class="feature-name">Security</div>
+        <div class="feature-desc">Bounded approvals (exact amounts, never unlimited). Credential leak scanning. Prompt injection guards. Transaction verification before execution. Endpoint allowlist.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-emoji">👛</div>
+        <div class="feature-name">Three Wallet Modes</div>
+        <div class="feature-desc">WalletConnect (agent never holds keys). Encrypted local BIP-39 mnemonic (scrypt + AES-256-GCM). Bankr custodial multi-chain wallet.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-emoji">🧠</div>
+        <div class="feature-name">Self-Improvement</div>
+        <div class="feature-desc">Procedural memory that persists across sessions. Agent-initiated skill creation and refinement. Full-text session recall. Toggle with /evolve and /stable.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-emoji">🤖</div>
+        <div class="feature-name">Agent Network</div>
+        <div class="feature-desc">Agent-to-agent matching via Clawnx. Hummingbot market-making integration. Wayfinder route optimization. Multi-agent orchestration.</div>
+      </div>
+    </div>
+
+    <div class="channels">
+      runs on <span>Telegram</span> · <span>Discord</span> · <span>Slack</span> · <span>Signal</span> · <span>WhatsApp</span> · <span>iMessage</span> · <span>LINE</span>
+    </div>
+
+    <div class="deploy">
+      deploy anywhere — <span>Docker</span> · <span>Fly.io</span> · <span>launchd</span> · <span>systemd</span>
+    </div>
+
+    <div class="faq">
+      <div class="section-title">faq</div>
+      <div class="faq-grid">
+        <div class="faq-item">
+          <div class="faq-q">Does the agent hold my keys?</div>
+          <div class="faq-a">Not in WalletConnect mode (recommended). Every write transaction goes to your phone wallet for approval. The agent never sees your private keys.</div>
+        </div>
+        <div class="faq-item">
+          <div class="faq-q">Which chains are supported?</div>
+          <div class="faq-a">Ethereum, Base, and any EVM-compatible chain. Cross-chain swaps via Li.Fi bridge. Multi-RPC failover with circuit breakers.</div>
+        </div>
+        <div class="faq-item">
+          <div class="faq-q">Can I control what it approves?</div>
+          <div class="faq-a">Yes. Set spending policies in natural language: <code>/policy approve swaps under 0.05 ETH, max 10/hour</code>. <code>/safemode</code> (default) requires confirmation for every action.</div>
+        </div>
+        <div class="faq-item">
+          <div class="faq-q">What if I just want to read?</div>
+          <div class="faq-a"><code>/readonly</code> blocks all on-chain writes. Market data, analytics, and portfolio tracking still work. No transactions possible.</div>
+        </div>
+        <div class="faq-item">
+          <div class="faq-q">Is it audited?</div>
+          <div class="faq-a">1,547 tests cover security-critical paths. No third-party audit yet. Credential leak scanning, prompt injection guards, and endpoint allowlisting are built in. Use at your own risk.</div>
+        </div>
+        <div class="faq-item">
+          <div class="faq-q">Do I run my own instance?</div>
+          <div class="faq-a">Yes. Fully self-hosted. Your keys, your data, your instance. No shared infrastructure. Deploy locally, in Docker, or on Fly.io (~$5/mo).</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="docs-links">
+      <div class="section-title">documentation</div>
+      <div class="docs-links-row">
+        <a href="https://github.com/clawnchdev/openclawnch/blob/master/docs/SETUP.md" target="_blank" rel="noopener">Setup</a>
+        <a href="https://github.com/clawnchdev/openclawnch/blob/master/docs/TOOLS.md" target="_blank" rel="noopener">Tools</a>
+        <a href="https://github.com/clawnchdev/openclawnch/blob/master/docs/COMMANDS.md" target="_blank" rel="noopener">Commands</a>
+        <a href="https://github.com/clawnchdev/openclawnch/blob/master/docs/SECURITY.md" target="_blank" rel="noopener">Security</a>
+        <a href="https://github.com/clawnchdev/openclawnch/blob/master/docs/ARCHITECTURE.md" target="_blank" rel="noopener">Architecture</a>
+        <a href="https://github.com/clawnchdev/openclawnch/blob/master/CONTRIBUTING.md" target="_blank" rel="noopener">Contributing</a>
+      </div>
+    </div>
+
+    <div class="sister">
+      Prefer Python &amp; Hermes? Check out <a href="/clawmes/">clawmes</a> — the same agent, different stack.
+    </div>
+
+    <div class="footer">
+      <div class="footer-links">
+        <a href="https://github.com/clawnchdev/openclawnch" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://gitlawb.com/z6MksiJ5TsUaVfn2ahEkGVRLKDxhnvBq2oiyZ31SrJCANwPK/openclawnch" target="_blank" rel="noopener">gitlawb</a>
+        <a href="https://www.npmjs.com/package/@clawnch/openclawnch" target="_blank" rel="noopener">npm</a>
+        <a href="https://github.com/clawnchdev/openclawnch/tree/master/docs" target="_blank" rel="noopener">Docs</a>
+        <a href="https://x.com/Clawnch_Bot" target="_blank" rel="noopener">X</a>
+        <a href="https://t.me/ClawnchAlerts" target="_blank" rel="noopener">Telegram</a>
+      </div>
+      <div class="footer-copy">
+        MIT License · © 2026 <a href="https://clawn.ch">Clawnch</a> · Built on <a href="https://github.com/openclaw/openclaw" target="_blank" rel="noopener">OpenClaw</a>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    function copyInstall() {
+      navigator.clipboard.writeText('npx @clawnch/openclawnch').then(function() {
+        var btn = document.getElementById('copyBtn');
+        btn.textContent = 'copied!';
+        btn.classList.add('copied');
+        setTimeout(function() {
+          btn.textContent = 'copy';
+          btn.classList.remove('copied');
+        }, 2000);
+      });
+    }
+
+    document.querySelector('.install-block').addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        copyInstall();
+      }
+    });
+  </script>
+</body>
+</html>
