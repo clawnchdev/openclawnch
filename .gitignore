@@ -47,3 +47,4 @@ BANKR_INTEGRATION.md
 mine.py
 deploy/mine.py
 deploy/pipeline/
+.vercel
