@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Clawmes — Hermes agent for crypto</title>
-  <meta name="description" content="Hermes Agent plugin for DeFi, trading, market data, and on-chain automation. 52 tools, 73 commands, 21 services. BV-7X oracle, EAS attestations, A2A protocol, DID:key agent identity. Runs on Telegram, Discord, Slack, and more.">
+  <meta name="description" content="Hermes Agent plugin for DeFi, trading, market data, and on-chain automation. 52 tools, 76 commands, 22 services. BV-7X oracle, EAS attestations, A2A protocol, DID:key agent identity, $CLAWNCH-staked premium tier. Runs on Telegram, Discord, Slack, and more.">
   <meta name="theme-color" content="#5a9b94">
   <meta property="og:title" content="Clawmes — Hermes agent for crypto">
-  <meta property="og:description" content="Crypto-native AI agent for DeFi, trading, market data, and on-chain automation — from chat. BV-7X oracle, EAS attestations, A2A protocol, verifiable agent identity. Powered by Hermes Agent.">
+  <meta property="og:description" content="Crypto-native AI agent for DeFi, trading, market data, and on-chain automation — from chat. $CLAWNCH-staked premium tier. BV-7X oracle, EAS attestations, A2A protocol, verifiable agent identity. Powered by Hermes Agent.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://openclawn.ch/clawmes/">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🪽</text></svg>">
@@ -785,7 +785,7 @@
         <div class="stat-label">tools</div>
       </div>
       <div class="stat">
-        <div class="stat-value gold">73</div>
+        <div class="stat-value gold">76</div>
         <div class="stat-label">commands</div>
       </div>
       <div class="stat">
@@ -793,7 +793,7 @@
         <div class="stat-label">channels</div>
       </div>
       <div class="stat">
-        <div class="stat-value blue">21</div>
+        <div class="stat-value blue">22</div>
         <div class="stat-label">services</div>
       </div>
     </div>
@@ -924,6 +924,41 @@
         <div class="feature-name">OpenGateway LLM</div>
         <div class="feature-desc">OpenAI-compatible LLM gateway via gitlawb's OpenGateway. Routes Xiaomi MiMo, GMI Cloud, and more behind one endpoint. Server-side secrets, per-key usage, no embedded keys in OSS clients. Auth optional during the partnership window.</div>
       </div>
+      <div class="feature-card">
+        <div class="feature-emoji">💎</div>
+        <div class="feature-name">$CLAWNCH premium</div>
+        <div class="feature-desc">Stake $CLAWNCH for premium tier — OpenGateway high-tier inference, premium RPC pool, BV-7X passthrough, EAS attestation writes, priority bridge routing. Same stake also earns WETH yield from launchpad LP fees. Or burn per-call without staking: <code>/premium quote &lt;feature&gt;</code> &rarr; sign &rarr; <code>/burn_and_call</code>.</div>
+      </div>
+    </div>
+
+    <div class="premium-section" style="margin: 64px 0; padding: 48px 32px; border: 1px solid var(--neutral-700); border-radius: 12px; background: linear-gradient(135deg, hsla(172, 27%, 46%, 0.03), hsla(32, 27%, 64%, 0.03));">
+      <div class="section-title" style="margin-bottom: 24px;">$CLAWNCH premium</div>
+      <div style="color: var(--neutral-300); font-size: 15px; line-height: 1.7; max-width: 720px; margin-bottom: 28px;">
+        The full clawmes surface — every tool, every command — is open source and free. Three features that clawmes operates server-side are tier-gated by $CLAWNCH stake. The same stake earns WETH yield from launchpad LP fees, so one deposit powers two flywheels.
+      </div>
+      <div class="pricing-grid" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 28px;">
+        <div class="pricing-card" style="padding: 20px; border: 1px solid var(--neutral-700); border-radius: 8px; background: var(--neutral-900);">
+          <div style="font-family: var(--font-mono); font-size: 14px; color: var(--neutral-400); margin-bottom: 8px;">FREE</div>
+          <div style="font-size: 22px; color: var(--neutral-100); margin-bottom: 4px;">0 staked</div>
+          <div style="font-size: 12px; color: var(--neutral-500); margin-bottom: 16px; line-height: 1.5;">The full agent. Every read tool, every write tool, every slash command.</div>
+        </div>
+        <div class="pricing-card" style="padding: 20px; border: 1px solid hsla(172, 27%, 46%, 0.4); border-radius: 8px; background: var(--neutral-900);">
+          <div style="font-family: var(--font-mono); font-size: 14px; color: var(--seafoam-400); margin-bottom: 8px;">PRO</div>
+          <div style="font-size: 22px; color: var(--neutral-100); margin-bottom: 4px;">≥ 10M weighted</div>
+          <div style="font-size: 12px; color: var(--neutral-500); margin-bottom: 16px; line-height: 1.5;">OpenGateway high-tier inference, premium RPC pool, BV-7X premium oracle, priority bridge routing.</div>
+        </div>
+        <div class="pricing-card" style="padding: 20px; border: 1px solid hsla(9, 44%, 54%, 0.4); border-radius: 8px; background: var(--neutral-900);">
+          <div style="font-family: var(--font-mono); font-size: 14px; color: var(--lobster-400); margin-bottom: 8px;">MAX</div>
+          <div style="font-size: 22px; color: var(--neutral-100); margin-bottom: 4px;">≥ 50M weighted</div>
+          <div style="font-size: 12px; color: var(--neutral-500); margin-bottom: 16px; line-height: 1.5;">Everything in Pro + clawmes-issued EAS attestation writes, sub-agent / A2A capability, early-access tools.</div>
+        </div>
+      </div>
+      <div style="font-size: 13px; color: var(--neutral-500); line-height: 1.7; margin-bottom: 16px;">
+        Weighted stake = amount × tier multiplier. Bronze (30d) = 1×, Silver (90d) = 2×, Gold (180d) = 4×, Diamond (365d) = 8×. A 10M Diamond stake counts as 80M weighted (= Max tier).
+      </div>
+      <div style="font-size: 13px; color: var(--neutral-500); line-height: 1.7;">
+        No stake? Burn $CLAWNCH per call to the canonical <code>0x...dead</code> address. <code>/premium quote &lt;feature&gt;</code> for the calldata; <code>/burn_and_call</code> after the tx confirms. Per-call costs range from ~$5 to ~$50 at the current price baseline.
+      </div>
     </div>
 
     <div class="channels">
@@ -970,6 +1005,7 @@
         <a href="https://github.com/clawnchdev/clawmes#quick-start" target="_blank" rel="noopener">Quick Start</a>
         <a href="https://github.com/clawnchdev/clawmes#tools" target="_blank" rel="noopener">Tools</a>
         <a href="https://github.com/clawnchdev/clawmes#commands" target="_blank" rel="noopener">Commands</a>
+        <a href="https://github.com/clawnchdev/clawmes#clawnch-premium" target="_blank" rel="noopener">Premium</a>
         <a href="https://github.com/clawnchdev/clawmes#cli-subcommands" target="_blank" rel="noopener">CLI</a>
         <a href="https://github.com/clawnchdev/clawmes#security" target="_blank" rel="noopener">Security</a>
         <a href="https://github.com/clawnchdev/clawmes#ecosystem-integrations" target="_blank" rel="noopener">Ecosystem</a>
