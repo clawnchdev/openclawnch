@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Clawmes — Hermes agent for crypto</title>
-  <meta name="description" content="Hermes Agent plugin for DeFi, trading, market data, and on-chain automation. Python rewrite of OpenClawnch. Runs on Telegram, Discord, Slack, and more.">
+  <meta name="description" content="Hermes Agent plugin for DeFi, trading, market data, and on-chain automation. 52 tools, 73 commands, 21 services. BV-7X oracle, EAS attestations, A2A protocol, DID:key agent identity. Runs on Telegram, Discord, Slack, and more.">
   <meta name="theme-color" content="#5a9b94">
   <meta property="og:title" content="Clawmes — Hermes agent for crypto">
-  <meta property="og:description" content="Crypto-native AI agent for DeFi, trading, market data, and automation — from chat. Powered by Hermes Agent.">
+  <meta property="og:description" content="Crypto-native AI agent for DeFi, trading, market data, and on-chain automation — from chat. BV-7X oracle, EAS attestations, A2A protocol, verifiable agent identity. Powered by Hermes Agent.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://openclawn.ch/clawmes/">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🪽</text></svg>">
@@ -781,11 +781,11 @@
 
     <div class="stats-bar">
       <div class="stat">
-        <div class="stat-value teal">48</div>
+        <div class="stat-value teal">52</div>
         <div class="stat-label">tools</div>
       </div>
       <div class="stat">
-        <div class="stat-value gold">118</div>
+        <div class="stat-value gold">73</div>
         <div class="stat-label">commands</div>
       </div>
       <div class="stat">
@@ -793,7 +793,7 @@
         <div class="stat-label">channels</div>
       </div>
       <div class="stat">
-        <div class="stat-value blue">76</div>
+        <div class="stat-value blue">21</div>
         <div class="stat-label">services</div>
       </div>
     </div>
@@ -842,7 +842,7 @@
       <div class="feature-card">
         <div class="feature-emoji">📈</div>
         <div class="feature-name">Trading</div>
-        <div class="feature-desc">6 DEX aggregators (1inch, 0x, Paraswap, OpenOcean, KyberSwap, Odos). Limit, stop, and trailing orders. DCA schedules. Cross-chain bridging via Li.Fi.</div>
+        <div class="feature-desc">0x DEX aggregator for swaps. Limit, stop, trailing, and DCA orders via the compound action engine. Cross-chain bridging through Li.Fi. Uniswap V3 LP positions.</div>
       </div>
       <div class="feature-card">
         <div class="feature-emoji">🏦</div>
@@ -882,7 +882,7 @@
       <div class="feature-card">
         <div class="feature-emoji">🔒</div>
         <div class="feature-name">Security</div>
-        <div class="feature-desc">Bounded approvals (exact amounts, never unlimited). Credential leak scanning. Prompt injection guards. Transaction verification before execution. Endpoint allowlist.</div>
+        <div class="feature-desc">Bounded approvals (exact amounts, never unlimited). Credential leak scanning. Prompt injection guards. Transaction verification before execution. Outbound HTTP allowlist with 100-entry block audit ring, runtime additions via <code>/allow</code>.</div>
       </div>
       <div class="feature-card">
         <div class="feature-emoji">👛</div>
@@ -892,7 +892,7 @@
       <div class="feature-card">
         <div class="feature-emoji">🧠</div>
         <div class="feature-name">Self-Improvement</div>
-        <div class="feature-desc">Procedural memory that persists across sessions. Agent-initiated skill creation and refinement. Full-text session recall. Toggle with /evolve and /stable.</div>
+        <div class="feature-desc">Procedural memory across sessions and agent-initiated skill refinement. Both write paths gated behind an explicit evolution mode (OFF by default) so prompt injection can't drift the agent's own context. <code>/evolve</code> enables, <code>/stable</code> disables.</div>
       </div>
       <div class="feature-card">
         <div class="feature-emoji">🤖</div>
@@ -900,9 +900,24 @@
         <div class="feature-desc">Agent-to-agent matching via Clawnx. Hummingbot market-making integration. Wayfinder route optimization. Multi-agent orchestration.</div>
       </div>
       <div class="feature-card">
+        <div class="feature-emoji">👋</div>
+        <div class="feature-name">Onboarding & personas</div>
+        <div class="feature-desc">Interactive setup flow with 5 personas (professional, degen, chill, technical, mentor) and 10 capability toggles. <code>/welcome</code> shows current step + persona + picks. <code>/skip</code>, <code>/back</code>, <code>/reonboard</code> navigate the flow.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-emoji">🔑</div>
+        <div class="feature-name">Agent identity</div>
+        <div class="feature-desc">Ed25519 keypair + <code>did:key</code> encoding for each agent, independent from the wallet. Wallet signs on-chain transactions (high-value); DID signs protocol messages — MCP calls, capability delegations, attestation signatures. <code>/identity</code> to show or generate.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-emoji">🧭</div>
+        <div class="feature-name">Discoverability</div>
+        <div class="feature-desc"><code>/skills</code>, <code>/persona</code>, <code>/chains</code>, <code>/tools_list</code>, <code>/safety_status</code> — the LLM tells you exactly what it can do. A <code>pre_llm_call</code> hook injects your last 5 slash-command results into context so it stops re-asking things you just answered.</div>
+      </div>
+      <div class="feature-card">
         <div class="feature-emoji">🪽</div>
         <div class="feature-name">BV-7X Oracle</div>
-        <div class="feature-desc">Clawnch-ecosystem BTC oracle. Daily predictions posted on-chain as EAS attestations on Base — verifiable before outcome. /btc surfaces price + Fear & Greed + ETF flows in one line; /bv7x shows track record + regime. Agent-to-agent calls + $BV7X-gated premium signal supported.</div>
+        <div class="feature-desc">Clawnch-ecosystem BTC oracle. Daily predictions posted on-chain as EAS attestations on Base — verifiable before outcome. <code>/btc</code> surfaces price + Fear & Greed + ETF flows in one line; <code>/bv7x</code> shows track record + regime. Agent-to-agent calls + $BV7X-gated premium signal supported.</div>
       </div>
       <div class="feature-card">
         <div class="feature-emoji">🛰️</div>
@@ -924,7 +939,7 @@
       <div class="faq-grid">
         <div class="faq-item">
           <div class="faq-q">How is this different from OpenClawnch?</div>
-          <div class="faq-a">Clawmes is the <strong>Python rewrite</strong> targeting Hermes Agent. <a href="/openclawnch/" style="color:var(--lobster-300);text-decoration:none;">OpenClawnch</a> is the original TypeScript build for OpenClaw. OpenClawnch is the more mature build today; Clawmes is catching up toward parity. Pick the stack that matches your runtime.</div>
+          <div class="faq-a">Clawmes is the <strong>Python rewrite</strong> targeting Hermes Agent. <a href="/openclawnch/" style="color:var(--lobster-300);text-decoration:none;">OpenClawnch</a> is the original TypeScript build for OpenClaw. Different surface compositions today: clawmes leads in tool surface (52 vs 45) and ships the agent-economy stack (BV-7X, A2A, EAS, DID:key); OpenClawnch leads in command coverage (113 vs 73). Pick the runtime that matches your environment.</div>
         </div>
         <div class="faq-item">
           <div class="faq-q">Does the agent hold my keys?</div>
@@ -936,11 +951,11 @@
         </div>
         <div class="faq-item">
           <div class="faq-q">Can I control what it approves?</div>
-          <div class="faq-a">Yes. Set spending policies in natural language: <code>/policy approve swaps under 0.05 ETH, max 10/hour</code>. <code>/safemode</code> (default) requires confirmation for every action.</div>
+          <div class="faq-a">Yes. Set spending policies in natural language: <code>/policy approve swaps under 0.05 ETH, max 10/hour</code>. The LLM can also propose policies via <code>policy_manage</code> with a propose→confirm flow — nothing lands without your explicit confirm.</div>
         </div>
         <div class="faq-item">
           <div class="faq-q">What if I just want to read?</div>
-          <div class="faq-a"><code>/readonly</code> blocks all on-chain writes. Market data, analytics, and portfolio tracking still work. No transactions possible.</div>
+          <div class="faq-a"><code>/safemode</code> blocks all on-chain writes. Market data, analytics, and portfolio tracking still work. <code>/safety_status</code> shows current mode. <code>/dangermode</code> exists for advanced use (re-enables writes after a /safemode session).</div>
         </div>
         <div class="faq-item">
           <div class="faq-q">Do I run my own instance?</div>
@@ -954,10 +969,12 @@
       <div class="docs-links-row">
         <a href="https://github.com/clawnchdev/clawmes#quick-start" target="_blank" rel="noopener">Quick Start</a>
         <a href="https://github.com/clawnchdev/clawmes#tools" target="_blank" rel="noopener">Tools</a>
+        <a href="https://github.com/clawnchdev/clawmes#commands" target="_blank" rel="noopener">Commands</a>
         <a href="https://github.com/clawnchdev/clawmes#cli-subcommands" target="_blank" rel="noopener">CLI</a>
         <a href="https://github.com/clawnchdev/clawmes#security" target="_blank" rel="noopener">Security</a>
+        <a href="https://github.com/clawnchdev/clawmes#ecosystem-integrations" target="_blank" rel="noopener">Ecosystem</a>
         <a href="https://github.com/clawnchdev/clawmes#architecture" target="_blank" rel="noopener">Architecture</a>
-        <a href="https://github.com/clawnchdev/clawmes/blob/master/CONTRIBUTING.md" target="_blank" rel="noopener">Contributing</a>
+        <a href="https://github.com/clawnchdev/clawmes/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener">Contributing</a>
       </div>
     </div>
 
