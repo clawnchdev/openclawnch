@@ -113,6 +113,8 @@ export function createClawnchLaunchTool() {
           description,
           image,
           bypassRateLimit,
+          // Attribute launches to openclawnch in the Clawnch index
+          source: 'openclawnch',
         };
 
         if (vaultPercentage) {
