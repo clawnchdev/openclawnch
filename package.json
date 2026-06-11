@@ -1,6 +1,6 @@
 {
   "name": "@clawnch/openclawnch",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "OpenClaw for crypto. The biggest open-source AI assistant, now it handles real money.",
   "type": "module",
   "bin": {
