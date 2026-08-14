@@ -9,8 +9,28 @@
  * - User-configurable via plugin config
  */
 
-import { createPublicClient, http, type PublicClient, type Chain } from 'viem';
+import { createPublicClient, http, defineChain, type PublicClient, type Chain } from 'viem';
 import { base, mainnet, arbitrum, optimism, polygon } from 'viem/chains';
+
+// viem/chains doesn't ship Robinhood Chain yet; define it inline. Same shape
+// as the clawnch (@clawnch/clawncher-sdk) definition, kept consistent.
+const robinhoodChain = defineChain({
+  id: 4663,
+  name: 'Robinhood Chain',
+  nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+  rpcUrls: { default: { http: ['https://rpc.mainnet.chain.robinhood.com'] } },
+  blockExplorers: { default: { name: 'Blockscout', url: 'https://robinhoodchain.blockscout.com' } },
+  contracts: { multicall3: { address: '0xcA11bde05977b3631167028862bE2a173976CA11' } },
+});
+
+const robinhoodTestnetChain = defineChain({
+  id: 46630,
+  name: 'Robinhood Chain Testnet',
+  nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+  rpcUrls: { default: { http: ['https://rpc.testnet.chain.robinhood.com'] } },
+  blockExplorers: { default: { name: 'Blockscout', url: 'https://robinhoodchain-testnet.blockscout.com' } },
+  testnet: true,
+});
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -64,6 +84,8 @@ const CUSTOM_RPC_ENV: Record<number, string> = {
   42161: 'RPC_URL_ARB',
   10: 'RPC_URL_OP',
   137: 'RPC_URL_POLYGON',
+  4663: 'ROBINHOOD_RPC_URL',
+  46630: 'RPC_URL_ROBINHOOD_TESTNET',
 };
 
 const QUICKNODE_ENV: Record<number, string> = {
@@ -72,6 +94,8 @@ const QUICKNODE_ENV: Record<number, string> = {
   42161: 'QUICKNODE_ENDPOINT_ARB',
   10: 'QUICKNODE_ENDPOINT_OP',
   137: 'QUICKNODE_ENDPOINT_POLYGON',
+  4663: 'QUICKNODE_ENDPOINT_ROBINHOOD',
+  46630: 'QUICKNODE_ENDPOINT_ROBINHOOD_TESTNET',
 };
 
 const DEFAULT_PROVIDERS: Record<number, RpcProviderConfig[]> = {
@@ -122,6 +146,19 @@ const DEFAULT_PROVIDERS: Record<number, RpcProviderConfig[]> = {
     { url: 'https://polygon.drpc.org', name: 'dRPC', priority: 5 },
     { url: 'https://1rpc.io/matic', name: '1RPC', priority: 6 },
   ],
+  // Robinhood Chain (4663) — Arbitrum Orbit L2, ETH gas, ~100ms blocks
+  // Chainstack / QuickNode / Chainstack / dRPC / Alchemy all support; the
+  // public endpoint is rate-limited and should be escaped under production load.
+  [4663]: [
+    { url: '', name: 'QuickNode', priority: 1, fullUrlEnv: 'QUICKNODE_ENDPOINT_ROBINHOOD' },
+    { url: 'https://rpc.mainnet.chain.robinhood.com', name: 'Robinhood Public', priority: 2 },
+    { url: 'https://robinhoodchain-gateway.publicnode.com', name: 'PublicNode', priority: 3 },
+    { url: 'https://robinhood-chain-rpc.publicnode.com', name: 'PublicNode (alt)', priority: 4 },
+  ],
+  // Robinhood Chain Testnet (46630)
+  [46630]: [
+    { url: 'https://rpc.testnet.chain.robinhood.com', name: 'Robinhood Testnet Public', priority: 1 },
+  ],
 };
 
 const CHAIN_MAP: Record<number, Chain> = {
@@ -130,6 +167,8 @@ const CHAIN_MAP: Record<number, Chain> = {
   42161: arbitrum,
   10: optimism,
   137: polygon,
+  4663: robinhoodChain,
+  46630: robinhoodTestnetChain,
 };
 
 const CHAIN_NAME_TO_ID: Record<string, number> = {
@@ -138,6 +177,8 @@ const CHAIN_NAME_TO_ID: Record<string, number> = {
   arbitrum: 42161, arb: 42161,
   optimism: 10, op: 10,
   polygon: 137, matic: 137,
+  robinhood: 4663, 'robinhood-chain': 4663, 'robinhood-mainnet': 4663,
+  'robinhood-testnet': 46630,
 };
 
 // ── MEV Protection RPCs ─────────────────────────────────────────────────────

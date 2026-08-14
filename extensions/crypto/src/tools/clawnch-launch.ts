@@ -41,7 +41,9 @@ export function createClawnchLaunchTool() {
     label: 'Clawnch Launch',
     ownerOnly: true,
     description:
-      'Deploy a new ERC-20 token on Base via the Clawnch launchpad. ' +
+      'Deploy a new ERC-20 token via the Clawnch launchpad. Active chain is ' +
+      'server-side resolved (Base via Clanker by default; Robinhood Chain ' +
+      'via Bags.fm when Clawnch is running with LAUNCH_CHAIN=robinhood). ' +
       'Creates a Uniswap V4 pool with MEV protection and fee distribution. ' +
       'Requires a connected wallet and Clawnch API key. ' +
       'Rate limited to 1 launch per hour (bypass by burning 10K $CLAWNCH). ' +
