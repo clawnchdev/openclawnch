@@ -159,6 +159,37 @@ export const DEX_ROUTERS = {
   sushi: '0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F' as Address,
 } as const;
 
+// ── Robinhood Chain (chainId 4663) ───────────────────────────────────────
+//
+// Robinhood Chain is an Arbitrum Orbit L2 (mainnet 4663, testnet 46630), ETH
+// gas, ~100ms blocks. Clanker (the Base launch backend) is not deployed there,
+// so Clawnch launches go through the Clawnch launch router + Bags.fm — see
+// extensions/crypto/src/lib/robinhood-api.ts for the launch/claim flows.
+//
+// Addresses verified against api/lib/robinhood.ts + api/lib/launch-router.ts in
+// the clawnch API repo.
+
+export const ROBINHOOD = {
+  chainId: 4663,
+  testnetChainId: 46630,
+  name: 'Robinhood Chain',
+  key: 'robinhood',
+  /** Public RPC — rate limited; override with ROBINHOOD_RPC_URL / QUICKNODE_ENDPOINT_ROBINHOOD */
+  rpcUrl: 'https://rpc.mainnet.chain.robinhood.com',
+  testnetRpcUrl: 'https://rpc.testnet.chain.robinhood.com',
+  explorerUrl: 'https://robinhoodchain.blockscout.com',
+  testnetExplorerUrl: 'https://robinhoodchain-testnet.blockscout.com',
+  /** Bags.fm trade UI — every Clawnch RHC launch is a Bags token */
+  tradeUrlBase: 'https://bags.fm/token/',
+  nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+  /** Clawnch launch router — ticket (EIP-712) + deposit + provenance surface */
+  launchRouter: '0xdd4e350684d19Cd9FcD414a284837A358d4B535B' as Address,
+  /** Bags.fm factory (mainnet) — creationFee payer + fee share registry */
+  bagsFactory: '0xe8Cc4431adF8b5A847C113EF0c6af9043219Cb37' as Address,
+  /** Wrapped ETH on Robinhood Chain (Bags fee share accrues in WETH) */
+  weth: '0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73' as Address,
+} as const;
+
 // ── Well-Known Tokens (multi-chain) ──────────────────────────────────────
 
 export const TOKENS = {
@@ -201,6 +232,11 @@ export const TOKENS = {
     WMATIC: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270' as Address,
     DAI:    '0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063' as Address,
     USDCe:  '0x2791bca1f2de4661ed88a30c99a7a9449aa84174' as Address,
+  },
+  robinhood: {
+    /** $CLAWNCH on Robinhood Chain — RHC-side platform token (not bridged to Base) */
+    CLAWNCH: '0x6a50F139F3eD4C9c7bDa0D067c5Ed09De1EEBbeA' as Address,
+    WETH:    ROBINHOOD.weth,
   },
 } as const;
 
@@ -295,4 +331,95 @@ export const CHAINLINK_FEEDS: Record<number, Record<string, Address>> = {
  */
 export function getChainlinkFeed(chainId: number, pair: string): Address | undefined {
   return CHAINLINK_FEEDS[chainId]?.[pair];
+}
+
+// ── Chain metadata (launch-chain aware) ──────────────────────────────────
+//
+// Clawnch launches on two chains with different backends:
+//   base      → Clanker (chain 8453), trade UI on clawn.ch
+//   robinhood → Bags.fm  (chain 4663), trade UI on bags.fm
+//
+// Tools take a `chain` param and resolve it here so links and RPC targets
+// never silently fall back to the wrong chain.
+
+export type ClawnchChainKey = 'base' | 'robinhood';
+
+export interface ClawnchChainMeta {
+  key: ClawnchChainKey;
+  id: number;
+  name: string;
+  nativeSymbol: string;
+  explorerUrl: string;
+  /** Where the token trades / is quoted for this chain */
+  tradeUrlBase: string;
+  /** True when the chain uses the Bags-backed Clawnch launch router */
+  usesLaunchRouter: boolean;
+}
+
+export const CLAWNCH_CHAINS: Record<ClawnchChainKey, ClawnchChainMeta> = {
+  base: {
+    key: 'base',
+    id: 8453,
+    name: 'Base',
+    nativeSymbol: 'ETH',
+    explorerUrl: 'https://basescan.org',
+    tradeUrlBase: 'https://clawn.ch/token/',
+    usesLaunchRouter: false,
+  },
+  robinhood: {
+    key: 'robinhood',
+    id: ROBINHOOD.chainId,
+    name: ROBINHOOD.name,
+    nativeSymbol: ROBINHOOD.nativeCurrency.symbol,
+    explorerUrl: ROBINHOOD.explorerUrl,
+    tradeUrlBase: ROBINHOOD.tradeUrlBase,
+    usesLaunchRouter: true,
+  },
+};
+
+/**
+ * Resolve a user/agent-supplied chain value ('robinhood', 'robinhood-chain',
+ * 'base', '8453', 4663, ...) to a Clawnch chain key. Returns undefined for an
+ * unknown chain — callers must decide (never silently default to Base when the
+ * caller explicitly asked for something else).
+ */
+export function resolveClawnchChainKey(input: string | number | null | undefined): ClawnchChainKey | undefined {
+  if (input === null || input === undefined) return undefined;
+  const raw = String(input).trim().toLowerCase();
+  if (raw === '') return undefined;
+  if (raw === 'base' || raw === '8453' || raw === 'base-mainnet' || raw === 'base mainnet') return 'base';
+  if (
+    raw === 'robinhood' || raw === 'robinhood-chain' || raw === 'robinhood chain' ||
+    raw === 'robinhood-mainnet' || raw === '4663'
+  ) {
+    return 'robinhood';
+  }
+  return undefined;
+}
+
+/** Chain metadata for a chain key, name, or chain ID. */
+export function getClawnchChainMeta(input: string | number | null | undefined): ClawnchChainMeta | undefined {
+  const key = resolveClawnchChainKey(input);
+  return key ? CLAWNCH_CHAINS[key] : undefined;
+}
+
+/** Blockscout/BaseScan link for a transaction hash. */
+export function explorerTxUrl(chain: string | number | null | undefined, txHash: string): string | undefined {
+  const meta = getClawnchChainMeta(chain);
+  if (!meta || !txHash) return undefined;
+  return `${meta.explorerUrl}/tx/${txHash}`;
+}
+
+/** Blockscout/BaseScan link for an address (token, wallet, contract). */
+export function explorerAddressUrl(chain: string | number | null | undefined, address: string): string | undefined {
+  const meta = getClawnchChainMeta(chain);
+  if (!meta || !address) return undefined;
+  return `${meta.explorerUrl}/address/${address}`;
+}
+
+/** Trade link for a token on its chain (bags.fm on Robinhood Chain). */
+export function tradeUrl(chain: string | number | null | undefined, token: string): string | undefined {
+  const meta = getClawnchChainMeta(chain);
+  if (!meta || !token) return undefined;
+  return `${meta.tradeUrlBase}${token}`;
 }

@@ -14,7 +14,7 @@ import { base, mainnet, arbitrum, optimism, polygon } from 'viem/chains';
 
 // viem/chains doesn't ship Robinhood Chain yet; define it inline. Same shape
 // as the clawnch (@clawnch/clawncher-sdk) definition, kept consistent.
-const robinhoodChain = defineChain({
+export const robinhoodChain = defineChain({
   id: 4663,
   name: 'Robinhood Chain',
   nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
