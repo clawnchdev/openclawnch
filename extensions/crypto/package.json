@@ -1,7 +1,7 @@
 {
   "name": "@clawnch/openclaw-crypto",
-  "version": "0.1.2",
-  "description": "Crypto/DeFi extension for OpenClaw — ClawnchConnect wallet, DeFi tools, token launchpad, market intel, cross-chain bridges",
+  "version": "0.2.0",
+  "description": "Crypto/DeFi extension for OpenClaw \u2014 ClawnchConnect wallet, DeFi tools, token launchpad, market intel, cross-chain bridges",
   "type": "module",
   "main": "dist/index.mjs",
   "types": "dist/index.d.mts",
