@@ -14,6 +14,12 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
+// Unique per-instance state dirs: a shared /tmp dir (e.g. two tests landing on
+// the same Date.now() millisecond) leaks persisted state across registries and
+// makes list()/count assertions flaky in CI.
+let __seq = 0;
+const uniqueDir = (prefix: string) => `/tmp/${prefix}-${process.pid}-${Date.now()}-${__seq++}`;
+
 // ─── AgentPool Tests ────────────────────────────────────────────────────
 
 describe('AgentPool', () => {
@@ -42,7 +48,7 @@ describe('AgentPool', () => {
   });
 
   it('initializes with 4 preset agents', () => {
-    const pool = new AgentPool({ stateDir: '/tmp/test-agents-' + Date.now() });
+    const pool = new AgentPool({ stateDir: uniqueDir('test-agents') });
     const all = pool.list();
     expect(all.length).toBe(4);
     expect(all.map((a: any) => a.name).sort()).toEqual([
@@ -56,7 +62,7 @@ describe('AgentPool', () => {
   });
 
   it('presets have valid structure', () => {
-    const pool = new AgentPool({ stateDir: '/tmp/test-agents-' + Date.now() });
+    const pool = new AgentPool({ stateDir: uniqueDir('test-agents') });
     for (const agent of pool.list()) {
       expect(agent.id).toMatch(/^preset_/);
       expect(agent.name).toMatch(/^[a-z][a-z0-9_]+$/);
@@ -76,7 +82,7 @@ describe('AgentPool', () => {
   });
 
   it('creates a custom agent', () => {
-    const pool = new AgentPool({ stateDir: '/tmp/test-agents-' + Date.now() });
+    const pool = new AgentPool({ stateDir: uniqueDir('test-agents') });
     const agent = pool.create({
       name: 'test_agent',
       label: 'Test Agent',
@@ -99,7 +105,7 @@ describe('AgentPool', () => {
   });
 
   it('rejects duplicate agent names', () => {
-    const pool = new AgentPool({ stateDir: '/tmp/test-agents-' + Date.now() });
+    const pool = new AgentPool({ stateDir: uniqueDir('test-agents') });
     expect(() => pool.create({
       name: 'strategist', // conflicts with preset
       label: 'Dup',
@@ -110,7 +116,7 @@ describe('AgentPool', () => {
   });
 
   it('rejects invalid agent names', () => {
-    const pool = new AgentPool({ stateDir: '/tmp/test-agents-' + Date.now() });
+    const pool = new AgentPool({ stateDir: uniqueDir('test-agents') });
     const badNames = ['AB', 'a', '123abc', 'has spaces', 'HAS-UPPER', 'a'.repeat(40)];
     for (const name of badNames) {
       expect(() => pool.create({
@@ -124,7 +130,7 @@ describe('AgentPool', () => {
   });
 
   it('rejects short system prompts', () => {
-    const pool = new AgentPool({ stateDir: '/tmp/test-agents-' + Date.now() });
+    const pool = new AgentPool({ stateDir: uniqueDir('test-agents') });
     expect(() => pool.create({
       name: 'short_prompt',
       label: 'Short',
@@ -135,7 +141,7 @@ describe('AgentPool', () => {
   });
 
   it('looks up agents by name', () => {
-    const pool = new AgentPool({ stateDir: '/tmp/test-agents-' + Date.now() });
+    const pool = new AgentPool({ stateDir: uniqueDir('test-agents') });
     const strat = pool.getByName('strategist');
     expect(strat).toBeDefined();
     expect(strat.name).toBe('strategist');
@@ -143,7 +149,7 @@ describe('AgentPool', () => {
   });
 
   it('updates agent fields', () => {
-    const pool = new AgentPool({ stateDir: '/tmp/test-agents-' + Date.now() });
+    const pool = new AgentPool({ stateDir: uniqueDir('test-agents') });
     const strat = pool.getByName('strategist');
     const updated = pool.update(strat.id, { enabled: false, model: 'sonnet' });
     expect(updated).toBeDefined();
@@ -153,12 +159,12 @@ describe('AgentPool', () => {
   });
 
   it('returns null when updating nonexistent id', () => {
-    const pool = new AgentPool({ stateDir: '/tmp/test-agents-' + Date.now() });
+    const pool = new AgentPool({ stateDir: uniqueDir('test-agents') });
     expect(pool.update('nonexistent_id', { enabled: false })).toBeNull();
   });
 
   it('deletes custom agents', () => {
-    const pool = new AgentPool({ stateDir: '/tmp/test-agents-' + Date.now() });
+    const pool = new AgentPool({ stateDir: uniqueDir('test-agents') });
     const custom = pool.create({
       name: 'deletable',
       label: 'Del',
@@ -174,19 +180,19 @@ describe('AgentPool', () => {
   });
 
   it('throws when deleting preset agents', () => {
-    const pool = new AgentPool({ stateDir: '/tmp/test-agents-' + Date.now() });
+    const pool = new AgentPool({ stateDir: uniqueDir('test-agents') });
     const strat = pool.getByName('strategist');
     expect(() => pool.delete(strat.id)).toThrow(AgentPoolError);
     expect(() => pool.delete(strat.id)).toThrow(/preset/i);
   });
 
   it('returns false when deleting nonexistent id', () => {
-    const pool = new AgentPool({ stateDir: '/tmp/test-agents-' + Date.now() });
+    const pool = new AgentPool({ stateDir: uniqueDir('test-agents') });
     expect(pool.delete('fake_id')).toBe(false);
   });
 
   it('filters by enabled status', () => {
-    const pool = new AgentPool({ stateDir: '/tmp/test-agents-' + Date.now() });
+    const pool = new AgentPool({ stateDir: uniqueDir('test-agents') });
     pool.update(pool.getByName('analyst').id, { enabled: false });
     const enabled = pool.list({ enabled: true });
     const disabled = pool.list({ enabled: false });
@@ -196,7 +202,7 @@ describe('AgentPool', () => {
   });
 
   it('filters by preset status', () => {
-    const pool = new AgentPool({ stateDir: '/tmp/test-agents-' + Date.now() });
+    const pool = new AgentPool({ stateDir: uniqueDir('test-agents') });
     pool.create({
       name: 'custom_one',
       label: 'Custom',
@@ -211,7 +217,7 @@ describe('AgentPool', () => {
   });
 
   it('getEnabledAgents returns only enabled', () => {
-    const pool = new AgentPool({ stateDir: '/tmp/test-agents-' + Date.now() });
+    const pool = new AgentPool({ stateDir: uniqueDir('test-agents') });
     const initialCount = pool.getEnabledAgents().length;
     expect(initialCount).toBeGreaterThanOrEqual(4);
     pool.update(pool.getByName('accountant').id, { enabled: false });
@@ -219,7 +225,7 @@ describe('AgentPool', () => {
   });
 
   it('recordUsage increments count', () => {
-    const pool = new AgentPool({ stateDir: '/tmp/test-agents-' + Date.now() });
+    const pool = new AgentPool({ stateDir: uniqueDir('test-agents') });
     const strat = pool.getByName('strategist');
     expect(strat.usageCount).toBe(0);
     pool.recordUsage(strat.id);
@@ -229,7 +235,7 @@ describe('AgentPool', () => {
   });
 
   it('clear empties the pool', () => {
-    const pool = new AgentPool({ stateDir: '/tmp/test-agents-' + Date.now() });
+    const pool = new AgentPool({ stateDir: uniqueDir('test-agents') });
     expect(pool.list().length).toBe(4);
     pool.clear();
     expect(pool.list().length).toBe(0);
@@ -238,7 +244,7 @@ describe('AgentPool', () => {
   it('singleton works', async () => {
     const { getAgentPool, resetAgentPool } = await import('../extensions/crypto/src/services/agent-pool.js');
     resetAgentPool();
-    const a = getAgentPool({ stateDir: '/tmp/test-agents-singleton-' + Date.now() });
+    const a = getAgentPool({ stateDir: uniqueDir('test-agents-singleton') });
     const b = getAgentPool();
     expect(a).toBe(b);
     resetAgentPool();
@@ -489,12 +495,12 @@ describe('WebhookRouteRegistry', () => {
   });
 
   it('starts empty', () => {
-    const reg = new WebhookRouteRegistry({ stateDir: '/tmp/test-webhooks-' + Date.now() });
+    const reg = new WebhookRouteRegistry({ stateDir: uniqueDir('test-webhooks') });
     expect(reg.list().length).toBe(0);
   });
 
   it('creates a route', () => {
-    const reg = new WebhookRouteRegistry({ stateDir: '/tmp/test-webhooks-' + Date.now() });
+    const reg = new WebhookRouteRegistry({ stateDir: uniqueDir('test-webhooks') });
     const route = reg.create({
       name: 'github-push',
       path: '/github',
@@ -515,7 +521,7 @@ describe('WebhookRouteRegistry', () => {
   });
 
   it('rejects invalid route names', () => {
-    const reg = new WebhookRouteRegistry({ stateDir: '/tmp/test-webhooks-' + Date.now() });
+    const reg = new WebhookRouteRegistry({ stateDir: uniqueDir('test-webhooks') });
     const badNames = ['A', 'AB SPACE', 'HAS_UPPER', '123start'];
     for (const name of badNames) {
       expect(() => reg.create({
@@ -528,7 +534,7 @@ describe('WebhookRouteRegistry', () => {
   });
 
   it('rejects invalid paths', () => {
-    const reg = new WebhookRouteRegistry({ stateDir: '/tmp/test-webhooks-' + Date.now() });
+    const reg = new WebhookRouteRegistry({ stateDir: uniqueDir('test-webhooks') });
     const badPaths = ['no-slash', '/HAS UPPER', ''];
     for (const path of badPaths) {
       expect(() => reg.create({
@@ -541,7 +547,7 @@ describe('WebhookRouteRegistry', () => {
   });
 
   it('rejects duplicate route names', () => {
-    const reg = new WebhookRouteRegistry({ stateDir: '/tmp/test-webhooks-' + Date.now() });
+    const reg = new WebhookRouteRegistry({ stateDir: uniqueDir('test-webhooks') });
     reg.create({ name: 'github', path: '/github', source: 'GH', createdBy: 'test' });
     expect(() => reg.create({
       name: 'github',
@@ -552,7 +558,7 @@ describe('WebhookRouteRegistry', () => {
   });
 
   it('rejects duplicate paths', () => {
-    const reg = new WebhookRouteRegistry({ stateDir: '/tmp/test-webhooks-' + Date.now() });
+    const reg = new WebhookRouteRegistry({ stateDir: uniqueDir('test-webhooks') });
     reg.create({ name: 'route-a', path: '/shared', source: 'A', createdBy: 'test' });
     expect(() => reg.create({
       name: 'route-b',
@@ -563,7 +569,7 @@ describe('WebhookRouteRegistry', () => {
   });
 
   it('looks up routes by name and path', () => {
-    const reg = new WebhookRouteRegistry({ stateDir: '/tmp/test-webhooks-' + Date.now() });
+    const reg = new WebhookRouteRegistry({ stateDir: uniqueDir('test-webhooks') });
     reg.create({ name: 'stripe', path: '/stripe', source: 'Stripe', createdBy: 'test' });
     expect(reg.getByName('stripe')).toBeDefined();
     expect(reg.getByName('stripe')!.path).toBe('/stripe');
@@ -574,7 +580,7 @@ describe('WebhookRouteRegistry', () => {
   });
 
   it('updates route fields', () => {
-    const reg = new WebhookRouteRegistry({ stateDir: '/tmp/test-webhooks-' + Date.now() });
+    const reg = new WebhookRouteRegistry({ stateDir: uniqueDir('test-webhooks') });
     const route = reg.create({ name: 'test-up', path: '/update', source: 'Test', createdBy: 'test' });
     const updated = reg.update(route.id, { enabled: false, triggerPlan: 'new-plan' });
     expect(updated).toBeDefined();
@@ -583,12 +589,12 @@ describe('WebhookRouteRegistry', () => {
   });
 
   it('returns null when updating nonexistent id', () => {
-    const reg = new WebhookRouteRegistry({ stateDir: '/tmp/test-webhooks-' + Date.now() });
+    const reg = new WebhookRouteRegistry({ stateDir: uniqueDir('test-webhooks') });
     expect(reg.update('fake_id', { enabled: false })).toBeNull();
   });
 
   it('deletes routes', () => {
-    const reg = new WebhookRouteRegistry({ stateDir: '/tmp/test-webhooks-' + Date.now() });
+    const reg = new WebhookRouteRegistry({ stateDir: uniqueDir('test-webhooks') });
     const route = reg.create({ name: 'deleteme', path: '/del', source: 'Del', createdBy: 'test' });
     expect(reg.list().length).toBe(1);
     expect(reg.delete(route.id)).toBe(true);
@@ -597,7 +603,7 @@ describe('WebhookRouteRegistry', () => {
   });
 
   it('records hit counts', () => {
-    const reg = new WebhookRouteRegistry({ stateDir: '/tmp/test-webhooks-' + Date.now() });
+    const reg = new WebhookRouteRegistry({ stateDir: uniqueDir('test-webhooks') });
     const route = reg.create({ name: 'hits', path: '/hits', source: 'Test', createdBy: 'test' });
     expect(route.hitCount).toBe(0);
     reg.recordHit(route.id);
@@ -606,7 +612,7 @@ describe('WebhookRouteRegistry', () => {
   });
 
   it('filters by enabled status', () => {
-    const reg = new WebhookRouteRegistry({ stateDir: '/tmp/test-webhooks-' + Date.now() });
+    const reg = new WebhookRouteRegistry({ stateDir: uniqueDir('test-webhooks') });
     const initialCount = reg.list().length;
     reg.create({ name: 'active', path: '/active', source: 'A', createdBy: 'test' });
     const r2 = reg.create({ name: 'inactive', path: '/inactive', source: 'B', createdBy: 'test' });
@@ -618,7 +624,7 @@ describe('WebhookRouteRegistry', () => {
   });
 
   it('clear empties the registry', () => {
-    const reg = new WebhookRouteRegistry({ stateDir: '/tmp/test-webhooks-' + Date.now() });
+    const reg = new WebhookRouteRegistry({ stateDir: uniqueDir('test-webhooks') });
     reg.create({ name: 'aaa', path: '/aaa', source: 'A', createdBy: 'test' });
     reg.create({ name: 'bbb', path: '/bbb', source: 'B', createdBy: 'test' });
     expect(reg.list().length).toBe(2);
@@ -629,7 +635,7 @@ describe('WebhookRouteRegistry', () => {
   it('singleton works', async () => {
     const { getWebhookRoutes, resetWebhookRoutes } = await import('../extensions/crypto/src/services/webhook-routes.js');
     resetWebhookRoutes();
-    const a = getWebhookRoutes({ stateDir: '/tmp/test-wh-singleton-' + Date.now() });
+    const a = getWebhookRoutes({ stateDir: uniqueDir('test-wh-singleton') });
     const b = getWebhookRoutes();
     expect(a).toBe(b);
     resetWebhookRoutes();

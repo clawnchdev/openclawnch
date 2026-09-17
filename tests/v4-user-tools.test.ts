@@ -11,6 +11,13 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
+// Unique per-instance state dirs: a shared /tmp dir (e.g. two tests landing on
+// the same Date.now() millisecond) leaks persisted state across instances and
+// makes count assertions flaky in CI.
+let __seq = 0;
+const uniqueDir = (prefix: string) => `/tmp/${prefix}-${process.pid}-${Date.now()}-${__seq++}`;
+
+
 // ─── UserToolService Tests ──────────────────────────────────────────────
 
 describe('UserToolService', () => {
@@ -39,7 +46,7 @@ describe('UserToolService', () => {
   });
 
   it('creates an api_connector tool', () => {
-    const svc = new UserToolService({ stateDir: '/tmp/test-user-tools-' + Date.now() });
+    const svc = new UserToolService({ stateDir: uniqueDir('test-user-tools') });
     const tool = svc.create({
       name: 'price_check',
       label: 'Price Check',
@@ -67,7 +74,7 @@ describe('UserToolService', () => {
   });
 
   it('creates a composed tool', () => {
-    const svc = new UserToolService({ stateDir: '/tmp/test-user-tools-' + Date.now() });
+    const svc = new UserToolService({ stateDir: uniqueDir('test-user-tools') });
     const tool = svc.create({
       name: 'swap_and_check',
       label: 'Swap and Check',
@@ -92,7 +99,7 @@ describe('UserToolService', () => {
   });
 
   it('creates a custom tool', () => {
-    const svc = new UserToolService({ stateDir: '/tmp/test-user-tools-' + Date.now() });
+    const svc = new UserToolService({ stateDir: uniqueDir('test-user-tools') });
     const tool = svc.create({
       name: 'smart_rebalance',
       label: 'Smart Rebalance',
@@ -114,7 +121,7 @@ describe('UserToolService', () => {
 
   // Name validation
   it('rejects invalid tool names', () => {
-    const svc = new UserToolService({ stateDir: '/tmp/test-user-tools-' + Date.now() });
+    const svc = new UserToolService({ stateDir: uniqueDir('test-user-tools') });
     const base = {
       label: 'Test',
       description: 'Test tool',
@@ -134,7 +141,7 @@ describe('UserToolService', () => {
   });
 
   it('rejects reserved names and prefixes', () => {
-    const svc = new UserToolService({ stateDir: '/tmp/test-user-tools-' + Date.now() });
+    const svc = new UserToolService({ stateDir: uniqueDir('test-user-tools') });
     const base = {
       label: 'Test',
       description: 'Test tool',
@@ -153,7 +160,7 @@ describe('UserToolService', () => {
   });
 
   it('rejects duplicate names', () => {
-    const svc = new UserToolService({ stateDir: '/tmp/test-user-tools-' + Date.now() });
+    const svc = new UserToolService({ stateDir: uniqueDir('test-user-tools') });
     const base = {
       label: 'Test',
       description: 'Test tool',
@@ -168,7 +175,7 @@ describe('UserToolService', () => {
 
   // Definition validation
   it('rejects api_connector without required fields', () => {
-    const svc = new UserToolService({ stateDir: '/tmp/test-user-tools-' + Date.now() });
+    const svc = new UserToolService({ stateDir: uniqueDir('test-user-tools') });
     const base = {
       name: 'test_api',
       label: 'Test',
@@ -183,7 +190,7 @@ describe('UserToolService', () => {
   });
 
   it('rejects composed tool without steps', () => {
-    const svc = new UserToolService({ stateDir: '/tmp/test-user-tools-' + Date.now() });
+    const svc = new UserToolService({ stateDir: uniqueDir('test-user-tools') });
     expect(() => svc.create({
       name: 'empty_composed',
       label: 'Test',
@@ -195,7 +202,7 @@ describe('UserToolService', () => {
   });
 
   it('rejects composed tool with more than 10 steps', () => {
-    const svc = new UserToolService({ stateDir: '/tmp/test-user-tools-' + Date.now() });
+    const svc = new UserToolService({ stateDir: uniqueDir('test-user-tools') });
     const steps = Array.from({ length: 11 }, (_, i) => ({
       label: `Step ${i}`,
       tool: 'defi_price',
@@ -212,7 +219,7 @@ describe('UserToolService', () => {
   });
 
   it('rejects custom tool with short behavior', () => {
-    const svc = new UserToolService({ stateDir: '/tmp/test-user-tools-' + Date.now() });
+    const svc = new UserToolService({ stateDir: uniqueDir('test-user-tools') });
     expect(() => svc.create({
       name: 'short_behavior',
       label: 'Test',
@@ -224,7 +231,7 @@ describe('UserToolService', () => {
   });
 
   it('rejects custom tool without allowed tools', () => {
-    const svc = new UserToolService({ stateDir: '/tmp/test-user-tools-' + Date.now() });
+    const svc = new UserToolService({ stateDir: uniqueDir('test-user-tools') });
     expect(() => svc.create({
       name: 'no_allowed',
       label: 'Test',
@@ -236,7 +243,7 @@ describe('UserToolService', () => {
   });
 
   it('rejects custom tool with maxCalls > 20', () => {
-    const svc = new UserToolService({ stateDir: '/tmp/test-user-tools-' + Date.now() });
+    const svc = new UserToolService({ stateDir: uniqueDir('test-user-tools') });
     expect(() => svc.create({
       name: 'too_many_calls',
       label: 'Test',
@@ -249,7 +256,7 @@ describe('UserToolService', () => {
 
   // CRUD operations
   it('updates a tool', () => {
-    const svc = new UserToolService({ stateDir: '/tmp/test-user-tools-' + Date.now() });
+    const svc = new UserToolService({ stateDir: uniqueDir('test-user-tools') });
     const tool = svc.create({
       name: 'updatable',
       label: 'Original',
@@ -266,12 +273,12 @@ describe('UserToolService', () => {
   });
 
   it('update returns null for missing tool', () => {
-    const svc = new UserToolService({ stateDir: '/tmp/test-user-tools-' + Date.now() });
+    const svc = new UserToolService({ stateDir: uniqueDir('test-user-tools') });
     expect(svc.update('nonexistent', { label: 'X' })).toBeNull();
   });
 
   it('deletes a tool', () => {
-    const svc = new UserToolService({ stateDir: '/tmp/test-user-tools-' + Date.now() });
+    const svc = new UserToolService({ stateDir: uniqueDir('test-user-tools') });
     const tool = svc.create({
       name: 'deletable',
       label: 'Test',
@@ -287,7 +294,7 @@ describe('UserToolService', () => {
   });
 
   it('lists tools with filters', () => {
-    const svc = new UserToolService({ stateDir: '/tmp/test-user-tools-' + Date.now() });
+    const svc = new UserToolService({ stateDir: uniqueDir('test-user-tools') });
     svc.create({
       name: 'tool_alpha',
       label: 'Alpha',
@@ -313,7 +320,7 @@ describe('UserToolService', () => {
   });
 
   it('enables and disables tools', () => {
-    const svc = new UserToolService({ stateDir: '/tmp/test-user-tools-' + Date.now() });
+    const svc = new UserToolService({ stateDir: uniqueDir('test-user-tools') });
     const tool = svc.create({
       name: 'toggleable',
       label: 'Test',
@@ -333,7 +340,7 @@ describe('UserToolService', () => {
   });
 
   it('records usage count', () => {
-    const svc = new UserToolService({ stateDir: '/tmp/test-user-tools-' + Date.now() });
+    const svc = new UserToolService({ stateDir: uniqueDir('test-user-tools') });
     const tool = svc.create({
       name: 'countable',
       label: 'Test',
@@ -351,7 +358,7 @@ describe('UserToolService', () => {
   });
 
   it('isNameAvailable reports correctly', () => {
-    const svc = new UserToolService({ stateDir: '/tmp/test-user-tools-' + Date.now() });
+    const svc = new UserToolService({ stateDir: uniqueDir('test-user-tools') });
     
     // Valid, available
     expect(svc.isNameAvailable('my_new_tool')).toEqual({ available: true });
@@ -375,7 +382,7 @@ describe('UserToolService', () => {
   });
 
   it('getByName finds tools by name', () => {
-    const svc = new UserToolService({ stateDir: '/tmp/test-user-tools-' + Date.now() });
+    const svc = new UserToolService({ stateDir: uniqueDir('test-user-tools') });
     svc.create({
       name: 'findable',
       label: 'Find Me',
@@ -392,7 +399,7 @@ describe('UserToolService', () => {
   });
 
   it('clear removes all tools', () => {
-    const svc = new UserToolService({ stateDir: '/tmp/test-user-tools-' + Date.now() });
+    const svc = new UserToolService({ stateDir: uniqueDir('test-user-tools') });
     const initialCount = svc.list().length;
     svc.create({
       name: 'clearable_one',
@@ -896,7 +903,7 @@ describe('ToolCompiler', () => {
   it('compileTool execute returns error for disabled tool', async () => {
     const { getUserToolService } = await import('../extensions/crypto/src/services/user-tool-service.js');
     resetUserToolService();
-    const svc = getUserToolService({ stateDir: '/tmp/test-compiler-' + Date.now() });
+    const svc = getUserToolService({ stateDir: uniqueDir('test-compiler') });
     const tool = svc.create({
       name: 'disabled_tool',
       label: 'Disabled',
@@ -921,7 +928,7 @@ describe('ToolCompiler', () => {
   it('compileTool execute handles custom tool type', async () => {
     const { getUserToolService } = await import('../extensions/crypto/src/services/user-tool-service.js');
     resetUserToolService();
-    const svc = getUserToolService({ stateDir: '/tmp/test-compiler-custom-' + Date.now() });
+    const svc = getUserToolService({ stateDir: uniqueDir('test-compiler-custom') });
     const tool = svc.create({
       name: 'custom_executor',
       label: 'Custom Executor',
@@ -952,7 +959,7 @@ describe('ToolCompiler', () => {
     const { UserToolService, getUserToolService } = await import('../extensions/crypto/src/services/user-tool-service.js');
     // Reset and create through singleton
     resetUserToolService();
-    const svc = getUserToolService({ stateDir: '/tmp/test-compile-all-' + Date.now() });
+    const svc = getUserToolService({ stateDir: uniqueDir('test-compile-all') });
     
     svc.create({
       name: 'batch_tool_one',
@@ -1016,7 +1023,7 @@ describe('ToolsCommand', () => {
 
   it('list shows user tools', async () => {
     const { getUserToolService } = await import('../extensions/crypto/src/services/user-tool-service.js');
-    const svc = getUserToolService({ stateDir: '/tmp/test-cmd-list-' + Date.now() });
+    const svc = getUserToolService({ stateDir: uniqueDir('test-cmd-list') });
     svc.create({
       name: 'cmd_test_tool',
       label: 'Command Test',
@@ -1035,7 +1042,7 @@ describe('ToolsCommand', () => {
 
   it('info shows tool details', async () => {
     const { getUserToolService } = await import('../extensions/crypto/src/services/user-tool-service.js');
-    const svc = getUserToolService({ stateDir: '/tmp/test-cmd-info-' + Date.now() });
+    const svc = getUserToolService({ stateDir: uniqueDir('test-cmd-info') });
     svc.create({
       name: 'info_tool',
       label: 'Info Tool',
@@ -1073,7 +1080,7 @@ describe('ToolsCommand', () => {
 
   it('enable and disable toggle tool state', async () => {
     const { getUserToolService } = await import('../extensions/crypto/src/services/user-tool-service.js');
-    const svc = getUserToolService({ stateDir: '/tmp/test-cmd-toggle-' + Date.now() });
+    const svc = getUserToolService({ stateDir: uniqueDir('test-cmd-toggle') });
     svc.create({
       name: 'toggle_tool',
       label: 'Toggle',
@@ -1104,7 +1111,7 @@ describe('ToolsCommand', () => {
 
   it('delete removes a tool', async () => {
     const { getUserToolService } = await import('../extensions/crypto/src/services/user-tool-service.js');
-    const svc = getUserToolService({ stateDir: '/tmp/test-cmd-delete-' + Date.now() });
+    const svc = getUserToolService({ stateDir: uniqueDir('test-cmd-delete') });
     svc.create({
       name: 'deletable_tool',
       label: 'Deletable',
