@@ -25,6 +25,13 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+// Unique per-instance state dirs: a shared /tmp dir (e.g. two tests landing on
+// the same Date.now() millisecond) leaks persisted state across instances and
+// makes count assertions flaky in CI.
+let __seq = 0;
+const uniqueDir = (prefix: string) => `/tmp/${prefix}-${process.pid}-${Date.now()}-${__seq++}`;
+
+
 // ─── 1. Delegation Types ────────────────────────────────────────────────
 
 describe('Delegation Types', () => {
@@ -2193,7 +2200,7 @@ describe('Sub-Delegation', () => {
     );
     const { rmSync } = await import('node:fs');
 
-    const stateDir = '/tmp/openclawnch-test-agents-subdel-' + Date.now();
+    const stateDir = uniqueDir('openclawnch-test-agents-subdel');
     try { rmSync(stateDir, { recursive: true }); } catch {}
 
     const pool = new AgentPool({ stateDir });
@@ -2219,7 +2226,7 @@ describe('Sub-Delegation', () => {
     );
     const { rmSync } = await import('node:fs');
 
-    const stateDir = '/tmp/openclawnch-test-agents-keypair-' + Date.now();
+    const stateDir = uniqueDir('openclawnch-test-agents-keypair');
     try { rmSync(stateDir, { recursive: true }); } catch {}
 
     const pool = new AgentPool({ stateDir });

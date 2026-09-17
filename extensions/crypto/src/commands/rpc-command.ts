@@ -12,6 +12,8 @@ const CHAIN_NAMES: Record<number, string> = {
   42161: 'Arbitrum',
   10: 'Optimism',
   137: 'Polygon',
+  4663: 'Robinhood Chain',
+  46630: 'Robinhood Chain Testnet',
 };
 
 export const rpcCommand = {
@@ -63,6 +65,7 @@ export const rpcCommand = {
     for (const [id, envName] of Object.entries({
       8453: 'RPC_URL_BASE', 1: 'RPC_URL_ETH', 42161: 'RPC_URL_ARB',
       10: 'RPC_URL_OP', 137: 'RPC_URL_POLYGON',
+      4663: 'ROBINHOOD_RPC_URL', 46630: 'RPC_URL_ROBINHOOD_TESTNET',
     })) {
       if (process.env[envName]) {
         const chain = CHAIN_NAMES[Number(id)] ?? id;
@@ -73,6 +76,7 @@ export const rpcCommand = {
       8453: 'QUICKNODE_ENDPOINT_BASE', 1: 'QUICKNODE_ENDPOINT_ETH',
       42161: 'QUICKNODE_ENDPOINT_ARB', 10: 'QUICKNODE_ENDPOINT_OP',
       137: 'QUICKNODE_ENDPOINT_POLYGON',
+      4663: 'QUICKNODE_ENDPOINT_ROBINHOOD', 46630: 'QUICKNODE_ENDPOINT_ROBINHOOD_TESTNET',
     })) {
       if (process.env[envName]) {
         const chain = CHAIN_NAMES[Number(id)] ?? id;

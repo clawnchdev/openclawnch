@@ -10,6 +10,13 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
+// Unique per-instance state dirs: a shared /tmp dir (e.g. two tests landing on
+// the same Date.now() millisecond) leaks persisted state across instances and
+// makes count assertions flaky in CI.
+let __seq = 0;
+const uniqueDir = (prefix: string) => `/tmp/${prefix}-${process.pid}-${Date.now()}-${__seq++}`;
+
+
 // ─── FiatService Tests ──────────────────────────────────────────────────
 
 describe('FiatService', () => {
@@ -39,27 +46,27 @@ describe('FiatService', () => {
   });
 
   it('isAvailable returns false when no providers are configured', () => {
-    const svc = new FiatService({ stateDir: '/tmp/test-fiat-' + Date.now() });
+    const svc = new FiatService({ stateDir: uniqueDir('test-fiat') });
     expect(svc.isAvailable()).toBe(false);
     expect(svc.getConfiguredProviders()).toEqual([]);
   });
 
   it('isAvailable returns true when BRIDGE_API_KEY is set', () => {
     process.env.BRIDGE_API_KEY = 'test-bridge-key';
-    const svc = new FiatService({ stateDir: '/tmp/test-fiat-' + Date.now() });
+    const svc = new FiatService({ stateDir: uniqueDir('test-fiat') });
     expect(svc.isAvailable()).toBe(true);
     expect(svc.getConfiguredProviders()).toContain('bridge');
   });
 
   it('isAvailable returns true when MOONPAY_API_KEY is set', () => {
     process.env.MOONPAY_API_KEY = 'test-moonpay-key';
-    const svc = new FiatService({ stateDir: '/tmp/test-fiat-' + Date.now() });
+    const svc = new FiatService({ stateDir: uniqueDir('test-fiat') });
     expect(svc.isAvailable()).toBe(true);
     expect(svc.getConfiguredProviders()).toContain('moonpay');
   });
 
   it('getQuotes throws when no providers configured', async () => {
-    const svc = new FiatService({ stateDir: '/tmp/test-fiat-' + Date.now() });
+    const svc = new FiatService({ stateDir: uniqueDir('test-fiat') });
     await expect(svc.getQuotes({
       direction: 'off_ramp',
       cryptoToken: 'USDC',
@@ -68,30 +75,30 @@ describe('FiatService', () => {
   });
 
   it('listTransfers returns empty array initially', () => {
-    const svc = new FiatService({ stateDir: '/tmp/test-fiat-' + Date.now() });
+    const svc = new FiatService({ stateDir: uniqueDir('test-fiat') });
     expect(svc.listTransfers()).toEqual([]);
   });
 
   it('getTransfer returns null for non-existent transfer', () => {
-    const svc = new FiatService({ stateDir: '/tmp/test-fiat-' + Date.now() });
+    const svc = new FiatService({ stateDir: uniqueDir('test-fiat') });
     expect(svc.getTransfer('non-existent')).toBeNull();
   });
 
   it('clear empties all transfers', () => {
-    const svc = new FiatService({ stateDir: '/tmp/test-fiat-' + Date.now() });
+    const svc = new FiatService({ stateDir: uniqueDir('test-fiat') });
     svc.clear();
     expect(svc.listTransfers()).toEqual([]);
   });
 
   it('listBankAccounts returns empty when no providers configured', async () => {
-    const svc = new FiatService({ stateDir: '/tmp/test-fiat-' + Date.now() });
+    const svc = new FiatService({ stateDir: uniqueDir('test-fiat') });
     const accounts = await svc.listBankAccounts();
     expect(accounts).toEqual([]);
   });
 
   it('singleton getFiatService returns same instance', async () => {
     const mod = await import('../extensions/crypto/src/services/fiat-service.js');
-    const a = mod.getFiatService({ stateDir: '/tmp/test-fiat-singleton-' + Date.now() });
+    const a = mod.getFiatService({ stateDir: uniqueDir('test-fiat-singleton') });
     const b = mod.getFiatService();
     expect(a).toBe(b);
   });

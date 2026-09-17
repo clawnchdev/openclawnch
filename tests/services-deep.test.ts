@@ -303,7 +303,7 @@ describe('rpc-provider', () => {
     expect(providers.every(p => p.name !== 'Alchemy')).toBe(true);
   });
 
-  it('getSupportedChains returns 5 chains', async () => {
+  it('getSupportedChains includes Robinhood Chain (mainnet + testnet)', async () => {
     const { RpcManager } = await import(
       '../extensions/crypto/src/services/rpc-provider.js'
     );
@@ -312,7 +312,10 @@ describe('rpc-provider', () => {
     expect(chains).toContain(8453);
     expect(chains).toContain(1);
     expect(chains).toContain(42161);
-    expect(chains.length).toBe(5);
+    // Robinhood Chain mainnet (4663) + testnet (46630) are first-class chains
+    expect(chains).toContain(4663);
+    expect(chains).toContain(46630);
+    expect(chains.length).toBe(7);
   });
 
   it('clearCache does not throw', async () => {

@@ -63,6 +63,15 @@ const ALLOWED_HOSTS: ReadonlySet<string> = new Set([
   'polygon-rpc.com',
   'polygon.drpc.org',
 
+  // ── Robinhood Chain (Arbitrum Orbit L2, chain 4663) ───────────────────
+  'rpc.mainnet.chain.robinhood.com',
+  'rpc.testnet.chain.robinhood.com',
+  'robinhoodchain-gateway.publicnode.com',
+  'robinhood-chain-rpc.publicnode.com',
+  'robinhoodchain.blockscout.com',
+  'robinhoodchain-testnet.blockscout.com',
+  'bags.fm',
+
   // ── Block Explorers ──────────────────────────────────────────────────
   'api.basescan.org',
   'api.etherscan.io',
@@ -79,6 +88,7 @@ const ALLOWED_HOSTS: ReadonlySet<string> = new Set([
 
   // ── Clawnch Platform ─────────────────────────────────────────────────
   'clawn.ch',
+  'www.clawn.ch', // clawn.ch 307s here; guardedFetch re-checks redirect targets
   'api.clawn.ch',
 
   // ── WalletConnect ────────────────────────────────────────────────────
